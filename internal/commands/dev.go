@@ -3,10 +3,11 @@ package commands
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 	"github.com/newcore-network/opencore-cli/internal/watcher"
-	"github.com/spf13/cobra"
 )
 
 func NewDevCommand() *cobra.Command {

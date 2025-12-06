@@ -6,9 +6,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
+
 	"github.com/newcore-network/opencore-cli/internal/templates"
 	"github.com/newcore-network/opencore-cli/internal/ui"
-	"github.com/spf13/cobra"
 )
 
 func newCreateResourceCommand() *cobra.Command {

@@ -6,10 +6,11 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
+
 	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/templates"
 	"github.com/newcore-network/opencore-cli/internal/ui"
-	"github.com/spf13/cobra"
 )
 
 func newCreateFeatureCommand() *cobra.Command {
@@ -60,7 +61,7 @@ func runCreateFeature(cmd *cobra.Command, args []string) error {
 
 	// Detect project architecture
 	arch := config.DetectArchitecture(".")
-	
+
 	fmt.Println(ui.Info(fmt.Sprintf("Detected architecture: %s", arch)))
 	fmt.Println(ui.Info(fmt.Sprintf("Creating feature: %s", featureName)))
 	fmt.Println()
@@ -91,7 +92,7 @@ func runCreateFeature(cmd *cobra.Command, args []string) error {
 		clientPath := filepath.Join("core", "src", "client", "controllers")
 		serverPath := filepath.Join("core", "src", "server", "controllers")
 		servicePath := filepath.Join("core", "src", "server", "services")
-		
+
 		if err := templates.GenerateLayerBased(clientPath, serverPath, servicePath, featureName); err != nil {
 			return fmt.Errorf("failed to generate layer-based feature: %w", err)
 		}
@@ -131,12 +132,12 @@ func runCreateFeature(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println(ui.Success("Feature created successfully!"))
 	fmt.Println()
-	
+
 	filesList := ""
 	for _, file := range filesCreated {
 		filesList += fmt.Sprintf("  • %s\n", file)
 	}
-	
+
 	fmt.Println(ui.BoxStyle.Render(
 		fmt.Sprintf("📁 Location: %s\n\n", featurePath) +
 			"Files created:\n" +

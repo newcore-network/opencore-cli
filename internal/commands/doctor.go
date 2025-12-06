@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/newcore-network/opencore-cli/internal/ui"
 	"github.com/spf13/cobra"
+
+	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
 func NewDoctorCommand() *cobra.Command {

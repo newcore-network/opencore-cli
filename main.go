@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/newcore-network/opencore-cli/internal/commands"
 	"github.com/newcore-network/opencore-cli/internal/ui"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -41,4 +42,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

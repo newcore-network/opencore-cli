@@ -9,8 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/newcore-network/opencore-cli/internal/ui"
 	"github.com/spf13/cobra"
+
+	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
 var officialTemplates = map[string]string{

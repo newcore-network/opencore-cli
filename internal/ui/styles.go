@@ -6,12 +6,12 @@ import (
 
 var (
 	// Colors
-	PrimaryColor   = lipgloss.Color("#7C3AED") // Purple
-	SuccessColor   = lipgloss.Color("#10B981") // Green
-	ErrorColor     = lipgloss.Color("#EF4444") // Red
-	WarningColor   = lipgloss.Color("#F59E0B") // Orange
-	InfoColor      = lipgloss.Color("#3B82F6") // Blue
-	MutedColor     = lipgloss.Color("#6B7280") // Gray
+	PrimaryColor = lipgloss.Color("#7C3AED") // Purple
+	SuccessColor = lipgloss.Color("#10B981") // Green
+	ErrorColor   = lipgloss.Color("#EF4444") // Red
+	WarningColor = lipgloss.Color("#F59E0B") // Orange
+	InfoColor    = lipgloss.Color("#3B82F6") // Blue
+	MutedColor   = lipgloss.Color("#6B7280") // Gray
 
 	// Base styles
 	TitleStyle = lipgloss.NewStyle().
@@ -98,4 +98,3 @@ func Info(msg string) string {
 func Muted(msg string) string {
 	return lipgloss.NewStyle().Foreground(MutedColor).Render(msg)
 }
-

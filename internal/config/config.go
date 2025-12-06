@@ -23,7 +23,7 @@ type CoreConfig struct {
 }
 
 type ResourceConfig struct {
-	Include  []string `json:"include"`
+	Include  []string           `json:"include"`
 	Explicit []ExplicitResource `json:"explicit"`
 }
 
@@ -40,7 +40,7 @@ type BuildConfig struct {
 // Load reads and transpiles opencore.config.ts to Config
 func Load() (*Config, error) {
 	configPath := "opencore.config.ts"
-	
+
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("opencore.config.ts not found in current directory")
@@ -112,14 +112,13 @@ const path = require('path');
 // GetResourcePaths returns all resource paths (including core)
 func (c *Config) GetResourcePaths() []string {
 	paths := []string{c.Core.Path}
-	
+
 	// Add explicit resources
 	for _, res := range c.Resources.Explicit {
 		paths = append(paths, res.Path)
 	}
-	
+
 	// TODO: Add glob pattern matching for include
-	
+
 	return paths
 }
-

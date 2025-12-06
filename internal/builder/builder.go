@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
@@ -31,7 +32,6 @@ type buildMsg struct {
 
 type buildModel struct {
 	spinner   spinner.Model
-	building  string
 	results   []buildMsg
 	done      bool
 	resources []string

@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 	"github.com/newcore-network/opencore-cli/internal/builder"
 	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
 type Watcher struct {
-	config  *config.Config
-	builder *builder.Builder
-	watcher *fsnotify.Watcher
+	config   *config.Config
+	builder  *builder.Builder
+	watcher  *fsnotify.Watcher
 	debounce map[string]time.Time
 }
 
@@ -90,4 +91,3 @@ func (w *Watcher) Watch() error {
 func (w *Watcher) Close() error {
 	return w.watcher.Close()
 }
-
