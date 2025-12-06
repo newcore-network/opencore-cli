@@ -2,6 +2,7 @@ import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: '{{.ProjectName}}',
+  architecture: '{{.Architecture}}',
   outDir: './dist/resources',
   
   core: {

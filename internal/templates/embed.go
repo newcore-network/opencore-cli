@@ -13,10 +13,12 @@ import (
 //go:embed all:starter-project
 //go:embed all:resource
 //go:embed all:feature
+//go:embed all:architectures
 var templatesFS embed.FS
 
 type ProjectConfig struct {
 	ProjectName     string
+	Architecture    string
 	InstallIdentity bool
 	UseMinify       bool
 }
@@ -32,22 +34,58 @@ type FeatureConfig struct {
 	FeatureNamePascal string
 }
 
-func GenerateStarterProject(targetPath, projectName string, installIdentity, useMinify bool) error {
+func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool) error {
 	config := ProjectConfig{
 		ProjectName:     projectName,
+		Architecture:    architecture,
 		InstallIdentity: installIdentity,
 		UseMinify:       useMinify,
 	}
 
-	// Create directories
+	// Create base directories
 	dirs := []string{
 		targetPath,
 		filepath.Join(targetPath, "core"),
 		filepath.Join(targetPath, "core", "src"),
-		filepath.Join(targetPath, "core", "src", "server"),
-		filepath.Join(targetPath, "core", "src", "client"),
-		filepath.Join(targetPath, "core", "src", "features"),
 		filepath.Join(targetPath, "resources"),
+	}
+
+	// Add architecture-specific directories
+	switch architecture {
+	case "domain-driven":
+		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src", "modules"),
+		)
+	case "layer-based":
+		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src", "client"),
+			filepath.Join(targetPath, "core", "src", "client", "controllers"),
+			filepath.Join(targetPath, "core", "src", "client", "services"),
+			filepath.Join(targetPath, "core", "src", "server"),
+			filepath.Join(targetPath, "core", "src", "server", "controllers"),
+			filepath.Join(targetPath, "core", "src", "server", "services"),
+			filepath.Join(targetPath, "core", "src", "shared"),
+		)
+	case "feature-based":
+		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src", "features"),
+			filepath.Join(targetPath, "core", "src", "client"),
+			filepath.Join(targetPath, "core", "src", "server"),
+		)
+	case "hybrid":
+		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src", "core-modules"),
+			filepath.Join(targetPath, "core", "src", "features"),
+			filepath.Join(targetPath, "core", "src", "client"),
+			filepath.Join(targetPath, "core", "src", "server"),
+		)
+	default:
+		// Fallback to feature-based
+		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src", "features"),
+			filepath.Join(targetPath, "core", "src", "client"),
+			filepath.Join(targetPath, "core", "src", "server"),
+		)
 	}
 
 	for _, dir := range dirs {
@@ -192,6 +230,115 @@ func GenerateFeature(targetPath, featureName string) error {
 		tmpl, err := template.New(tplFile).Parse(string(content))
 		if err != nil {
 			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
+		}
+
+		f, err := os.Create(targetFile)
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
+		}
+		defer f.Close()
+
+		if err := tmpl.Execute(f, config); err != nil {
+			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		}
+	}
+
+	return nil
+}
+
+type ModuleConfig struct {
+	ModuleName       string
+	ModuleNamePascal string
+}
+
+func GenerateModuleDomainDriven(targetPath, moduleName string) error {
+	pascalCase := toPascalCase(moduleName)
+	config := ModuleConfig{
+		ModuleName:       moduleName,
+		ModuleNamePascal: pascalCase,
+	}
+
+	// Create module structure
+	dirs := []string{
+		targetPath,
+		filepath.Join(targetPath, "client"),
+		filepath.Join(targetPath, "server"),
+		filepath.Join(targetPath, "shared"),
+	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Generate files
+	files := map[string]string{
+		"module-client-controller.ts": filepath.Join(targetPath, "client", moduleName+".controller.ts"),
+		"module-client-ui.ts":         filepath.Join(targetPath, "client", moduleName+".ui.ts"),
+		"module-server-controller.ts": filepath.Join(targetPath, "server", moduleName+".controller.ts"),
+		"module-server-service.ts":    filepath.Join(targetPath, "server", moduleName+".service.ts"),
+		"module-server-repository.ts": filepath.Join(targetPath, "server", moduleName+".repository.ts"),
+		"module-shared-types.ts":      filepath.Join(targetPath, "shared", moduleName+".types.ts"),
+		"module-shared-events.ts":     filepath.Join(targetPath, "shared", moduleName+".events.ts"),
+	}
+
+	for tplFile, targetFile := range files {
+		embedPath := path.Join("architectures", "domain-driven", tplFile)
+		content, err := templatesFS.ReadFile(embedPath)
+		if err != nil {
+			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
+		}
+
+		tmpl, err := template.New(tplFile).Parse(string(content))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
+		}
+
+		f, err := os.Create(targetFile)
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
+		}
+		defer f.Close()
+
+		if err := tmpl.Execute(f, config); err != nil {
+			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		}
+	}
+
+	return nil
+}
+
+func GenerateLayerBased(clientPath, serverPath, servicePath, featureName string) error {
+	pascalCase := toPascalCase(featureName)
+	config := FeatureConfig{
+		FeatureName:       featureName,
+		FeatureNamePascal: pascalCase,
+	}
+
+	// Generate files
+	files := map[string]string{
+		"client-controller.ts": filepath.Join(clientPath, featureName+".controller.ts"),
+		"client-service.ts":    filepath.Join(clientPath, "..", "services", featureName+".client.service.ts"),
+		"server-controller.ts": filepath.Join(serverPath, featureName+".controller.ts"),
+		"server-service.ts":    filepath.Join(servicePath, featureName+".service.ts"),
+	}
+
+	for tplFile, targetFile := range files {
+		embedPath := path.Join("architectures", "layer-based", tplFile)
+		content, err := templatesFS.ReadFile(embedPath)
+		if err != nil {
+			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
+		}
+
+		tmpl, err := template.New(tplFile).Parse(string(content))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
+		}
+
+		// Ensure directory exists
+		if err := os.MkdirAll(filepath.Dir(targetFile), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", targetFile, err)
 		}
 
 		f, err := os.Create(targetFile)

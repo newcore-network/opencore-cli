@@ -113,6 +113,78 @@ Building Resources
 └─────────────────────────────────────────┘
 ```
 
+## 🏗️ Project Architectures
+
+OpenCore CLI supports **4 project architectures** to fit your team size and project complexity:
+
+### 1. Domain-Driven (Recommended for large projects)
+
+Organize code by business domains with full client/server/shared separation:
+
+```
+core/src/modules/
+├── banking/
+│   ├── client/
+│   │   ├── banking.controller.ts
+│   │   └── banking.ui.ts
+│   ├── server/
+│   │   ├── banking.controller.ts
+│   │   ├── banking.service.ts
+│   │   └── banking.repository.ts
+│   └── shared/
+│       ├── banking.types.ts
+│       └── banking.events.ts
+```
+
+**Best for**: Large projects, multiple business domains, high cohesion needs
+
+### 2. Layer-Based (For large teams)
+
+Classic layered architecture with technical separation:
+
+```
+core/src/
+├── client/
+│   ├── controllers/
+│   └── services/
+├── server/
+│   ├── controllers/
+│   └── services/
+└── shared/
+```
+
+**Best for**: Large teams with specialized roles (frontend/backend)
+
+### 3. Feature-Based (Simple & fast)
+
+Lightweight structure for quick iteration:
+
+```
+core/src/features/
+├── banking/
+│   ├── banking.controller.ts
+│   ├── banking.service.ts
+│   └── index.ts
+```
+
+**Best for**: Small/medium projects, independent features
+
+### 4. Hybrid (Flexible)
+
+Mix critical modules (domain-driven) with simple features:
+
+```
+core/src/
+├── core-modules/  # Critical systems
+│   └── identity/
+├── features/      # Simple features
+│   └── notifications/
+```
+
+**Best for**: Evolving projects, mixed complexity needs
+
+> Choose your architecture during `opencore init` - it adapts commands automatically!
+
 ## ⚙️ Configuration
 
 Projects use an `opencore.config.ts` file:
@@ -122,6 +194,7 @@ import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: 'my-server',
+  architecture: 'domain-driven',  // or 'layer-based', 'feature-based', 'hybrid'
   outDir: './dist/resources',
   core: {
     path: './core',

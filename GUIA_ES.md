@@ -33,12 +33,85 @@ cd opencore-cli
 go build -o opencore ./cmd/opencore
 ```
 
+## 🏗️ Arquitecturas de Proyecto
+
+OpenCore CLI soporta **4 arquitecturas** para adaptarse al tamaño de tu equipo y complejidad del proyecto:
+
+### 1. Domain-Driven (Recomendada para proyectos grandes)
+
+Organiza el código por dominios de negocio con separación completa client/server/shared:
+
+```
+core/src/modules/
+├── banking/
+│   ├── client/
+│   │   ├── banking.controller.ts
+│   │   └── banking.ui.ts
+│   ├── server/
+│   │   ├── banking.controller.ts
+│   │   ├── banking.service.ts
+│   │   └── banking.repository.ts
+│   └── shared/
+│       ├── banking.types.ts
+│       └── banking.events.ts
+```
+
+**Ideal para**: Proyectos grandes, múltiples dominios de negocio, alta cohesión
+
+### 2. Layer-Based (Para equipos grandes)
+
+Arquitectura clásica por capas con separación técnica:
+
+```
+core/src/
+├── client/
+│   ├── controllers/
+│   └── services/
+├── server/
+│   ├── controllers/
+│   └── services/
+└── shared/
+```
+
+**Ideal para**: Equipos grandes con roles especializados (frontend/backend)
+
+### 3. Feature-Based (Simple y rápida)
+
+Estructura ligera para iteración rápida:
+
+```
+core/src/features/
+├── banking/
+│   ├── banking.controller.ts
+│   ├── banking.service.ts
+│   └── index.ts
+```
+
+**Ideal para**: Proyectos pequeños/medianos, features independientes
+
+### 4. Hybrid (Flexible)
+
+Mezcla módulos críticos (domain-driven) con features simples:
+
+```
+core/src/
+├── core-modules/  # Sistemas críticos
+│   └── identity/
+├── features/      # Features simples
+│   └── notifications/
+```
+
+**Ideal para**: Proyectos evolutivos, complejidad mixta
+
+> ¡Elige tu arquitectura durante `opencore init` - los comandos se adaptan automáticamente!
+
 ## ⚡ Inicio Rápido
 
 ### 1. Crear un Nuevo Proyecto
 
 ```bash
 opencore init mi-servidor
+# Selecciona la arquitectura que prefieras
 cd mi-servidor
 pnpm install
 ```
@@ -49,13 +122,7 @@ pnpm install
 opencore create feature banking
 ```
 
-Esto crea:
-```
-core/src/features/banking/
-├── banking.controller.ts
-├── banking.service.ts
-└── index.ts
-```
+El CLI detecta tu arquitectura y crea los archivos apropiados automáticamente.
 
 ### 3. Crear un Resource
 
@@ -155,6 +222,9 @@ import { defineConfig } from '@open-core/cli'
 export default defineConfig({
   // Nombre del proyecto
   name: 'mi-servidor',
+  
+  // Arquitectura del proyecto
+  architecture: 'domain-driven',  // o 'layer-based', 'feature-based', 'hybrid'
   
   // Directorio de salida
   outDir: './dist/resources',
