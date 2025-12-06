@@ -42,11 +42,13 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		UseMinify:       useMinify,
 	}
 
-	// Create base directories
+	// Create base directories (always needed for bootstrap files)
 	dirs := []string{
 		targetPath,
 		filepath.Join(targetPath, "core"),
 		filepath.Join(targetPath, "core", "src"),
+		filepath.Join(targetPath, "core", "src", "client"),
+		filepath.Join(targetPath, "core", "src", "server"),
 		filepath.Join(targetPath, "resources"),
 	}
 
@@ -58,10 +60,8 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		)
 	case "layer-based":
 		dirs = append(dirs,
-			filepath.Join(targetPath, "core", "src", "client"),
 			filepath.Join(targetPath, "core", "src", "client", "controllers"),
 			filepath.Join(targetPath, "core", "src", "client", "services"),
-			filepath.Join(targetPath, "core", "src", "server"),
 			filepath.Join(targetPath, "core", "src", "server", "controllers"),
 			filepath.Join(targetPath, "core", "src", "server", "services"),
 			filepath.Join(targetPath, "core", "src", "shared"),
@@ -69,22 +69,16 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 	case "feature-based":
 		dirs = append(dirs,
 			filepath.Join(targetPath, "core", "src", "features"),
-			filepath.Join(targetPath, "core", "src", "client"),
-			filepath.Join(targetPath, "core", "src", "server"),
 		)
 	case "hybrid":
 		dirs = append(dirs,
 			filepath.Join(targetPath, "core", "src", "core-modules"),
 			filepath.Join(targetPath, "core", "src", "features"),
-			filepath.Join(targetPath, "core", "src", "client"),
-			filepath.Join(targetPath, "core", "src", "server"),
 		)
 	default:
 		// Fallback to feature-based
 		dirs = append(dirs,
 			filepath.Join(targetPath, "core", "src", "features"),
-			filepath.Join(targetPath, "core", "src", "client"),
-			filepath.Join(targetPath, "core", "src", "server"),
 		)
 	}
 
