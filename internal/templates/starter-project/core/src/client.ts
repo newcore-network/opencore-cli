@@ -3,8 +3,8 @@
 // Import your client controllers here
 // OpenCore will automatically scan and register them via decorators
 // Example:
-// import '../client/controllers/hud.controller';
-// import '../client/services/ui.service';
+// import './features/hud';
+// import './modules/interface';
 
 console.log('{{.ProjectName}} client initialized!');
 

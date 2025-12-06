@@ -4,8 +4,8 @@
 // Import your controllers and services here
 // OpenCore will automatically scan and register them via decorators
 // Example:
-// import '../server/controllers/banking.controller';
-// import '../server/services/banking.service';
+// import './features/banking';
+// import './modules/jobs';
 
 console.log('{{.ProjectName}} server initialized!');
 

@@ -42,13 +42,11 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		UseMinify:       useMinify,
 	}
 
-	// Create base directories (always needed for bootstrap files)
+	// Create base directories
 	dirs := []string{
 		targetPath,
 		filepath.Join(targetPath, "core"),
 		filepath.Join(targetPath, "core", "src"),
-		filepath.Join(targetPath, "core", "src", "client"),
-		filepath.Join(targetPath, "core", "src", "server"),
 		filepath.Join(targetPath, "resources"),
 	}
 
@@ -59,9 +57,12 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 			filepath.Join(targetPath, "core", "src", "modules"),
 		)
 	case "layer-based":
+		// Layer-based needs client/server folders for controllers and services
 		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src", "client"),
 			filepath.Join(targetPath, "core", "src", "client", "controllers"),
 			filepath.Join(targetPath, "core", "src", "client", "services"),
+			filepath.Join(targetPath, "core", "src", "server"),
 			filepath.Join(targetPath, "core", "src", "server", "controllers"),
 			filepath.Join(targetPath, "core", "src", "server", "services"),
 			filepath.Join(targetPath, "core", "src", "shared"),
@@ -90,14 +91,23 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 
 	// Generate files from templates
 	files := map[string]string{
-		"package.json":            filepath.Join(targetPath, "package.json"),
-		"opencore.config.ts":      filepath.Join(targetPath, "opencore.config.ts"),
-		"pnpm-workspace.yaml":     filepath.Join(targetPath, "pnpm-workspace.yaml"),
-		"core/package.json":       filepath.Join(targetPath, "core", "package.json"),
-		"core/tsconfig.json":      filepath.Join(targetPath, "core", "tsconfig.json"),
-		"core/fxmanifest.lua":     filepath.Join(targetPath, "core", "fxmanifest.lua"),
-		"core/src/server/main.ts": filepath.Join(targetPath, "core", "src", "server", "main.ts"),
-		"core/src/client/main.ts": filepath.Join(targetPath, "core", "src", "client", "main.ts"),
+		"package.json":        filepath.Join(targetPath, "package.json"),
+		"opencore.config.ts":  filepath.Join(targetPath, "opencore.config.ts"),
+		"pnpm-workspace.yaml": filepath.Join(targetPath, "pnpm-workspace.yaml"),
+		"core/package.json":   filepath.Join(targetPath, "core", "package.json"),
+		"core/tsconfig.json":  filepath.Join(targetPath, "core", "tsconfig.json"),
+		"core/fxmanifest.lua": filepath.Join(targetPath, "core", "fxmanifest.lua"),
+	}
+
+	// Add bootstrap files based on architecture
+	if architecture == "layer-based" {
+		// Layer-based uses main.ts inside folders
+		files["core/src/server/main.ts"] = filepath.Join(targetPath, "core", "src", "server", "main.ts")
+		files["core/src/client/main.ts"] = filepath.Join(targetPath, "core", "src", "client", "main.ts")
+	} else {
+		// All other architectures use client.ts and server.ts directly in src/
+		files["core/src/server.ts"] = filepath.Join(targetPath, "core", "src", "server.ts")
+		files["core/src/client.ts"] = filepath.Join(targetPath, "core", "src", "client.ts")
 	}
 
 	for tplFile, targetFile := range files {
