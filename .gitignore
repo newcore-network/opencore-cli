@@ -1,0 +1,36 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+opencore
+opencore-*
+!scripts/*.sh
+
+# Test binary
+*.test
+
+# Output
+*.out
+dist/
+build/
+
+# Go workspace
+*.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NPM
+node_modules/
+npm/*.tgz
+

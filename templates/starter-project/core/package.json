@@ -1,0 +1,17 @@
+{
+  "name": "{{.ProjectName}}-core",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/server/main.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@open-core/framework": "latest"{{if .InstallIdentity}},
+    "@open-core/identity": "latest"{{end}}
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
+

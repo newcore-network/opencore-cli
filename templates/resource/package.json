@@ -1,0 +1,16 @@
+{
+  "name": "{{.ResourceName}}",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/server/main.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@open-core/framework": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
+

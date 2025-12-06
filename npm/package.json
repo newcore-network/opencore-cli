@@ -1,0 +1,38 @@
+{
+  "name": "@open-core/cli",
+  "version": "0.1.0",
+  "description": "Official CLI tool for OpenCore Framework",
+  "main": "index.js",
+  "bin": {
+    "opencore": "index.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/newcore-network/opencore-cli.git"
+  },
+  "keywords": [
+    "opencore",
+    "fivem",
+    "cli",
+    "framework"
+  ],
+  "author": "Newcore Network",
+  "license": "MPL-2.0",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "files": [
+    "index.js",
+    "install.js",
+    "binary.js"
+  ]
+}
+
