@@ -36,6 +36,7 @@ type buildModel struct {
 	done      bool
 	resources []string
 	current   int
+	outDir    string
 }
 
 func (m buildModel) Init() tea.Cmd {
@@ -131,7 +132,7 @@ func (m buildModel) renderResults() string {
 				"Output: %s",
 			successCount,
 			totalDuration.Round(time.Millisecond),
-			m.resources[0], // Simplified - should use config.OutDir
+			m.outDir,
 		)
 		s += ui.SuccessBoxStyle.Render(boxContent)
 	} else {
@@ -180,6 +181,7 @@ func (b *Builder) Build() error {
 		results:   []buildMsg{},
 		current:   0,
 		done:      false,
+		outDir:    b.config.OutDir,
 	}
 
 	p := tea.NewProgram(m)

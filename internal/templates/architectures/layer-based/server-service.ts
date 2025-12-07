@@ -1,4 +1,4 @@
-import { Server } from '@open-core/framework';
+import { Server, Player } from '@open-core/framework';
 
 @Server.Injectable()
 export class {{.FeatureNamePascal}}Service {
@@ -6,13 +6,13 @@ export class {{.FeatureNamePascal}}Service {
     console.log('{{.FeatureNamePascal}}Service initialized');
   }
 
-  async execute(player: Server.Player, args: string[]) {
+  async execute(player: Player, args: string[]) {
     // Business logic here
     console.log(`Executing for player ${player.source}`);
     return { success: true };
   }
 
-  async process(player: Server.Player, data: any) {
+  async process(player: Player, data: any) {
     // Process data
     return { success: true, data };
   }

@@ -6,8 +6,8 @@ export class {{.ModuleNamePascal}}Controller {
   constructor(private readonly {{.ModuleName}}Service: {{.ModuleNamePascal}}Service) {}
 
   @Server.Command('{{.ModuleName}}')
-  async handle(source: number, args: string[]) {
-    const player = Server.getPlayer(source);
+  async handleCommand(source: number, args: string[]) {
+    const player = Server.Player.fromSource(source);
     if (!player) return;
 
     const result = await this.{{.ModuleName}}Service.execute(player, args);
@@ -15,8 +15,8 @@ export class {{.ModuleNamePascal}}Controller {
   }
 
   @Server.OnNet('{{.ModuleName}}:request')
-  async handleRequest(data: any) {
-    const player = Server.getPlayer(source);
+  async handleRequest(source: number, data: any) {
+    const player = Server.Player.fromSource(source);
     if (!player) return;
 
     const response = await this.{{.ModuleName}}Service.processRequest(player, data);

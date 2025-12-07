@@ -47,6 +47,7 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		targetPath,
 		filepath.Join(targetPath, "core"),
 		filepath.Join(targetPath, "core", "src"),
+		filepath.Join(targetPath, "views"),
 		filepath.Join(targetPath, "resources"),
 	}
 

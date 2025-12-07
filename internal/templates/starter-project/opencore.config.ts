@@ -4,21 +4,29 @@ export default defineConfig({
   name: '{{.ProjectName}}',
   architecture: '{{.Architecture}}',
   outDir: './dist/resources',
-  
+
   core: {
     path: './core',
     resourceName: '[core]',
+    entryPoints: {
+      server: './core/src/server.ts',
+      client: './core/src/client.ts',
+    },
   },
-  
+
   resources: {
     include: ['./resources/*'],
   },
-  {{if .InstallIdentity}}
+
+  views: {
+    path: './views',
+  },
+  {{ if .InstallIdentity }}
   modules: ['@open-core/identity'],
-  {{end}}
+  {{ end }}
   build: {
-    minify: {{.UseMinify}},
-    sourceMaps: true,
+  minify: {{.UseMinify }},
+  sourceMaps: true,
   }
 })
 

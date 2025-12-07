@@ -1,11 +1,13 @@
 // OpenCore Framework - Server Entry Point
+import { Server } from '@open-core/framework';
 {{if .InstallIdentity}}import '@open-core/identity';{{end}}
 
-// Import your controllers and services here
-// OpenCore will automatically scan and register them via decorators
-// Example:
-// import './features/banking';
-// import './modules/jobs';
+// Register your controllers - OpenCore scans decorators automatically
+// Example imports based on your architecture:
+// import './modules/banking/server/banking.controller';
+// import './features/jobs';
+
+Server.init();
 
 console.log('{{.ProjectName}} server initialized!');
 

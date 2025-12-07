@@ -98,7 +98,10 @@ func (m cloneModel) clone() tea.Cmd {
 
 		// Remove .git directory
 		gitDir := filepath.Join(targetPath, ".git")
-		os.RemoveAll(gitDir)
+		if err := os.RemoveAll(gitDir); err != nil {
+			// Log warning but don't fail - the clone was successful
+			return cloneResultMsg{err: fmt.Errorf("cloned successfully but failed to remove .git: %w", err)}
+		}
 
 		return cloneResultMsg{err: nil}
 	}

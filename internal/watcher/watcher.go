@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -34,14 +35,28 @@ func New(cfg *config.Config) (*Watcher, error) {
 }
 
 func (w *Watcher) Watch() error {
-	// Add paths to watch
+	// Add paths to watch recursively
 	paths := w.config.GetResourcePaths()
-	for _, path := range paths {
-		srcPath := filepath.Join(path, "src")
-		if err := w.watcher.Add(srcPath); err != nil {
-			fmt.Println(ui.Warning(fmt.Sprintf("Failed to watch %s: %v", srcPath, err)))
+	for _, basePath := range paths {
+		srcPath := filepath.Join(basePath, "src")
+
+		// Walk directory recursively to add all subdirectories
+		err := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil // Skip directories we can't access
+			}
+			if d.IsDir() {
+				if watchErr := w.watcher.Add(path); watchErr != nil {
+					fmt.Println(ui.Warning(fmt.Sprintf("Failed to watch %s: %v", path, watchErr)))
+				}
+			}
+			return nil
+		})
+
+		if err != nil {
+			fmt.Println(ui.Warning(fmt.Sprintf("Failed to walk %s: %v", srcPath, err)))
 		} else {
-			fmt.Println(ui.Info(fmt.Sprintf("Watching: %s", srcPath)))
+			fmt.Println(ui.Info(fmt.Sprintf("Watching: %s (recursive)", srcPath)))
 		}
 	}
 

@@ -3,6 +3,7 @@
   "version": "0.1.2",
   "description": "Official CLI tool for OpenCore Framework",
   "main": "index.js",
+  "types": "index.d.ts",
   "bin": {
     "opencore": "index.js"
   },
@@ -31,7 +32,9 @@
   ],
   "files": [
     "index.js",
+    "index.d.ts",
     "install.js",
-    "binary.js"
+    "binary.js",
+    "config-helper.js"
   ]
 }

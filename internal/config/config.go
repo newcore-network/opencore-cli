@@ -118,7 +118,31 @@ func (c *Config) GetResourcePaths() []string {
 		paths = append(paths, res.Path)
 	}
 
-	// TODO: Add glob pattern matching for include
+	// Add resources matching include glob patterns
+	for _, pattern := range c.Resources.Include {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			// Invalid pattern, skip it
+			continue
+		}
+		for _, match := range matches {
+			// Only include directories (resources are directories)
+			info, err := os.Stat(match)
+			if err == nil && info.IsDir() {
+				// Avoid duplicates
+				isDuplicate := false
+				for _, existing := range paths {
+					if existing == match {
+						isDuplicate = true
+						break
+					}
+				}
+				if !isDuplicate {
+					paths = append(paths, match)
+				}
+			}
+		}
+	}
 
 	return paths
 }

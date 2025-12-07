@@ -3,22 +3,29 @@
 const { getBinaryPath } = require('./binary');
 const { spawn } = require('child_process');
 
-const binaryPath = getBinaryPath();
+// Export config helper for opencore.config.ts
+const { defineConfig } = require('./config-helper');
+module.exports = { defineConfig };
 
-const child = spawn(binaryPath, process.argv.slice(2), {
-  stdio: 'inherit',
-  windowsHide: true
-});
+// Only run the binary if this is being executed directly
+if (require.main === module) {
+  const binaryPath = getBinaryPath();
 
-child.on('exit', (code) => {
-  process.exit(code || 0);
-});
+  const child = spawn(binaryPath, process.argv.slice(2), {
+    stdio: 'inherit',
+    windowsHide: true
+  });
 
-process.on('SIGINT', () => {
-  child.kill('SIGINT');
-});
+  child.on('exit', (code) => {
+    process.exit(code || 0);
+  });
 
-process.on('SIGTERM', () => {
-  child.kill('SIGTERM');
-});
+  process.on('SIGINT', () => {
+    child.kill('SIGINT');
+  });
+
+  process.on('SIGTERM', () => {
+    child.kill('SIGTERM');
+  });
+}
 
