@@ -169,25 +169,68 @@ func (m buildModel) buildNext() tea.Cmd {
 func (b *Builder) Build() error {
 	fmt.Println(ui.Logo())
 
-	resources := b.config.GetResourcePaths()
+	// Check if scripts/build.js exists
+	buildScript := filepath.Join(".", "scripts", "build.js")
+	if _, err := os.Stat(buildScript); os.IsNotExist(err) {
+		return fmt.Errorf("build script not found: %s", buildScript)
+	}
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(ui.PrimaryColor)
 
-	m := buildModel{
-		spinner:   s,
-		resources: resources,
-		results:   []buildMsg{},
-		current:   0,
-		done:      false,
-		outDir:    b.config.OutDir,
+	// Build core using scripts/build.js
+	fmt.Printf("%s Building core...\n", s.View())
+
+	start := time.Now()
+	cmd := exec.Command("node", "scripts/build.js")
+	cmd.Dir = "."
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("core build failed: %w", err)
 	}
 
-	p := tea.NewProgram(m)
-	if _, err := p.Run(); err != nil {
-		return err
+	duration := time.Since(start)
+
+	// Build resources if any
+	resources := b.config.GetResourcePaths()
+	// Filter out core from resources (it's already built)
+	filteredResources := []string{}
+	for _, r := range resources {
+		if r != b.config.Core.Path {
+			filteredResources = append(filteredResources, r)
+		}
 	}
+
+	if len(filteredResources) > 0 {
+		m := buildModel{
+			spinner:   s,
+			resources: filteredResources,
+			results:   []buildMsg{},
+			current:   0,
+			done:      false,
+			outDir:    b.config.OutDir,
+		}
+
+		p := tea.NewProgram(m)
+		if _, err := p.Run(); err != nil {
+			return err
+		}
+	}
+
+	// Show success
+	boxContent := fmt.Sprintf(
+		"✓ Build completed successfully!\n\n"+
+			"Core: %s\n"+
+			"Resources: %d\n"+
+			"Output: %s",
+		duration.Round(time.Millisecond),
+		len(filteredResources),
+		b.config.OutDir,
+	)
+	fmt.Println(ui.SuccessBoxStyle.Render(boxContent))
 
 	return nil
 }

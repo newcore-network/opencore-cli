@@ -1,23 +1,24 @@
 import { Client } from '@open-core/framework';
 
-@Client.Injectable()
-export class {{.ModuleNamePascal}}UI {
-  private isVisible = false;
+@Client.Controller()
+export class {{.ModuleNamePascal }}UI {
+  constructor(private NUI: Client.NuiBridge) { }
 
+  @Client.KeyMapping("f5", "Open {{.ModuleNamePascal}} UI")
   show() {
-    this.isVisible = true;
     // Show NUI or UI logic
     console.log('{{.ModuleNamePascal}} UI shown');
   }
 
+  @Client.NuiCallback('{{.ModuleNamePascal}}:close')
   hide() {
-    this.isVisible = false;
     // Hide NUI or UI logic
     console.log('{{.ModuleNamePascal}} UI hidden');
   }
 
+  @Client.OnNet('{{.ModuleNamePascal}}:update')
   update(data: any) {
-    // Update UI with new data
+    this.NUI.send('{{.ModuleNamePascal}}:update', data);
     console.log('UI updated with:', data);
   }
 }

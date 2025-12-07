@@ -2,9 +2,6 @@
   "name": "{{.ProjectName}}-core",
   "version": "1.0.0",
   "private": true,
-  "main": "dist/server.js",
-  "scripts": {
-    "build": "tsc"
-  }
+  "main": "dist/server.js"
 }
 
