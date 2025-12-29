@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/newcore-network/opencore-cli/internal/templates"
@@ -26,72 +26,124 @@ func NewInitCommand() *cobra.Command {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	fmt.Println(ui.Logo())
-	fmt.Println(ui.TitleStyle.Render("Initialize New Project"))
-	fmt.Println()
-
-	var projectName string
-	var architecture string
-	var installIdentity bool
-	var useMinify bool
-
-	// If project name not provided as arg, prompt for it
-	if len(args) > 0 {
-		projectName = args[0]
+	// Define wizard steps
+	steps := []ui.WizardStep{
+		{
+			Title:       "Project Name",
+			Description: "Name of your OpenCore server project (no spaces)",
+			Type:        ui.StepTypeInput,
+			Validate: func(s string) error {
+				if s == "" {
+					return fmt.Errorf("project name cannot be empty")
+				}
+				if strings.Contains(s, " ") {
+					return fmt.Errorf("project name cannot contain spaces")
+				}
+				if _, err := os.Stat(s); !os.IsNotExist(err) {
+					return fmt.Errorf("directory '%s' already exists", s)
+				}
+				return nil
+			},
+		},
+		{
+			Title:       "Architecture",
+			Description: "Choose how to organize your code",
+			Type:        ui.StepTypeSelect,
+			Options: []ui.WizardOption{
+				{
+					Label: "Domain-Driven",
+					Value: "domain-driven",
+					Desc:  "Recommended for large projects with complex business logic",
+				},
+				{
+					Label: "Layer-Based",
+					Value: "layer-based",
+					Desc:  "Traditional separation by technical layers (controllers, services)",
+				},
+				{
+					Label: "Feature-Based",
+					Value: "feature-based",
+					Desc:  "Simple structure, good for small projects",
+				},
+				{
+					Label: "Hybrid",
+					Value: "hybrid",
+					Desc:  "Flexible approach for evolving projects",
+				},
+			},
+		},
+		{
+			Title:       "Modules",
+			Description: "Select official modules to install (space to toggle)",
+			Type:        ui.StepTypeMultiSelect,
+			Options: []ui.WizardOption{
+				{
+					Label: "@open-core/identity",
+					Value: "@open-core/identity",
+					Desc:  "Authentication and player identity management",
+				},
+				// Future modules can be added here:
+				// {
+				// 	Label: "@open-core/economy",
+				// 	Value: "@open-core/economy",
+				// 	Desc:  "In-game economy and currency system",
+				// },
+				// {
+				// 	Label: "@open-core/inventory",
+				// 	Value: "@open-core/inventory",
+				// 	Desc:  "Player inventory management",
+				// },
+			},
+		},
+		{
+			Title:       "Minification",
+			Description: "Enable code minification in production builds?",
+			Type:        ui.StepTypeConfirm,
+		},
 	}
 
-	// Always show interactive form for configuration
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Project Name").
-				Description("Name of your OpenCore server project").
-				Value(&projectName).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("project name cannot be empty")
-					}
-					if strings.Contains(s, " ") {
-						return fmt.Errorf("project name cannot contain spaces")
-					}
-					return nil
-				}),
-		),
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Project Architecture").
-				Description("Choose how to organize your code").
-				Options(
-					huh.NewOption("Domain-Driven (Recommended for large projects)", "domain-driven"),
-					huh.NewOption("Layer-Based (For large teams)", "layer-based"),
-					huh.NewOption("Feature-Based (Simple, for small projects)", "feature-based"),
-					huh.NewOption("Hybrid (Flexible, evolving projects)", "hybrid"),
-				).
-				Value(&architecture),
-		),
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Install @open-core/identity?").
-				Description("Official identity and authentication module").
-				Value(&installIdentity),
-			huh.NewConfirm().
-				Title("Enable minification in production?").
-				Value(&useMinify).
-				Affirmative("Yes").
-				Negative("No"),
-		),
-	)
+	// Pre-fill project name if provided as argument
+	wizard := ui.NewWizard(steps)
+	if len(args) > 0 {
+		wizard.GetValues()["Project Name"] = args[0]
+	}
 
-	if err := form.Run(); err != nil {
-		return err
+	// Run the wizard
+	p := tea.NewProgram(wizard, tea.WithAltScreen())
+	finalModel, err := p.Run()
+	if err != nil {
+		return fmt.Errorf("wizard error: %w", err)
+	}
+
+	result := finalModel.(ui.WizardModel)
+
+	// Check if cancelled
+	if result.IsCancelled() {
+		fmt.Println(ui.Warning("Project creation cancelled."))
+		return nil
+	}
+
+	// Extract values
+	projectName := result.GetStringValue("Project Name")
+	architecture := result.GetStringValue("Architecture")
+	modules := result.GetStringSliceValue("Modules")
+	useMinify := result.GetBoolValue("Minification")
+
+	// Check if identity module is selected
+	installIdentity := false
+	for _, mod := range modules {
+		if mod == "@open-core/identity" {
+			installIdentity = true
+			break
+		}
 	}
 
 	// Create project directory
 	projectPath := filepath.Join(".", projectName)
-	if _, err := os.Stat(projectPath); !os.IsNotExist(err) {
-		return fmt.Errorf("directory '%s' already exists", projectName)
-	}
 
+	fmt.Println()
+	fmt.Println(ui.Logo())
+	fmt.Println()
 	fmt.Println(ui.Info(fmt.Sprintf("Creating project: %s", projectName)))
 	fmt.Println()
 
@@ -103,14 +155,39 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println(ui.Success("Project created successfully!"))
 	fmt.Println()
-	fmt.Println(ui.BoxStyle.Render(
-		fmt.Sprintf("📁 Project: %s\n\n", projectName) +
-			"Next steps:\n" +
-			fmt.Sprintf("  cd %s\n", projectName) +
-			"  pnpm install\n" +
+
+	// Build modules string
+	modulesStr := "None"
+	if len(modules) > 0 {
+		modulesStr = strings.Join(modules, ", ")
+	}
+
+	// Summary box
+	summaryContent := fmt.Sprintf(
+		"Project: %s\n"+
+			"Architecture: %s\n"+
+			"Modules: %s\n"+
+			"Minify: %s\n\n"+
+			"Next steps:\n"+
+			"  cd %s\n"+
+			"  pnpm install\n"+
 			"  opencore dev",
-	))
+		projectName,
+		architecture,
+		modulesStr,
+		boolToYesNo(useMinify),
+		projectName,
+	)
+
+	fmt.Println(ui.SuccessBoxStyle.Render(summaryContent))
 	fmt.Println()
 
 	return nil
+}
+
+func boolToYesNo(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
 }

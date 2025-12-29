@@ -3,10 +3,12 @@ package builder
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -16,48 +18,588 @@ import (
 )
 
 type Builder struct {
-	config *config.Config
+	config          *config.Config
+	resourceBuilder *ResourceBuilder
+	deployer        *Deployer
 }
 
 func New(cfg *config.Config) *Builder {
-	return &Builder{config: cfg}
+	return &Builder{
+		config:          cfg,
+		resourceBuilder: NewResourceBuilder("."),
+		deployer:        NewDeployer(cfg),
+	}
 }
 
-type buildMsg struct {
-	resource string
-	success  bool
-	duration time.Duration
-	err      error
+// Build executes the full build process
+func (b *Builder) Build() error {
+	fmt.Println(ui.Logo())
+
+	// Cleanup embedded script on exit
+	defer b.resourceBuilder.Cleanup()
+
+	// Collect all build tasks
+	tasks := b.collectAllTasks()
+
+	if len(tasks) == 0 {
+		return fmt.Errorf("no resources to build")
+	}
+
+	// Determine number of workers
+	workers := b.config.Build.MaxWorkers
+	if workers == 0 {
+		workers = runtime.NumCPU()
+	}
+	if workers > len(tasks) {
+		workers = len(tasks)
+	}
+
+	// Build with parallel or sequential mode
+	var results []BuildResult
+	var err error
+
+	if b.config.Build.Parallel && len(tasks) > 1 {
+		results, err = b.buildParallel(tasks, workers)
+	} else {
+		results, err = b.buildSequential(tasks)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Deploy to destination if configured
+	if b.deployer.HasDestination() {
+		fmt.Printf("\n%s Deploying to %s...\n", ui.Info("→"), b.config.Destination)
+		if err := b.deployer.Deploy(); err != nil {
+			return fmt.Errorf("deployment failed: %w", err)
+		}
+		fmt.Println(ui.Success("Deployed successfully!"))
+	}
+
+	// Show final summary
+	b.showSummary(results)
+
+	return nil
+}
+
+// collectAllTasks gathers all build tasks from config
+func (b *Builder) collectAllTasks() []BuildTask {
+	var tasks []BuildTask
+
+	// Core task
+	coreTask := BuildTask{
+		Path:           b.config.Core.Path,
+		ResourceName:   b.config.Core.ResourceName,
+		Type:           TypeCore,
+		OutDir:         b.config.OutDir,
+		CustomCompiler: b.config.Core.CustomCompiler,
+		Options: BuildOptions{
+			Server:     true,
+			Client:     true,
+			Minify:     b.config.Build.Minify,
+			SourceMaps: b.config.Build.SourceMaps,
+			Target:     b.config.Build.Target,
+			Compile:    true,
+		},
+	}
+
+	// Add entry points if configured
+	if b.config.Core.EntryPoints != nil {
+		coreTask.Options.EntryPoints = &EntryPoints{
+			Server: b.config.Core.EntryPoints.Server,
+			Client: b.config.Core.EntryPoints.Client,
+		}
+	}
+
+	tasks = append(tasks, coreTask)
+
+	// Core views if configured
+	if b.config.Core.Views != nil {
+		tasks = append(tasks, BuildTask{
+			Path:           b.config.Core.Views.Path,
+			ResourceName:   b.config.Core.ResourceName + "/ui",
+			Type:           TypeViews,
+			OutDir:         filepath.Join(b.config.OutDir, b.config.Core.ResourceName, "ui"),
+			CustomCompiler: b.config.Core.CustomCompiler, // Use core's custom compiler for views too
+			Options: BuildOptions{
+				Framework:  b.config.Core.Views.Framework,
+				Minify:     b.config.Build.Minify,
+				SourceMaps: b.config.Build.SourceMaps,
+			},
+		})
+	}
+
+	// Resources from glob patterns
+	for _, pattern := range b.config.Resources.Include {
+		matches, _ := filepath.Glob(pattern)
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+
+			resourceName := filepath.Base(match)
+
+			// Skip if it's the core path
+			if match == b.config.Core.Path {
+				continue
+			}
+
+			// Check for explicit override
+			explicit := b.config.GetExplicitResource(match)
+
+			task := BuildTask{
+				Path:         match,
+				ResourceName: resourceName,
+				Type:         TypeResource,
+				OutDir:       b.config.OutDir,
+				Options: BuildOptions{
+					Server:     true,
+					Client:     b.hasClientCode(match),
+					Minify:     b.config.Build.Minify,
+					SourceMaps: b.config.Build.SourceMaps,
+					Target:     b.config.Build.Target,
+					Compile:    true,
+				},
+			}
+
+			// Apply explicit overrides
+			if explicit != nil {
+				if explicit.ResourceName != "" {
+					task.ResourceName = explicit.ResourceName
+				}
+				if explicit.CustomCompiler != "" {
+					task.CustomCompiler = explicit.CustomCompiler
+				}
+				if explicit.Build != nil {
+					if explicit.Build.Server != nil {
+						task.Options.Server = *explicit.Build.Server
+					}
+					if explicit.Build.Client != nil {
+						task.Options.Client = *explicit.Build.Client
+					}
+					if explicit.Build.NUI != nil {
+						task.Options.NUI = *explicit.Build.NUI
+					}
+					if explicit.Build.Minify != nil {
+						task.Options.Minify = *explicit.Build.Minify
+					}
+					if explicit.Build.SourceMaps != nil {
+						task.Options.SourceMaps = *explicit.Build.SourceMaps
+					}
+				}
+
+				// Add views task if configured
+				if explicit.Views != nil {
+					tasks = append(tasks, BuildTask{
+						Path:           explicit.Views.Path,
+						ResourceName:   task.ResourceName + "/ui",
+						Type:           TypeViews,
+						OutDir:         filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
+						CustomCompiler: explicit.CustomCompiler, // Use same compiler for views
+						Options: BuildOptions{
+							Framework:  explicit.Views.Framework,
+							Minify:     b.config.Build.Minify,
+							SourceMaps: b.config.Build.SourceMaps,
+						},
+					})
+				}
+			}
+
+			tasks = append(tasks, task)
+		}
+	}
+
+	// Explicit resources
+	for _, res := range b.config.Resources.Explicit {
+		// Skip if already added via glob
+		alreadyAdded := false
+		for _, t := range tasks {
+			if t.Path == res.Path {
+				alreadyAdded = true
+				break
+			}
+		}
+		if alreadyAdded {
+			continue
+		}
+
+		resourceName := res.ResourceName
+		if resourceName == "" {
+			resourceName = filepath.Base(res.Path)
+		}
+
+		task := BuildTask{
+			Path:           res.Path,
+			ResourceName:   resourceName,
+			Type:           TypeResource,
+			OutDir:         b.config.OutDir,
+			CustomCompiler: res.CustomCompiler,
+			Options: BuildOptions{
+				Server:     true,
+				Client:     true,
+				Minify:     b.config.Build.Minify,
+				SourceMaps: b.config.Build.SourceMaps,
+				Target:     b.config.Build.Target,
+				Compile:    true,
+			},
+		}
+
+		if res.Build != nil {
+			if res.Build.Server != nil {
+				task.Options.Server = *res.Build.Server
+			}
+			if res.Build.Client != nil {
+				task.Options.Client = *res.Build.Client
+			}
+			if res.Build.NUI != nil {
+				task.Options.NUI = *res.Build.NUI
+			}
+		}
+
+		tasks = append(tasks, task)
+
+		// Add views task if configured
+		if res.Views != nil {
+			tasks = append(tasks, BuildTask{
+				Path:           res.Views.Path,
+				ResourceName:   resourceName + "/ui",
+				Type:           TypeViews,
+				OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
+				CustomCompiler: res.CustomCompiler,
+				Options: BuildOptions{
+					Framework:  res.Views.Framework,
+					Minify:     b.config.Build.Minify,
+					SourceMaps: b.config.Build.SourceMaps,
+				},
+			})
+		}
+	}
+
+	// Standalone resources
+	if b.config.Standalone != nil {
+		// From glob patterns
+		for _, pattern := range b.config.Standalone.Include {
+			matches, _ := filepath.Glob(pattern)
+			for _, match := range matches {
+				info, err := os.Stat(match)
+				if err != nil || !info.IsDir() {
+					continue
+				}
+
+				resourceName := filepath.Base(match)
+				shouldCompile := b.config.ShouldCompile(match)
+
+				// Check for explicit override to get CustomCompiler
+				explicit := b.config.GetExplicitStandalone(match)
+				customCompiler := ""
+				if explicit != nil {
+					customCompiler = explicit.CustomCompiler
+				}
+
+				taskType := TypeStandalone
+				if !shouldCompile {
+					taskType = TypeCopy
+				}
+
+				tasks = append(tasks, BuildTask{
+					Path:           match,
+					ResourceName:   resourceName,
+					Type:           taskType,
+					OutDir:         b.config.OutDir,
+					CustomCompiler: customCompiler,
+					Options: BuildOptions{
+						Server:     true,
+						Client:     b.hasClientCode(match),
+						Minify:     b.config.Build.Minify,
+						SourceMaps: b.config.Build.SourceMaps,
+						Target:     b.config.Build.Target,
+						Compile:    shouldCompile,
+					},
+				})
+			}
+		}
+
+		// Explicit standalone
+		for _, res := range b.config.Standalone.Explicit {
+			resourceName := res.ResourceName
+			if resourceName == "" {
+				resourceName = filepath.Base(res.Path)
+			}
+
+			shouldCompile := true
+			if res.Compile != nil {
+				shouldCompile = *res.Compile
+			}
+
+			taskType := TypeStandalone
+			if !shouldCompile {
+				taskType = TypeCopy
+			}
+
+			task := BuildTask{
+				Path:           res.Path,
+				ResourceName:   resourceName,
+				Type:           taskType,
+				OutDir:         b.config.OutDir,
+				CustomCompiler: res.CustomCompiler,
+				Options: BuildOptions{
+					Server:     true,
+					Client:     b.hasClientCode(res.Path),
+					Minify:     b.config.Build.Minify,
+					SourceMaps: b.config.Build.SourceMaps,
+					Target:     b.config.Build.Target,
+					Compile:    shouldCompile,
+				},
+			}
+
+			tasks = append(tasks, task)
+
+			// Add views task if configured
+			if res.Views != nil {
+				tasks = append(tasks, BuildTask{
+					Path:           res.Views.Path,
+					ResourceName:   resourceName + "/ui",
+					Type:           TypeViews,
+					OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
+					CustomCompiler: res.CustomCompiler,
+					Options: BuildOptions{
+						Framework:  res.Views.Framework,
+						Minify:     b.config.Build.Minify,
+						SourceMaps: b.config.Build.SourceMaps,
+					},
+				})
+			}
+		}
+	}
+
+	return tasks
+}
+
+// buildParallel executes builds in parallel using worker pool with TUI
+func (b *Builder) buildParallel(tasks []BuildTask, workers int) ([]BuildResult, error) {
+	pool := NewWorkerPool(workers)
+	pool.Start(b.resourceBuilder.Build)
+
+	// Submit all tasks
+	pool.SubmitAll(tasks)
+
+	// Run TUI
+	m := newBuildModel(tasks, pool.Results())
+	p := tea.NewProgram(m)
+
+	finalModel, err := p.Run()
+	if err != nil {
+		pool.Cancel()
+		return nil, err
+	}
+
+	pool.Close()
+
+	model := finalModel.(buildModel)
+
+	// Check for failures
+	failCount := 0
+	for _, r := range model.results {
+		if !r.Success {
+			failCount++
+		}
+	}
+
+	if failCount > 0 {
+		return model.results, fmt.Errorf("%d resource(s) failed to build", failCount)
+	}
+
+	return model.results, nil
+}
+
+// buildSequential executes builds one by one
+func (b *Builder) buildSequential(tasks []BuildTask) ([]BuildResult, error) {
+	results := make([]BuildResult, 0, len(tasks))
+
+	for _, task := range tasks {
+		fmt.Printf("%s Building %s...\n", ui.Info("→"), task.ResourceName)
+
+		result := b.resourceBuilder.Build(task)
+		results = append(results, result)
+
+		if result.Success {
+			fmt.Println(ui.Success(fmt.Sprintf("[%s] compiled (%s)", task.ResourceName, result.Duration.Round(time.Millisecond))))
+		} else {
+			fmt.Println(ui.Error(fmt.Sprintf("[%s] failed: %v", task.ResourceName, result.Error)))
+			return results, fmt.Errorf("build failed for %s", task.ResourceName)
+		}
+	}
+
+	return results, nil
+}
+
+// hasClientCode checks if a resource has client code
+func (b *Builder) hasClientCode(resourcePath string) bool {
+	clientPath := filepath.Join(resourcePath, "src", "client")
+	info, err := os.Stat(clientPath)
+	return err == nil && info.IsDir()
+}
+
+// showSummary displays the build summary
+func (b *Builder) showSummary(results []BuildResult) {
+	successCount := 0
+	failCount := 0
+	totalDuration := time.Duration(0)
+
+	for _, r := range results {
+		if r.Success {
+			successCount++
+			totalDuration += r.Duration
+		} else {
+			failCount++
+		}
+	}
+
+	fmt.Println()
+
+	if failCount == 0 {
+		boxContent := fmt.Sprintf(
+			"Build completed successfully!\n\n"+
+				"Resources: %d\n"+
+				"Time: %s\n"+
+				"Output: %s",
+			successCount,
+			totalDuration.Round(time.Millisecond),
+			b.config.OutDir,
+		)
+		if b.deployer.HasDestination() {
+			boxContent += fmt.Sprintf("\nDeployed: %s", b.config.Destination)
+		}
+		fmt.Println(ui.SuccessBoxStyle.Render(boxContent))
+	} else {
+		boxContent := fmt.Sprintf(
+			"Build completed with errors\n\n"+
+				"Success: %d\n"+
+				"Failed: %d",
+			successCount,
+			failCount,
+		)
+		fmt.Println(ui.ErrorBoxStyle.Render(boxContent))
+	}
+}
+
+// ============================================================================
+// BubbleTea Model for Parallel Build TUI
+// ============================================================================
+
+type taskStatus int
+
+const (
+	statusPending taskStatus = iota
+	statusBuilding
+	statusDone
+	statusFailed
+)
+
+type taskState struct {
+	task   BuildTask
+	status taskStatus
+	result *BuildResult
 }
 
 type buildModel struct {
-	spinner   spinner.Model
-	results   []buildMsg
-	done      bool
-	resources []string
-	current   int
-	outDir    string
+	spinner     spinner.Model
+	progress    progress.Model
+	tasks       []taskState
+	results     []BuildResult
+	resultsChan <-chan BuildResult
+	completed   int
+	total       int
+	done        bool
+}
+
+type resultMsg BuildResult
+
+func newBuildModel(tasks []BuildTask, resultsChan <-chan BuildResult) buildModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(ui.PrimaryColor)
+
+	p := progress.New(progress.WithDefaultGradient())
+
+	taskStates := make([]taskState, len(tasks))
+	for i, t := range tasks {
+		taskStates[i] = taskState{
+			task:   t,
+			status: statusPending,
+		}
+	}
+
+	return buildModel{
+		spinner:     s,
+		progress:    p,
+		tasks:       taskStates,
+		results:     []BuildResult{},
+		resultsChan: resultsChan,
+		total:       len(tasks),
+	}
 }
 
 func (m buildModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		m.buildNext(),
+		waitForResult(m.resultsChan),
 	)
+}
+
+func waitForResult(ch <-chan BuildResult) tea.Cmd {
+	return func() tea.Msg {
+		result, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return resultMsg(result)
+	}
 }
 
 func (m buildModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case buildMsg:
-		m.results = append(m.results, msg)
-		m.current++
+	case resultMsg:
+		result := BuildResult(msg)
+		m.results = append(m.results, result)
+		m.completed++
 
-		if m.current >= len(m.resources) {
+		// Update task state
+		for i := range m.tasks {
+			if m.tasks[i].task.Path == result.Task.Path &&
+				m.tasks[i].task.Type == result.Task.Type {
+				if result.Success {
+					m.tasks[i].status = statusDone
+				} else {
+					m.tasks[i].status = statusFailed
+				}
+				m.tasks[i].result = &result
+				break
+			}
+		}
+
+		// Mark next pending tasks as building
+		buildingCount := 0
+		for i := range m.tasks {
+			if m.tasks[i].status == statusBuilding {
+				buildingCount++
+			}
+		}
+		for i := range m.tasks {
+			if m.tasks[i].status == statusPending && buildingCount < 4 {
+				m.tasks[i].status = statusBuilding
+				buildingCount++
+			}
+		}
+
+		if m.completed >= m.total {
 			m.done = true
 			return m, tea.Quit
 		}
 
-		return m, m.buildNext()
+		return m, waitForResult(m.resultsChan)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -75,182 +617,64 @@ func (m buildModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m buildModel) View() string {
 	if m.done {
-		return m.renderResults()
+		return m.renderFinal()
 	}
 
-	s := ui.TitleStyle.Render("Building Resources") + "\n\n"
+	var b strings.Builder
 
-	// Show completed
-	for _, result := range m.results {
-		if result.success {
-			s += ui.Success(fmt.Sprintf("[%s] compiled (%s)", result.resource, result.duration.Round(time.Millisecond)))
-		} else {
-			s += ui.Error(fmt.Sprintf("[%s] failed: %v", result.resource, result.err))
+	b.WriteString(ui.TitleStyle.Render("Building Resources"))
+	b.WriteString(fmt.Sprintf(" (%d/%d)\n\n", m.completed, m.total))
+
+	// Show tasks
+	for _, ts := range m.tasks {
+		switch ts.status {
+		case statusPending:
+			b.WriteString(fmt.Sprintf("  ○ %s\n", ui.Muted(ts.task.ResourceName)))
+		case statusBuilding:
+			b.WriteString(fmt.Sprintf("  %s %s\n", m.spinner.View(), ts.task.ResourceName))
+		case statusDone:
+			duration := ""
+			if ts.result != nil {
+				duration = fmt.Sprintf(" (%s)", ts.result.Duration.Round(time.Millisecond))
+			}
+			b.WriteString(fmt.Sprintf("  %s %s%s\n", ui.Success("✓"), ts.task.ResourceName, ui.Muted(duration)))
+		case statusFailed:
+			b.WriteString(fmt.Sprintf("  %s %s\n", ui.Error("✗"), ts.task.ResourceName))
 		}
-		s += "\n"
 	}
 
-	// Show current
-	if m.current < len(m.resources) {
-		s += fmt.Sprintf("%s Building %s...\n", m.spinner.View(), m.resources[m.current])
-	}
+	// Progress bar
+	b.WriteString("\n")
+	prog := float64(m.completed) / float64(m.total)
+	b.WriteString(m.progress.ViewAs(prog))
+	b.WriteString("\n")
 
-	return s
+	return b.String()
 }
 
-func (m buildModel) renderResults() string {
-	successCount := 0
-	failCount := 0
-	totalDuration := time.Duration(0)
+func (m buildModel) renderFinal() string {
+	var b strings.Builder
 
-	for _, result := range m.results {
-		if result.success {
-			successCount++
-			totalDuration += result.duration
-		} else {
-			failCount++
+	b.WriteString("\n")
+
+	for _, ts := range m.tasks {
+		switch ts.status {
+		case statusDone:
+			duration := ""
+			if ts.result != nil {
+				duration = fmt.Sprintf(" (%s)", ts.result.Duration.Round(time.Millisecond))
+			}
+			b.WriteString(fmt.Sprintf("%s [%s] compiled%s\n", ui.Success("✓"), ts.task.ResourceName, ui.Muted(duration)))
+		case statusFailed:
+			errMsg := ""
+			if ts.result != nil && ts.result.Error != nil {
+				errMsg = fmt.Sprintf(": %v", ts.result.Error)
+			}
+			b.WriteString(fmt.Sprintf("%s [%s] failed%s\n", ui.Error("✗"), ts.task.ResourceName, errMsg))
+		default:
+			b.WriteString(fmt.Sprintf("○ [%s] skipped\n", ts.task.ResourceName))
 		}
 	}
 
-	s := "\n"
-	for _, result := range m.results {
-		if result.success {
-			s += ui.Success(fmt.Sprintf("[%s] compiled (%s)", result.resource, result.duration.Round(time.Millisecond)))
-		} else {
-			s += ui.Error(fmt.Sprintf("[%s] failed: %v", result.resource, result.err))
-		}
-		s += "\n"
-	}
-
-	s += "\n"
-
-	if failCount == 0 {
-		boxContent := fmt.Sprintf(
-			"✓ Build completed successfully!\n\n"+
-				"Resources: %d\n"+
-				"Time: %s\n"+
-				"Output: %s",
-			successCount,
-			totalDuration.Round(time.Millisecond),
-			m.outDir,
-		)
-		s += ui.SuccessBoxStyle.Render(boxContent)
-	} else {
-		boxContent := fmt.Sprintf(
-			"✗ Build completed with errors\n\n"+
-				"Success: %d\n"+
-				"Failed: %d",
-			successCount,
-			failCount,
-		)
-		s += ui.ErrorBoxStyle.Render(boxContent)
-	}
-
-	return s
-}
-
-func (m buildModel) buildNext() tea.Cmd {
-	return func() tea.Msg {
-		resourcePath := m.resources[m.current]
-		start := time.Now()
-
-		err := buildResource(resourcePath)
-		duration := time.Since(start)
-
-		return buildMsg{
-			resource: filepath.Base(resourcePath),
-			success:  err == nil,
-			duration: duration,
-			err:      err,
-		}
-	}
-}
-
-func (b *Builder) Build() error {
-	fmt.Println(ui.Logo())
-
-	// Check if scripts/build.js exists
-	buildScript := filepath.Join(".", "scripts", "build.js")
-	if _, err := os.Stat(buildScript); os.IsNotExist(err) {
-		return fmt.Errorf("build script not found: %s", buildScript)
-	}
-
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(ui.PrimaryColor)
-
-	// Build core using scripts/build.js
-	fmt.Printf("%s Building core...\n", s.View())
-
-	start := time.Now()
-	cmd := exec.Command("node", "scripts/build.js")
-	cmd.Dir = "."
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("core build failed: %w", err)
-	}
-
-	duration := time.Since(start)
-
-	// Build resources if any
-	resources := b.config.GetResourcePaths()
-	// Filter out core from resources (it's already built)
-	filteredResources := []string{}
-	for _, r := range resources {
-		if r != b.config.Core.Path {
-			filteredResources = append(filteredResources, r)
-		}
-	}
-
-	if len(filteredResources) > 0 {
-		m := buildModel{
-			spinner:   s,
-			resources: filteredResources,
-			results:   []buildMsg{},
-			current:   0,
-			done:      false,
-			outDir:    b.config.OutDir,
-		}
-
-		p := tea.NewProgram(m)
-		if _, err := p.Run(); err != nil {
-			return err
-		}
-	}
-
-	// Show success
-	boxContent := fmt.Sprintf(
-		"✓ Build completed successfully!\n\n"+
-			"Core: %s\n"+
-			"Resources: %d\n"+
-			"Output: %s",
-		duration.Round(time.Millisecond),
-		len(filteredResources),
-		b.config.OutDir,
-	)
-	fmt.Println(ui.SuccessBoxStyle.Render(boxContent))
-
-	return nil
-}
-
-func buildResource(resourcePath string) error {
-	// Check if package.json exists
-	packageJSON := filepath.Join(resourcePath, "package.json")
-	if _, err := os.Stat(packageJSON); os.IsNotExist(err) {
-		return fmt.Errorf("package.json not found in %s", resourcePath)
-	}
-
-	// Run pnpm build
-	cmd := exec.Command("pnpm", "build")
-	cmd.Dir = resourcePath
-	cmd.Stdout = nil // Suppress output
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("build failed: %w", err)
-	}
-
-	return nil
+	return b.String()
 }

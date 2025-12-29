@@ -9,32 +9,68 @@ import (
 )
 
 type Config struct {
-	Name      string         `json:"name"`
-	OutDir    string         `json:"outDir"`
-	Core      CoreConfig     `json:"core"`
-	Resources ResourceConfig `json:"resources"`
-	Modules   []string       `json:"modules"`
-	Build     BuildConfig    `json:"build"`
+	Name        string            `json:"name"`
+	OutDir      string            `json:"outDir"`
+	Destination string            `json:"destination,omitempty"`
+	Core        CoreConfig        `json:"core"`
+	Resources   ResourcesConfig   `json:"resources"`
+	Standalone  *StandaloneConfig `json:"standalone,omitempty"`
+	Modules     []string          `json:"modules"`
+	Build       BuildConfig       `json:"build"`
 }
 
 type CoreConfig struct {
-	Path         string `json:"path"`
-	ResourceName string `json:"resourceName"`
+	Path           string       `json:"path"`
+	ResourceName   string       `json:"resourceName"`
+	EntryPoints    *EntryPoints `json:"entryPoints,omitempty"`
+	Views          *ViewsConfig `json:"views,omitempty"`
+	CustomCompiler string       `json:"customCompiler,omitempty"` // Path to custom build script
 }
 
-type ResourceConfig struct {
+type EntryPoints struct {
+	Server string `json:"server"`
+	Client string `json:"client"`
+}
+
+type ResourcesConfig struct {
 	Include  []string           `json:"include"`
 	Explicit []ExplicitResource `json:"explicit"`
 }
 
 type ExplicitResource struct {
-	Path         string `json:"path"`
-	ResourceName string `json:"resourceName"`
+	Path           string               `json:"path"`
+	ResourceName   string               `json:"resourceName,omitempty"`
+	Type           string               `json:"type,omitempty"`
+	Compile        *bool                `json:"compile,omitempty"`
+	Build          *ResourceBuildConfig `json:"build,omitempty"`
+	Views          *ViewsConfig         `json:"views,omitempty"`
+	CustomCompiler string               `json:"customCompiler,omitempty"` // Path to custom build script
+}
+
+type ResourceBuildConfig struct {
+	Server     *bool `json:"server,omitempty"`
+	Client     *bool `json:"client,omitempty"`
+	NUI        *bool `json:"nui,omitempty"`
+	Minify     *bool `json:"minify,omitempty"`
+	SourceMaps *bool `json:"sourceMaps,omitempty"`
+}
+
+type StandaloneConfig struct {
+	Include  []string           `json:"include"`
+	Explicit []ExplicitResource `json:"explicit,omitempty"`
+}
+
+type ViewsConfig struct {
+	Path      string `json:"path"`
+	Framework string `json:"framework,omitempty"`
 }
 
 type BuildConfig struct {
-	Minify     bool `json:"minify"`
-	SourceMaps bool `json:"sourceMaps"`
+	Minify     bool   `json:"minify"`
+	SourceMaps bool   `json:"sourceMaps"`
+	Target     string `json:"target,omitempty"`
+	Parallel   bool   `json:"parallel"`
+	MaxWorkers int    `json:"maxWorkers,omitempty"`
 }
 
 // Load reads and transpiles opencore.config.ts to Config
@@ -55,7 +91,7 @@ const path = require('path');
   try {
     // Use tsx to run TypeScript directly
     const configPath = path.resolve(process.argv[2]);
-    
+
     // Try to require tsx or ts-node
     let result;
     try {
@@ -71,7 +107,7 @@ const path = require('path');
         result = require(configPath);
       }
     }
-    
+
     const config = result.default || result;
     console.log(JSON.stringify(config, null, 2));
   } catch (error) {
@@ -104,6 +140,9 @@ const path = require('path');
 	// Set defaults
 	if config.OutDir == "" {
 		config.OutDir = "./dist/resources"
+	}
+	if config.Build.Target == "" {
+		config.Build.Target = "ES2020"
 	}
 
 	return &config, nil
@@ -145,4 +184,136 @@ func (c *Config) GetResourcePaths() []string {
 	}
 
 	return paths
+}
+
+// GetStandalonePaths returns all standalone resource paths
+func (c *Config) GetStandalonePaths() []string {
+	if c.Standalone == nil {
+		return nil
+	}
+
+	var paths []string
+
+	// Add explicit standalone resources
+	for _, res := range c.Standalone.Explicit {
+		paths = append(paths, res.Path)
+	}
+
+	// Add standalone matching include glob patterns
+	for _, pattern := range c.Standalone.Include {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err == nil && info.IsDir() {
+				isDuplicate := false
+				for _, existing := range paths {
+					if existing == match {
+						isDuplicate = true
+						break
+					}
+				}
+				if !isDuplicate {
+					paths = append(paths, match)
+				}
+			}
+		}
+	}
+
+	return paths
+}
+
+// ShouldCompile returns whether a standalone resource should be compiled
+func (c *Config) ShouldCompile(path string) bool {
+	if c.Standalone == nil {
+		return true
+	}
+
+	for _, res := range c.Standalone.Explicit {
+		if res.Path == path {
+			if res.Compile != nil {
+				return *res.Compile
+			}
+			return true // default to compile
+		}
+	}
+
+	return true // default to compile for glob-matched resources
+}
+
+// GetResourceViews returns views config for a specific resource path
+func (c *Config) GetResourceViews(path string) *ViewsConfig {
+	// Check core
+	if path == c.Core.Path && c.Core.Views != nil {
+		return c.Core.Views
+	}
+
+	// Check explicit resources
+	for _, res := range c.Resources.Explicit {
+		if res.Path == path && res.Views != nil {
+			return res.Views
+		}
+	}
+
+	// Check standalone
+	if c.Standalone != nil {
+		for _, res := range c.Standalone.Explicit {
+			if res.Path == path && res.Views != nil {
+				return res.Views
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetExplicitResource returns the explicit resource config for a path, if any
+func (c *Config) GetExplicitResource(path string) *ExplicitResource {
+	for i := range c.Resources.Explicit {
+		if c.Resources.Explicit[i].Path == path {
+			return &c.Resources.Explicit[i]
+		}
+	}
+	return nil
+}
+
+// GetExplicitStandalone returns the explicit standalone config for a path, if any
+func (c *Config) GetExplicitStandalone(path string) *ExplicitResource {
+	if c.Standalone == nil {
+		return nil
+	}
+	for i := range c.Standalone.Explicit {
+		if c.Standalone.Explicit[i].Path == path {
+			return &c.Standalone.Explicit[i]
+		}
+	}
+	return nil
+}
+
+// GetCustomCompiler returns the custom compiler path for a specific resource, or empty if using default
+func (c *Config) GetCustomCompiler(resourcePath string) string {
+	// Check core
+	if resourcePath == c.Core.Path {
+		return c.Core.CustomCompiler
+	}
+
+	// Check explicit resources
+	for _, res := range c.Resources.Explicit {
+		if res.Path == resourcePath {
+			return res.CustomCompiler
+		}
+	}
+
+	// Check standalone
+	if c.Standalone != nil {
+		for _, res := range c.Standalone.Explicit {
+			if res.Path == resourcePath {
+				return res.CustomCompiler
+			}
+		}
+	}
+
+	return "" // Use embedded compiler
 }
