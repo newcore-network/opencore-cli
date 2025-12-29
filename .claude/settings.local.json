@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd:*)",
-      "Bash(go build:*)",
-      "mcp__ide__getDiagnostics"
-    ]
-  }
-}
