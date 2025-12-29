@@ -1,46 +1,36 @@
 # OpenCore CLI
 
-<div align="center">
-
-**Official command-line tool for the OpenCore Framework**
+Command-line interface for the OpenCore Framework. Build, manage, and deploy FiveM TypeScript projects with a modern toolchain.
 
 [![License](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://go.dev/)
 [![NPM Version](https://img.shields.io/npm/v/@open-core/cli.svg)](https://www.npmjs.com/package/@open-core/cli)
 
-[Quick Start](QUICKSTART.md) • [Architecture](ARCHITECTURE.md) • [Contributing](CONTRIBUTING.md)
+## Overview
 
-</div>
+OpenCore CLI provides a complete build system for FiveM TypeScript projects. It handles project scaffolding, parallel compilation, resource management, and deployment to FiveM servers.
 
----
+**Key capabilities:**
 
-Official command-line tool for creating, managing, and building FiveM servers with the [OpenCore Framework](https://github.com/newcore-network/opencore).
+- Project initialization with multiple architecture patterns
+- Parallel build system with esbuild and SWC for decorator support
+- Three resource types: Core, Resource (satellite), and Standalone
+- Hot-reload development mode with file watching
+- Automatic deployment to FiveM server directories
+- Embedded build toolchain (no project-level build scripts required)
 
-## ✨ Features
+## Installation
 
-- 🎨 **Beautiful CLI** - Animated UI with Charmbracelet ecosystem
-- 📦 **Project Scaffolding** - Generate projects with best practices
-- 🔧 **Generators** - Create features and resources instantly
-- 🏗️ **Build Orchestration** - TypeScript → JavaScript compilation
-- 🔥 **Hot Reload** - Development mode with file watching
-- 🩺 **Health Checks** - Validate project configuration
-- 📥 **Template Cloning** - Official templates from GitHub
-- 🚀 **Fast** - Written in Go for maximum performance
-
-## 📦 Installation
-
-### Via NPM (Recommended)
+### NPM (Recommended)
 
 ```bash
 npm install -g @open-core/cli
-# or
-pnpm add -g @open-core/cli
 ```
 
-### Via Go
+### Go
 
 ```bash
-go install github.com/newcore-network/opencore-cli/cmd/opencore@latest
+go install github.com/newcore-network/opencore-cli@latest
 ```
 
 ### From Source
@@ -48,227 +38,158 @@ go install github.com/newcore-network/opencore-cli/cmd/opencore@latest
 ```bash
 git clone https://github.com/newcore-network/opencore-cli
 cd opencore-cli
-go build -o opencore ./cmd/opencore
+go build -o opencore .
 ```
 
-## 🎯 Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
-| `opencore init [name]` | Create a new OpenCore project |
-| `opencore create feature [name]` | Create a new feature in core |
-| `opencore create resource [name]` | Create a new independent resource |
+| `opencore init [name]` | Initialize a new project with interactive wizard |
 | `opencore build` | Build all resources for production |
-| `opencore dev` | Start development mode with hot-reload |
+| `opencore dev` | Start development mode with file watching |
 | `opencore doctor` | Validate project configuration |
-| `opencore clone [template]` | Clone an official template |
-| `opencore --version` | Show CLI version |
+| `opencore version` | Display CLI version |
 
-## 🏁 Quick Start
+## Quick Start
 
 ```bash
-# Create a new project
 opencore init my-server
 cd my-server
-
-# Install dependencies
 pnpm install
-
-# Create a feature in core
-opencore create feature banking
-
-# Create an independent resource
-opencore create resource chat --with-client
-
-# Start development mode
 opencore dev
-
-# Build for production
-opencore build
 ```
 
-**Want more details?** Check out the [Quick Start Guide](QUICKSTART.md).
+## Configuration
 
-## 📸 Screenshots
-
-```
-╭──────────────────────────────────────────╮
-│                                          │
-│               ◆ OpenCore CLI             │
-│             By Newcore Network           │
-│                                          │
-╰──────────────────────────────────────────╯
-
-Building Resources
-
-✓ [core] compiled (1.2s)
-✓ [oc-chat] compiled (0.8s)
-
-┌─────────────────────────────────────────┐
-│ ✓ Build completed successfully! 🚀      │
-│                                         │
-│ Resources: 2                            │
-│ Time: 2.0s                              │
-│ Output: ./dist/resources/               │
-└─────────────────────────────────────────┘
-```
-
-## 🏗️ Project Architectures
-
-OpenCore CLI supports **4 project architectures** to fit your team size and project complexity:
-
-### 1. Domain-Driven (Recommended for large projects)
-
-Organize code by business domains with full client/server/shared separation:
-
-```
-core/src/modules/
-├── banking/
-│   ├── client/
-│   │   ├── banking.controller.ts
-│   │   └── banking.ui.ts
-│   ├── server/
-│   │   ├── banking.controller.ts
-│   │   ├── banking.service.ts
-│   │   └── banking.repository.ts
-│   └── shared/
-│       ├── banking.types.ts
-│       └── banking.events.ts
-```
-
-**Best for**: Large projects, multiple business domains, high cohesion needs
-
-### 2. Layer-Based (For large teams)
-
-Classic layered architecture with technical separation:
-
-```
-core/src/
-├── client/
-│   ├── controllers/
-│   └── services/
-├── server/
-│   ├── controllers/
-│   └── services/
-└── shared/
-```
-
-**Best for**: Large teams with specialized roles (frontend/backend)
-
-### 3. Feature-Based (Simple & fast)
-
-Lightweight structure for quick iteration:
-
-```
-core/src/features/
-├── banking/
-│   ├── banking.controller.ts
-│   ├── banking.service.ts
-│   └── index.ts
-```
-
-**Best for**: Small/medium projects, independent features
-
-### 4. Hybrid (Flexible)
-
-Mix critical modules (domain-driven) with simple features:
-
-```
-core/src/
-├── core-modules/  # Critical systems
-│   └── identity/
-├── features/      # Simple features
-│   └── notifications/
-```
-
-**Best for**: Evolving projects, mixed complexity needs
-
-> Choose your architecture during `opencore init` - it adapts commands automatically!
-
-## ⚙️ Configuration
-
-Projects use an `opencore.config.ts` file:
+Projects are configured via `opencore.config.ts`:
 
 ```typescript
 import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: 'my-server',
-  architecture: 'domain-driven',  // or 'layer-based', 'feature-based', 'hybrid'
   outDir: './dist/resources',
+
+  // Deploy builds directly to FiveM server
+  destination: 'C:/FXServer/server-data/resources/[my-server]',
+
   core: {
     path: './core',
     resourceName: '[core]',
+    entryPoints: {
+      server: './core/src/server.ts',
+      client: './core/src/client.ts',
+    },
+    // Optional: custom build script
+    // customCompiler: './scripts/core-build.js',
   },
+
   resources: {
     include: ['./resources/*'],
+    explicit: [
+      {
+        path: './resources/admin',
+        resourceName: 'admin-panel',
+        views: {
+          path: './resources/admin/ui',
+          framework: 'react',
+        },
+      },
+    ],
   },
+
+  standalone: {
+    include: ['./standalone/*'],
+    explicit: [
+      { path: './standalone/utils', compile: true },
+      { path: './standalone/legacy', compile: false },  // Copy without compilation
+    ],
+  },
+
   modules: ['@open-core/identity'],
+
   build: {
     minify: true,
     sourceMaps: true,
-  }
+    target: 'ES2020',
+    parallel: true,
+    maxWorkers: 8,
+  },
 })
 ```
 
-## 🛠️ Development
+## Resource Types
 
-```bash
-# Install dependencies
-go mod download
+### Core
 
-# Run locally
-go run ./cmd/opencore
+The central resource containing the framework runtime, dependency injection container, and shared services. All other resources depend on core at runtime.
 
-# Build
-go build -o opencore ./cmd/opencore
+### Resource (Satellite)
 
-# Run tests
-go test ./...
+Resources that extend core functionality. They import from `@open-core/framework` which resolves to core exports at runtime via FiveM's resource system.
+
+### Standalone
+
+Independent resources with no core dependency. Can use basic decorators via SWC. Set `compile: false` for pure Lua/JS resources that should be copied without transformation.
+
+## Build System
+
+The CLI embeds a complete build toolchain based on esbuild with SWC for TypeScript decorator support. No build scripts are required in individual projects.
+
+For advanced use cases, specify a custom compiler per resource:
+
+```typescript
+core: {
+  path: './core',
+  customCompiler: './scripts/custom-build.js',
+}
 ```
 
-## 📚 Documentation
+Custom compilers receive the same interface as the embedded script:
 
-- [Quick Start Guide](QUICKSTART.md) - Get started in 5 minutes
-- [Architecture](ARCHITECTURE.md) - Internal design and structure
-- [Contributing](CONTRIBUTING.md) - Development guidelines
-- [OpenCore Framework](https://github.com/newcore-network/opencore) - The main framework
+```bash
+node custom-build.js single <type> <path> <outDir> '<options-json>'
+```
 
-## 🤝 Contributing
+## Project Architectures
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Code style guidelines
-- How to submit PRs
-- Reporting issues
+The CLI supports four project structures:
 
-## 📄 License
+**Domain-Driven**: Organize by business domains with client/server/shared separation. Recommended for large projects.
 
-MPL-2.0 - See [LICENSE](LICENSE) for details.
+**Layer-Based**: Traditional separation by technical layers. Suitable for teams with specialized frontend/backend roles.
 
-## 🌟 Show Your Support
+**Feature-Based**: Flat feature structure for rapid development. Good for small to medium projects.
 
-If you find OpenCore CLI useful, please consider:
-- ⭐ Starring the repo on GitHub
-- 📢 Sharing it with other FiveM developers
-- 🐛 Reporting bugs and issues
-- 💡 Suggesting new features
-- 🤝 Contributing code
+**Hybrid**: Mix domain modules for critical systems with simple feature folders for lightweight functionality.
 
-## 🔗 Links
+## Development
+
+```bash
+go mod download
+go test ./...
+go build -o opencore .
+```
+
+### Running Tests
+
+```bash
+go test ./... -v
+```
+
+## Requirements
+
+- Go 1.21+ (for building the CLI)
+- Node.js 18+ (for project compilation)
+- pnpm (recommended) or npm
+
+## License
+
+MPL-2.0. See [LICENSE](LICENSE) for details.
+
+## Links
 
 - [OpenCore Framework](https://github.com/newcore-network/opencore)
-- [OpenCore Identity Module](https://github.com/newcore-network/opencore-identity)
 - [NPM Package](https://www.npmjs.com/package/@open-core/cli)
 - [GitHub Releases](https://github.com/newcore-network/opencore-cli/releases)
-
----
-
-<div align="center">
-
-**Built with ❤️ by [Newcore Network](https://github.com/newcore-network)**
-
-*Stop scripting. Start engineering.*
-
-</div>
-

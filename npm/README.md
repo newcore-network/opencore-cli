@@ -1,22 +1,34 @@
 # @open-core/cli
 
-Official command-line tool for the OpenCore Framework.
+Command-line interface for the OpenCore Framework. Build and manage FiveM TypeScript projects.
 
 ## Installation
 
 ```bash
 npm install -g @open-core/cli
-# or
-pnpm add -g @open-core/cli
 ```
 
-## Usage
+## Commands
 
 ```bash
-opencore --help
+opencore init [name]    # Initialize a new project
+opencore build          # Build all resources
+opencore dev            # Development mode with hot-reload
+opencore doctor         # Validate configuration
 ```
 
-For full documentation, visit: https://github.com/newcore-network/opencore-cli
+## Quick Start
+
+```bash
+opencore init my-server
+cd my-server
+pnpm install
+opencore dev
+```
+
+## Documentation
+
+Full documentation: https://github.com/newcore-network/opencore-cli
 
 ## License
 
