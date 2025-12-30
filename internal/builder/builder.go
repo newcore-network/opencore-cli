@@ -31,6 +31,10 @@ func New(cfg *config.Config) *Builder {
 	}
 }
 
+func (b *Builder) CollectTasks() []BuildTask {
+	return b.collectAllTasks()
+}
+
 // Build executes the full build process
 func (b *Builder) Build() error {
 	fmt.Println(ui.Logo())
@@ -86,6 +90,42 @@ func (b *Builder) Build() error {
 	b.showSummary(results)
 
 	return nil
+}
+
+func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+
+	// Cleanup embedded script on exit
+	defer b.resourceBuilder.Cleanup()
+
+	uniqueResources := make(map[string]struct{})
+	for _, task := range tasks {
+		baseResource := strings.Split(task.ResourceName, "/")[0]
+		uniqueResources[baseResource] = struct{}{}
+	}
+
+	for baseResource := range uniqueResources {
+		if err := b.cleanResourceOutputDir(baseResource); err != nil {
+			return nil, fmt.Errorf("failed to clean resource output directory: %w", err)
+		}
+	}
+
+	results, err := b.buildSequential(tasks)
+	if err != nil {
+		return results, err
+	}
+
+	if b.deployer.HasDestination() {
+		for baseResource := range uniqueResources {
+			if err := b.deployer.DeployResource(baseResource); err != nil {
+				return results, fmt.Errorf("deployment failed for %s: %w", baseResource, err)
+			}
+		}
+	}
+
+	return results, nil
 }
 
 // collectAllTasks gathers all build tasks from config
@@ -495,6 +535,24 @@ func (b *Builder) cleanOutputDir() error {
 
 	fmt.Printf("%s Cleaning %s...\n", ui.Info("→"), outDir)
 	if err := os.RemoveAll(outDir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *Builder) cleanResourceOutputDir(resourceName string) error {
+	outDir := b.config.OutDir
+	if outDir == "" {
+		outDir = "./build"
+	}
+
+	resourceDir := filepath.Join(outDir, resourceName)
+	if _, err := os.Stat(resourceDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	if err := os.RemoveAll(resourceDir); err != nil {
 		return err
 	}
 

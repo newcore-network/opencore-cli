@@ -17,6 +17,11 @@ type Config struct {
 	Standalone  *StandaloneConfig `json:"standalone,omitempty"`
 	Modules     []string          `json:"modules"`
 	Build       BuildConfig       `json:"build"`
+	Dev         DevConfig         `json:"dev"`
+}
+
+type DevConfig struct {
+	Port int `json:"port"`
 }
 
 type CoreConfig struct {
@@ -149,6 +154,9 @@ const path = require('path');
 	}
 	if config.Build.Target == "" {
 		config.Build.Target = "ES2020"
+	}
+	if config.Dev.Port == 0 {
+		config.Dev.Port = 3847
 	}
 
 	return &config, nil

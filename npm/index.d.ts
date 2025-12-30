@@ -444,6 +444,23 @@ export interface OpenCoreConfig {
    * Global build configuration.
    */
   build?: BuildConfig;
+
+  /**
+   * Development mode configuration.
+   */
+  dev?: DevConfig;
+}
+
+/**
+ * Development mode settings.
+ */
+export interface DevConfig {
+  /**
+   * Port for the framework's hot-reload server.
+   * This should match the port configured in the framework.
+   * @default 3847
+   */
+  port?: number;
 }
 
 /**
