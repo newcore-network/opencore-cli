@@ -501,6 +501,71 @@ func (b *Builder) cleanOutputDir() error {
 	return nil
 }
 
+// ResourceSize holds size information for a compiled resource
+type ResourceSize struct {
+	Name       string
+	ServerSize int64
+	ClientSize int64
+	TotalSize  int64
+}
+
+// formatSize formats bytes into human readable format (KB/MB)
+func formatSize(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d B", bytes)
+	} else if bytes < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+	} else {
+		return fmt.Sprintf("%.2f MB", float64(bytes)/(1024*1024))
+	}
+}
+
+// getResourceSizes calculates the size of compiled files for each resource
+func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
+	var sizes []ResourceSize
+	seen := make(map[string]bool)
+
+	for _, r := range results {
+		if !r.Success {
+			continue
+		}
+
+		resourceName := r.Task.ResourceName
+		// Skip if already processed (e.g., views are part of a resource)
+		if seen[resourceName] || strings.HasSuffix(resourceName, "/ui") {
+			continue
+		}
+		seen[resourceName] = true
+
+		resourceDir := filepath.Join(b.config.OutDir, resourceName)
+
+		var serverSize, clientSize int64
+
+		// Check server.js
+		serverPath := filepath.Join(resourceDir, "server.js")
+		if info, err := os.Stat(serverPath); err == nil {
+			serverSize = info.Size()
+		}
+
+		// Check client.js
+		clientPath := filepath.Join(resourceDir, "client.js")
+		if info, err := os.Stat(clientPath); err == nil {
+			clientSize = info.Size()
+		}
+
+		if serverSize > 0 || clientSize > 0 {
+			sizes = append(sizes, ResourceSize{
+				Name:       resourceName,
+				ServerSize: serverSize,
+				ClientSize: clientSize,
+				TotalSize:  serverSize + clientSize,
+			})
+		}
+	}
+
+	return sizes
+}
+
 // showSummary displays the build summary
 func (b *Builder) showSummary(results []BuildResult) {
 	successCount := 0
@@ -518,20 +583,47 @@ func (b *Builder) showSummary(results []BuildResult) {
 
 	fmt.Println()
 
+	// Get resource sizes
+	sizes := b.getResourceSizes(results)
+	var grandTotal int64
+	for _, s := range sizes {
+		grandTotal += s.TotalSize
+	}
+
 	if failCount == 0 {
-		boxContent := fmt.Sprintf(
-			"Build completed successfully!\n\n"+
-				"Resources: %d\n"+
-				"Time: %s\n"+
-				"Output: %s",
-			successCount,
-			totalDuration.Round(time.Millisecond),
-			b.config.OutDir,
-		)
+		var boxContent strings.Builder
+		boxContent.WriteString("Build completed successfully!\n\n")
+		boxContent.WriteString(fmt.Sprintf("Resources: %d\n", successCount))
+		boxContent.WriteString(fmt.Sprintf("Time: %s\n", totalDuration.Round(time.Millisecond)))
+		boxContent.WriteString(fmt.Sprintf("Output: %s\n", b.config.OutDir))
+
 		if b.deployer.HasDestination() {
-			boxContent += fmt.Sprintf("\nDeployed: %s", b.config.Destination)
+			boxContent.WriteString(fmt.Sprintf("Deployed: %s\n", b.config.Destination))
 		}
-		fmt.Println(ui.SuccessBoxStyle.Render(boxContent))
+
+		// Add bundle sizes
+		if len(sizes) > 0 {
+			boxContent.WriteString("\n")
+			boxContent.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA")).Render("--- Bundle Sizes ---"))
+			boxContent.WriteString("\n")
+			for _, s := range sizes {
+				serverStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
+				clientStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
+				if s.ServerSize > 0 {
+					serverStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA")).Render(formatSize(s.ServerSize))
+				}
+				if s.ClientSize > 0 {
+					clientStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")).Render(formatSize(s.ClientSize))
+				}
+				nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+				boxContent.WriteString(fmt.Sprintf("%s  Server: %s  Client: %s\n",
+					nameStyle.Render(fmt.Sprintf("%-14s", s.Name)), serverStr, clientStr))
+			}
+			totalStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F59E0B"))
+			boxContent.WriteString(fmt.Sprintf("\nTotal: %s", totalStyle.Render(formatSize(grandTotal))))
+		}
+
+		fmt.Println(ui.SuccessBoxStyle.Render(boxContent.String()))
 	} else {
 		boxContent := fmt.Sprintf(
 			"Build completed with errors\n\n"+
