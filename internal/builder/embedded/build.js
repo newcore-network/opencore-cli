@@ -7,6 +7,14 @@ const fs = require('fs')
 // SWC Plugin Configuration for TypeScript Decorators
 // =============================================================================
 
+const nodeBuiltins = [
+    'node:events', 'node:fs', 'node:path', 'node:util', 'node:crypto',
+    'node:stream', 'node:buffer', 'node:http', 'node:https', 'node:net',
+    'node:os', 'node:child_process', 'node:worker_threads', 'node:url',
+    'events', 'fs', 'path', 'util', 'crypto', 'stream', 'buffer',
+    'http', 'https', 'net', 'os', 'child_process', 'worker_threads', 'url'
+];
+
 const swcConfig = swcPlugin({
     jsc: {
         parser: {
@@ -26,18 +34,64 @@ const swcConfig = swcPlugin({
 // Plugins
 // =============================================================================
 
+// Resolves relative imports properly (handles pnpm symlinks and index.js resolution)
+const resolveRelativeImportsPlugin = {
+    name: 'resolve-relative-imports',
+    setup(build) {
+        const nodePath = require('path')
+        const nodeFs = require('fs')
+        
+        // Handle ALL relative imports starting with . or ..
+        build.onResolve({ filter: /^\./ }, (args) => {
+            const resolveDir = args.resolveDir
+            let importPath = args.path
+            
+            // Try to resolve the path
+            const fullPath = nodePath.resolve(resolveDir, importPath)
+            
+            // Check various resolution strategies
+            const candidates = [
+                fullPath + '.js',
+                fullPath + '.ts', 
+                nodePath.join(fullPath, 'index.js'),
+                nodePath.join(fullPath, 'index.ts'),
+                fullPath // as-is
+            ]
+            
+            for (const candidate of candidates) {
+                try {
+                    if (nodeFs.existsSync(candidate) && nodeFs.statSync(candidate).isFile()) {
+                        return { path: candidate }
+                    }
+                } catch (e) {
+                    // Continue to next candidate
+                }
+            }
+            
+            return null // Let esbuild handle it
+        })
+    },
+}
+
 // Excludes Node.js adapters from the bundle (FiveM compatibility)
 const excludeNodeAdaptersPlugin = {
     name: 'exclude-node-adapters',
     setup(build) {
-        const nodePath = require('path')
-        build.onLoad({ filter: /node-.*\.(js|ts)$/ }, (args) => {
-            if (args.path.includes('@open-core') &&
-                (args.path.includes(nodePath.sep + 'node' + nodePath.sep) ||
-                    args.path.includes('/node/'))) {
-                return { contents: '', loader: 'js' }
-            }
-            return null
+        // Handle node: prefixed imports
+        build.onResolve({ filter: /^node:.*$/ }, args => {
+            return { path: args.path, external: true }
+        })
+        // Handle bare node builtins (events, fs, path, etc.)
+        const bareBuiltins = /^(events|fs|path|util|crypto|stream|buffer|http|https|net|os|child_process|worker_threads|url)$/
+        build.onResolve({ filter: bareBuiltins }, args => {
+            return { path: args.path, external: true }
+        })
+        // Handle framework node adapter paths
+        build.onResolve({ filter: /[/\\]node[/\\]node-.*$/ }, args => {
+            return { path: args.path, external: true }
+        })
+        build.onResolve({ filter: /@open-core[/\\]framework[/\\].*[/\\]node[/\\]/ }, args => {
+            return { path: args.path, external: true }
         })
     },
 }
@@ -66,6 +120,15 @@ const preserveFiveMExportsPlugin = {
     },
 }
 
+const frameworkExternal = {
+    name: 'framework-external',
+    setup(build) {
+        build.onResolve({ filter: /^@open-core\/framework/ }, args => {
+            return null
+        })
+    }
+}
+
 // =============================================================================
 // Build Configurations
 // =============================================================================
@@ -79,19 +142,20 @@ function getSharedConfig(options = {}) {
         minifyIdentifiers: false,
         keepNames: true,
         logLevel: 'info',
+        preserveSymlinks: false,
     }
 }
 
 function getCorePlugins() {
-    return [swcConfig, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
+    return [swcConfig, resolveRelativeImportsPlugin, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
 }
 
 function getResourcePlugins() {
-    return [swcConfig, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
+    return [swcConfig, resolveRelativeImportsPlugin, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
 }
 
 function getStandalonePlugins() {
-    return [swcConfig, excludeNodeAdaptersPlugin]
+    return [swcConfig, resolveRelativeImportsPlugin, excludeNodeAdaptersPlugin]
 }
 
 // =============================================================================
@@ -116,13 +180,6 @@ async function buildCore(resourcePath, outDir, options = {}) {
     const builds = []
 
     // Node.js built-in modules to exclude (FiveM doesn't support these)
-    const nodeBuiltins = [
-        'node:events', 'node:fs', 'node:path', 'node:util', 'node:crypto',
-        'node:stream', 'node:buffer', 'node:http', 'node:https', 'node:net',
-        'node:os', 'node:child_process', 'node:worker_threads', 'node:url',
-        'events', 'fs', 'path', 'util', 'crypto', 'stream', 'buffer',
-        'http', 'https', 'net', 'os', 'child_process', 'worker_threads', 'url'
-    ]
 
     // Server build
     if (options.server !== false && fs.existsSync(serverEntry)) {
@@ -130,7 +187,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             ...shared,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            platform: 'neutral',
+            platform: 'node',
             target: options.target || 'es2020',
             format: 'iife',
             mainFields: ['main', 'module'],
@@ -145,7 +202,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             ...shared,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            platform: 'neutral',
+            platform: 'node',
             target: options.target || 'es2020',
             format: 'iife',
             mainFields: ['main', 'module'],
@@ -186,12 +243,12 @@ async function buildResource(resourcePath, outDir, options = {}) {
             ...shared,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            platform: 'neutral',
+            platform: 'node',
             target: options.target || 'es2020',
             format: 'iife',
             mainFields: ['main', 'module'],
             plugins,
-            external: ['@open-core/framework'],
+            external: [...nodeBuiltins]
         }))
     }
 
@@ -202,12 +259,12 @@ async function buildResource(resourcePath, outDir, options = {}) {
             ...shared,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            platform: 'neutral',
+            platform: 'node',
             target: options.target || 'es2020',
             format: 'iife',
             mainFields: ['main', 'module'],
             plugins,
-            external: ['@open-core/framework'],
+            external: [...nodeBuiltins]
         }))
     }
 
@@ -245,11 +302,12 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             ...shared,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            platform: 'neutral',
+            platform: 'node',
             target: options.target || 'es2020',
             format: 'iife',
             mainFields: ['main', 'module'],
             plugins,
+            external: [...nodeBuiltins]
         }))
     }
 
@@ -260,11 +318,12 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             ...shared,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            platform: 'neutral',
+            platform: 'node',
             target: options.target || 'es2020',
             format: 'iife',
             mainFields: ['main', 'module'],
             plugins,
+            external: [...nodeBuiltins]
         }))
     }
 
