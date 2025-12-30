@@ -272,9 +272,6 @@ func (c *Client) executeCommand(action, parameter string) error {
 		return fmt.Errorf("command failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Debug: always show raw response
-	fmt.Printf("[DEBUG txAdmin] action=%s param=%s status=%d -> %s\n", action, parameter, resp.StatusCode, string(body))
-
 	// Parse response to check for success
 	// txAdmin returns { type: "success"|"warning"|"error", msg: "..." }
 	// "warning" is also valid (means command was sent)

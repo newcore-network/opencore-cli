@@ -104,9 +104,16 @@ func (w *Watcher) Watch() error {
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9CA3AF"))
 
+	// Count unique resources (not build tasks - a resource can have multiple tasks like server, client, views)
+	uniqueResources := make(map[string]struct{})
+	for _, task := range allTasks {
+		baseResource := strings.Split(task.ResourceName, "/")[0]
+		uniqueResources[baseResource] = struct{}{}
+	}
+
 	fmt.Printf("%s %s\n",
 		headerStyle.Render(" DEV MODE "),
-		statusStyle.Render(fmt.Sprintf("Project: %s | Resources: %d", w.config.Name, len(allTasks))))
+		statusStyle.Render(fmt.Sprintf("Project: %s | Resources: %d", w.config.Name, len(uniqueResources))))
 
 	// Show hot-reload mode
 	if w.txAdminClient != nil {
@@ -244,18 +251,22 @@ func (w *Watcher) registerPaths() {
 		}
 	}
 
-	// 3. Watch existing resource source directories recursively
+	// 3. Watch existing resource directories recursively (entire resource path, not just src)
 	paths := append([]string{}, w.config.GetResourcePaths()...)
 	paths = append(paths, w.config.GetStandalonePaths()...)
 	for _, basePath := range paths {
-		srcPath := filepath.Join(basePath, "src")
-
-		// Walk directory recursively to add all subdirectories
-		err := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
+		// Walk entire resource directory recursively to catch all changes
+		// (fxmanifest.lua, package.json, src/, views/, etc.)
+		err := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return nil // Skip directories we can't access
 			}
 			if d.IsDir() {
+				// Skip node_modules and build output directories
+				name := d.Name()
+				if name == "node_modules" || name == "dist" || name == "build" || name == ".git" {
+					return filepath.SkipDir
+				}
 				if watchErr := w.watcher.Add(path); watchErr != nil {
 					// Silent fail for duplicates or already watched
 				}
@@ -263,10 +274,8 @@ func (w *Watcher) registerPaths() {
 			return nil
 		})
 
-		if err != nil {
-			// Don't warn if src doesn't exist yet
-		} else {
-			fmt.Println(ui.Info(fmt.Sprintf("Watching: %s (recursive)", srcPath)))
+		if err == nil {
+			fmt.Println(ui.Info(fmt.Sprintf("Watching: %s (recursive)", basePath)))
 		}
 	}
 }
