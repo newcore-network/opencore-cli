@@ -2,7 +2,7 @@ import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: '{{.ProjectName}}',
-  outDir: './dist/resources',
+  outDir: './build',
 
   // Optional: Deploy to FiveM server
   // destination: 'C:/FXServer/server-data/resources/[{{.ProjectName}}]',
@@ -52,12 +52,12 @@ export default defineConfig({
   // },
 {{ if .InstallIdentity }}
   modules: ['@open-core/identity'],
-{{ end }}
+  {{ end }}
   build: {
-    minify: {{.UseMinify}},
-    sourceMaps: true,
-    target: 'ES2020',
-    parallel: true,
-    maxWorkers: 8,
+  minify: {{.UseMinify }},
+  sourceMaps: true,
+  target: 'ES2020',
+  parallel: true,
+  maxWorkers: 8,
   },
 })

@@ -49,7 +49,6 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		filepath.Join(targetPath, "core", "src"),
 		filepath.Join(targetPath, "views"),
 		filepath.Join(targetPath, "resources"),
-		filepath.Join(targetPath, "scripts"),
 	}
 
 	// Add architecture-specific directories
@@ -99,7 +98,6 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		"core/package.json":   filepath.Join(targetPath, "core", "package.json"),
 		"core/fxmanifest.lua": filepath.Join(targetPath, "core", "fxmanifest.lua"),
 		"tsconfig.json":       filepath.Join(targetPath, "tsconfig.json"),
-		"scripts/build.js":    filepath.Join(targetPath, "scripts", "build.js"),
 	}
 
 	// Add bootstrap files based on architecture

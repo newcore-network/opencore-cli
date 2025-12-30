@@ -112,6 +112,11 @@ func runClone(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.TitleStyle.Render("Clone Template"))
 	fmt.Println()
 
+	// Check if git is installed
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git is not installed. Please install git and try again")
+	}
+
 	templateName := args[0]
 
 	// Check if template exists

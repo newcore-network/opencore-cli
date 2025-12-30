@@ -42,6 +42,7 @@ type ExplicitResource struct {
 	ResourceName   string               `json:"resourceName,omitempty"`
 	Type           string               `json:"type,omitempty"`
 	Compile        *bool                `json:"compile,omitempty"`
+	EntryPoints    *EntryPoints         `json:"entryPoints,omitempty"`
 	Build          *ResourceBuildConfig `json:"build,omitempty"`
 	Views          *ViewsConfig         `json:"views,omitempty"`
 	CustomCompiler string               `json:"customCompiler,omitempty"` // Path to custom build script
@@ -76,6 +77,11 @@ type BuildConfig struct {
 // Load reads and transpiles opencore.config.ts to Config
 func Load() (*Config, error) {
 	configPath := "opencore.config.ts"
+
+	// Check if Node.js is installed
+	if _, err := exec.LookPath("node"); err != nil {
+		return nil, fmt.Errorf("Node.js is not installed. Please install Node.js 18+ and try again")
+	}
 
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -139,7 +145,7 @@ const path = require('path');
 
 	// Set defaults
 	if config.OutDir == "" {
-		config.OutDir = "./dist/resources"
+		config.OutDir = "./build"
 	}
 	if config.Build.Target == "" {
 		config.Build.Target = "ES2020"

@@ -34,7 +34,7 @@ const excludeNodeAdaptersPlugin = {
         build.onLoad({ filter: /node-.*\.(js|ts)$/ }, (args) => {
             if (args.path.includes('@open-core') &&
                 (args.path.includes(nodePath.sep + 'node' + nodePath.sep) ||
-                 args.path.includes('/node/'))) {
+                    args.path.includes('/node/'))) {
                 return { contents: '', loader: 'js' }
             }
             return null
@@ -115,6 +115,15 @@ async function buildCore(resourcePath, outDir, options = {}) {
 
     const builds = []
 
+    // Node.js built-in modules to exclude (FiveM doesn't support these)
+    const nodeBuiltins = [
+        'node:events', 'node:fs', 'node:path', 'node:util', 'node:crypto',
+        'node:stream', 'node:buffer', 'node:http', 'node:https', 'node:net',
+        'node:os', 'node:child_process', 'node:worker_threads', 'node:url',
+        'events', 'fs', 'path', 'util', 'crypto', 'stream', 'buffer',
+        'http', 'https', 'net', 'os', 'child_process', 'worker_threads', 'url'
+    ]
+
     // Server build
     if (options.server !== false && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
@@ -126,6 +135,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             format: 'iife',
             mainFields: ['main', 'module'],
             plugins,
+            external: nodeBuiltins,
         }))
     }
 
@@ -140,6 +150,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             format: 'iife',
             mainFields: ['main', 'module'],
             plugins,
+            external: nodeBuiltins,
         }))
     }
 
@@ -168,8 +179,8 @@ async function buildResource(resourcePath, outDir, options = {}) {
 
     const builds = []
 
-    // Server build
-    const serverEntry = path.join(resourcePath, 'src/server/main.ts')
+    // Server build - use entryPoints if provided, otherwise default
+    const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
     if (options.server !== false && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
@@ -184,8 +195,8 @@ async function buildResource(resourcePath, outDir, options = {}) {
         }))
     }
 
-    // Client build
-    const clientEntry = path.join(resourcePath, 'src/client/main.ts')
+    // Client build - use entryPoints if provided, otherwise default
+    const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
     if (options.client !== false && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
@@ -227,8 +238,8 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
 
     const builds = []
 
-    // Server build
-    const serverEntry = path.join(resourcePath, 'src/server/main.ts')
+    // Server build - use entryPoints if provided, otherwise default
+    const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
     if (options.server !== false && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
@@ -242,8 +253,8 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
         }))
     }
 
-    // Client build
-    const clientEntry = path.join(resourcePath, 'src/client/main.ts')
+    // Client build - use entryPoints if provided, otherwise default
+    const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
     if (options.client !== false && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,

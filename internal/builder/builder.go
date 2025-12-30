@@ -38,6 +38,11 @@ func (b *Builder) Build() error {
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
 
+	// Clean output directory before build
+	if err := b.cleanOutputDir(); err != nil {
+		return fmt.Errorf("failed to clean output directory: %w", err)
+	}
+
 	// Collect all build tasks
 	tasks := b.collectAllTasks()
 
@@ -172,6 +177,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				if explicit.CustomCompiler != "" {
 					task.CustomCompiler = explicit.CustomCompiler
 				}
+				if explicit.EntryPoints != nil {
+					task.Options.EntryPoints = &EntryPoints{
+						Server: explicit.EntryPoints.Server,
+						Client: explicit.EntryPoints.Client,
+					}
+				}
 				if explicit.Build != nil {
 					if explicit.Build.Server != nil {
 						task.Options.Server = *explicit.Build.Server
@@ -246,6 +257,14 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			},
 		}
 
+		// Apply entryPoints if configured
+		if res.EntryPoints != nil {
+			task.Options.EntryPoints = &EntryPoints{
+				Server: res.EntryPoints.Server,
+				Client: res.EntryPoints.Client,
+			}
+		}
+
 		if res.Build != nil {
 			if res.Build.Server != nil {
 				task.Options.Server = *res.Build.Server
@@ -291,11 +310,18 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				resourceName := filepath.Base(match)
 				shouldCompile := b.config.ShouldCompile(match)
 
-				// Check for explicit override to get CustomCompiler
+				// Check for explicit override to get CustomCompiler and EntryPoints
 				explicit := b.config.GetExplicitStandalone(match)
 				customCompiler := ""
+				var entryPoints *EntryPoints
 				if explicit != nil {
 					customCompiler = explicit.CustomCompiler
+					if explicit.EntryPoints != nil {
+						entryPoints = &EntryPoints{
+							Server: explicit.EntryPoints.Server,
+							Client: explicit.EntryPoints.Client,
+						}
+					}
 				}
 
 				taskType := TypeStandalone
@@ -310,12 +336,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					OutDir:         b.config.OutDir,
 					CustomCompiler: customCompiler,
 					Options: BuildOptions{
-						Server:     true,
-						Client:     b.hasClientCode(match),
-						Minify:     b.config.Build.Minify,
-						SourceMaps: b.config.Build.SourceMaps,
-						Target:     b.config.Build.Target,
-						Compile:    shouldCompile,
+						Server:      true,
+						Client:      b.hasClientCode(match),
+						Minify:      b.config.Build.Minify,
+						SourceMaps:  b.config.Build.SourceMaps,
+						Target:      b.config.Build.Target,
+						Compile:     shouldCompile,
+						EntryPoints: entryPoints,
 					},
 				})
 			}
@@ -352,6 +379,14 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Target:     b.config.Build.Target,
 					Compile:    shouldCompile,
 				},
+			}
+
+			// Apply entryPoints if configured
+			if res.EntryPoints != nil {
+				task.Options.EntryPoints = &EntryPoints{
+					Server: res.EntryPoints.Server,
+					Client: res.EntryPoints.Client,
+				}
 			}
 
 			tasks = append(tasks, task)
@@ -428,6 +463,10 @@ func (b *Builder) buildSequential(tasks []BuildTask) ([]BuildResult, error) {
 			fmt.Println(ui.Success(fmt.Sprintf("[%s] compiled (%s)", task.ResourceName, result.Duration.Round(time.Millisecond))))
 		} else {
 			fmt.Println(ui.Error(fmt.Sprintf("[%s] failed: %v", task.ResourceName, result.Error)))
+			if result.Output != "" {
+				fmt.Println(ui.Muted("Build output:"))
+				fmt.Println(result.Output)
+			}
 			return results, fmt.Errorf("build failed for %s", task.ResourceName)
 		}
 	}
@@ -440,6 +479,26 @@ func (b *Builder) hasClientCode(resourcePath string) bool {
 	clientPath := filepath.Join(resourcePath, "src", "client")
 	info, err := os.Stat(clientPath)
 	return err == nil && info.IsDir()
+}
+
+// cleanOutputDir removes the output directory before building
+func (b *Builder) cleanOutputDir() error {
+	outDir := b.config.OutDir
+	if outDir == "" {
+		outDir = "./build"
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(outDir); os.IsNotExist(err) {
+		return nil // Nothing to clean
+	}
+
+	fmt.Printf("%s Cleaning %s...\n", ui.Info("→"), outDir)
+	if err := os.RemoveAll(outDir); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // showSummary displays the build summary

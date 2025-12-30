@@ -28,7 +28,8 @@ func NewResourceBuilder(projectPath string) *ResourceBuilder {
 	}
 }
 
-// ensureEmbeddedScript extracts the embedded build script to a temp file
+// ensureEmbeddedScript extracts the embedded build script to the project directory
+// so it can resolve node_modules properly
 func (rb *ResourceBuilder) ensureEmbeddedScript() (string, error) {
 	rb.embeddedScriptMutex.Lock()
 	defer rb.embeddedScriptMutex.Unlock()
@@ -40,11 +41,15 @@ func (rb *ResourceBuilder) ensureEmbeddedScript() (string, error) {
 		}
 	}
 
-	// Create temp file for embedded script
-	tmpDir := os.TempDir()
-	scriptPath := filepath.Join(tmpDir, "opencore-build.js")
+	// Create script in project's node_modules/.cache directory so it can resolve modules
+	cacheDir := filepath.Join(rb.projectPath, "node_modules", ".cache", "opencore")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
 
-	// Write embedded script to temp file
+	scriptPath := filepath.Join(cacheDir, "build.js")
+
+	// Write embedded script to cache directory
 	if err := os.WriteFile(scriptPath, embedded.GetBuildScript(), 0644); err != nil {
 		return "", fmt.Errorf("failed to extract embedded build script: %w", err)
 	}
@@ -140,7 +145,7 @@ func (rb *ResourceBuilder) buildCore(task BuildTask) (string, error) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("core build failed: %w", err)
+		return string(output), fmt.Errorf("core build failed: %w\nOutput:\n%s", err, string(output))
 	}
 
 	return string(output), nil
@@ -164,7 +169,7 @@ func (rb *ResourceBuilder) buildResource(task BuildTask) (string, error) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("resource build failed: %w", err)
+		return string(output), fmt.Errorf("resource build failed: %w\nOutput:\n%s", err, string(output))
 	}
 
 	return string(output), nil
@@ -188,7 +193,7 @@ func (rb *ResourceBuilder) buildStandalone(task BuildTask) (string, error) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("standalone build failed: %w", err)
+		return string(output), fmt.Errorf("standalone build failed: %w\nOutput:\n%s", err, string(output))
 	}
 
 	return string(output), nil
