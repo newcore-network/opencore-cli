@@ -221,11 +221,11 @@ type CommandResponse struct {
 
 // executeCommand sends a command to txAdmin
 func (c *Client) executeCommand(action, parameter string) error {
+	// txAdmin requires both action AND parameter to be defined
+	// parameter can be empty string but must be present
 	payload := map[string]string{
-		"action": action,
-	}
-	if parameter != "" {
-		payload["parameter"] = parameter
+		"action":    action,
+		"parameter": parameter,
 	}
 
 	jsonPayload, err := json.Marshal(payload)

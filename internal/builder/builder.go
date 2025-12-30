@@ -626,18 +626,23 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 
 // showSummary displays the build summary
 func (b *Builder) showSummary(results []BuildResult) {
-	successCount := 0
-	failCount := 0
+	// Count unique resources, not build tasks (a resource can have multiple tasks)
+	successResources := make(map[string]struct{})
+	failedResources := make(map[string]struct{})
 	totalDuration := time.Duration(0)
 
 	for _, r := range results {
+		baseResource := strings.Split(r.Task.ResourceName, "/")[0]
 		if r.Success {
-			successCount++
+			successResources[baseResource] = struct{}{}
 			totalDuration += r.Duration
 		} else {
-			failCount++
+			failedResources[baseResource] = struct{}{}
 		}
 	}
+
+	successCount := len(successResources)
+	failCount := len(failedResources)
 
 	fmt.Println()
 
