@@ -16,13 +16,16 @@ import (
 	"github.com/newcore-network/opencore-cli/internal/builder"
 	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/ui"
+	"github.com/newcore-network/opencore-cli/internal/watcher/txadmin"
 )
 
 type Watcher struct {
-	config   *config.Config
-	builder  *builder.Builder
-	watcher  *fsnotify.Watcher
-	debounce map[string]time.Time
+	config         *config.Config
+	builder        *builder.Builder
+	watcher        *fsnotify.Watcher
+	debounce       map[string]time.Time
+	txAdminClient  *txadmin.Client
+	sessionManager *txadmin.SessionManager
 }
 
 func New(cfg *config.Config) (*Watcher, error) {
@@ -31,12 +34,44 @@ func New(cfg *config.Config) (*Watcher, error) {
 		return nil, err
 	}
 
-	return &Watcher{
+	watcher := &Watcher{
 		config:   cfg,
 		builder:  builder.New(cfg),
 		watcher:  w,
 		debounce: make(map[string]time.Time),
-	}, nil
+	}
+
+	// Initialize txAdmin client if configured
+	if cfg.Dev.IsTxAdminConfigured() {
+		sessionMgr, err := txadmin.NewSessionManager()
+		if err != nil {
+			fmt.Println(ui.Warning(fmt.Sprintf("Failed to create session manager: %v", err)))
+		} else {
+			watcher.sessionManager = sessionMgr
+
+			client, err := txadmin.NewClient(
+				cfg.Dev.TxAdminURL,
+				cfg.Dev.TxAdminUser,
+				cfg.Dev.TxAdminPassword,
+			)
+			if err != nil {
+				fmt.Println(ui.Warning(fmt.Sprintf("Failed to create txAdmin client: %v", err)))
+			} else {
+				watcher.txAdminClient = client
+
+				// Try to restore cached session
+				if cachedSession, _ := sessionMgr.Load(); cachedSession != nil {
+					if cachedSession.BaseURL == cfg.Dev.TxAdminURL {
+						if err := client.RestoreSession(cachedSession); err == nil {
+							fmt.Println(ui.Success("Restored txAdmin session from cache"))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return watcher, nil
 }
 
 func (w *Watcher) Watch() error {
@@ -69,9 +104,31 @@ func (w *Watcher) Watch() error {
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9CA3AF"))
 
-	fmt.Printf("%s %s\n", 
-		headerStyle.Render(" DEV MODE "), 
+	fmt.Printf("%s %s\n",
+		headerStyle.Render(" DEV MODE "),
 		statusStyle.Render(fmt.Sprintf("Project: %s | Resources: %d", w.config.Name, len(allTasks))))
+
+	// Show hot-reload mode
+	if w.txAdminClient != nil {
+		fmt.Println(ui.Info(fmt.Sprintf("Hot-reload: txAdmin (%s)", w.config.Dev.TxAdminURL)))
+		// Attempt initial login if not already authenticated
+		if !w.txAdminClient.IsAuthenticated() {
+			fmt.Println(ui.Muted("Authenticating with txAdmin..."))
+			if err := w.txAdminClient.Login(); err != nil {
+				fmt.Println(ui.Warning(fmt.Sprintf("txAdmin login failed: %v", err)))
+				fmt.Println(ui.Warning("Hot-reload via txAdmin will not work. Check your credentials."))
+			} else {
+				fmt.Println(ui.Success("Connected to txAdmin"))
+				// Save session for future use
+				if w.sessionManager != nil {
+					w.sessionManager.Save(w.txAdminClient.GetSession())
+				}
+			}
+		}
+	} else {
+		fmt.Println(ui.Muted("Hot-reload: Internal HTTP (configure txAdmin for CORE hot-reload)"))
+	}
+
 	fmt.Println(ui.Muted("Watching for changes... (Ctrl+C to stop)"))
 	fmt.Println()
 
@@ -279,23 +336,86 @@ func (w *Watcher) notifyFramework(tasks []builder.BuildTask, results []builder.B
 		}
 	}
 
+	// Get core resource name from config
+	coreResourceName := w.config.Core.ResourceName
+	if coreResourceName == "" {
+		coreResourceName = "core"
+	}
+
 	// Notify framework for each resource
 	for resourceName := range uniqueResources {
-		go func(name string) {
-			port := w.config.Dev.Port
-			endpoint := fmt.Sprintf("http://localhost:%d/restart?resource=%s", port, url.QueryEscape(name))
+		// Check if we need txAdmin for this resource
+		isCoreResource := resourceName == coreResourceName
 
-			resp, err := http.Post(endpoint, "application/json", nil)
-			if err != nil {
-				// Don't show error if framework is not running (silent failure is better here)
+		if w.txAdminClient != nil {
+			// Use txAdmin API (works for all resources including CORE)
+			go w.notifyViaTxAdmin(resourceName)
+		} else if isCoreResource {
+			// CORE resource without txAdmin - show warning
+			fmt.Println(ui.Warning(fmt.Sprintf(
+				"Cannot hot-reload '%s' (CORE resource cannot restart itself). Configure txAdmin in opencore.config.ts for CORE hot-reload.",
+				resourceName,
+			)))
+		} else {
+			// Non-CORE resource - use internal HTTP
+			go w.notifyViaHTTP(resourceName)
+		}
+	}
+}
+
+// notifyViaTxAdmin uses txAdmin API to restart a resource
+func (w *Watcher) notifyViaTxAdmin(resourceName string) {
+	// First refresh resources to ensure txAdmin sees the updated files
+	if err := w.txAdminClient.RefreshResources(); err != nil {
+		fmt.Println(ui.Warning(fmt.Sprintf("Failed to refresh resources: %v", err)))
+	}
+
+	// Then restart the resource
+	if err := w.txAdminClient.RestartResource(resourceName); err != nil {
+		// Check if we need to re-authenticate
+		if strings.Contains(err.Error(), "authentication") || strings.Contains(err.Error(), "unauthorized") {
+			fmt.Println(ui.Warning("txAdmin session expired, re-authenticating..."))
+			if loginErr := w.txAdminClient.Login(); loginErr != nil {
+				fmt.Println(ui.Error(fmt.Sprintf("txAdmin login failed: %v", loginErr)))
 				return
 			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode == http.StatusOK {
-				fmt.Println(ui.Success(fmt.Sprintf("Hot-reload triggered for %s", name)))
+			// Save new session
+			if w.sessionManager != nil {
+				w.sessionManager.Save(w.txAdminClient.GetSession())
 			}
-		}(resourceName)
+			// Retry restart
+			if retryErr := w.txAdminClient.RestartResource(resourceName); retryErr != nil {
+				fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, retryErr)))
+				return
+			}
+		} else {
+			fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, err)))
+			return
+		}
+	}
+
+	// Save session on success (update expiry)
+	if w.sessionManager != nil {
+		w.sessionManager.Save(w.txAdminClient.GetSession())
+	}
+
+	fmt.Println(ui.Success(fmt.Sprintf("Hot-reload triggered for %s (via txAdmin)", resourceName)))
+}
+
+// notifyViaHTTP uses internal HTTP server to restart a resource (fallback)
+func (w *Watcher) notifyViaHTTP(resourceName string) {
+	port := w.config.Dev.Port
+	endpoint := fmt.Sprintf("http://localhost:%d/restart?resource=%s", port, url.QueryEscape(resourceName))
+
+	resp, err := http.Post(endpoint, "application/json", nil)
+	if err != nil {
+		// Don't show error if framework is not running (silent failure is better here)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		fmt.Println(ui.Success(fmt.Sprintf("Hot-reload triggered for %s", resourceName)))
 	}
 }
 

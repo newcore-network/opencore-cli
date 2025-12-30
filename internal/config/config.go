@@ -21,7 +21,15 @@ type Config struct {
 }
 
 type DevConfig struct {
-	Port int `json:"port"`
+	Port            int    `json:"port"`
+	TxAdminURL      string `json:"txAdminUrl,omitempty"`
+	TxAdminUser     string `json:"txAdminUser,omitempty"`
+	TxAdminPassword string `json:"txAdminPassword,omitempty"`
+}
+
+// IsTxAdminConfigured returns true if txAdmin credentials are fully configured
+func (d *DevConfig) IsTxAdminConfigured() bool {
+	return d.TxAdminURL != "" && d.TxAdminUser != "" && d.TxAdminPassword != ""
 }
 
 type CoreConfig struct {
@@ -157,6 +165,17 @@ const path = require('path');
 	}
 	if config.Dev.Port == 0 {
 		config.Dev.Port = 3847
+	}
+
+	// Environment variables override config file (higher priority)
+	if envURL := os.Getenv("OPENCORE_TXADMIN_URL"); envURL != "" {
+		config.Dev.TxAdminURL = envURL
+	}
+	if envUser := os.Getenv("OPENCORE_TXADMIN_USER"); envUser != "" {
+		config.Dev.TxAdminUser = envUser
+	}
+	if envPass := os.Getenv("OPENCORE_TXADMIN_PASSWORD"); envPass != "" {
+		config.Dev.TxAdminPassword = envPass
 	}
 
 	return &config, nil

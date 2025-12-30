@@ -7,14 +7,16 @@ const fs = require('fs')
 // SWC Plugin Configuration for TypeScript Decorators
 // =============================================================================
 
+// Node.js built-ins that must be external (FiveM doesn't have these)
 const nodeBuiltins = [
     'node:events', 'node:fs', 'node:path', 'node:util', 'node:crypto',
     'node:stream', 'node:buffer', 'node:http', 'node:https', 'node:net',
     'node:os', 'node:child_process', 'node:worker_threads', 'node:url',
     'events', 'fs', 'path', 'util', 'crypto', 'stream', 'buffer',
     'http', 'https', 'net', 'os', 'child_process', 'worker_threads', 'url'
-];
+]
 
+// SWC configuration for TypeScript decorators and metadata
 const swcConfig = swcPlugin({
     jsc: {
         parser: {
@@ -26,77 +28,42 @@ const swcConfig = swcPlugin({
             legacyDecorator: true,
             decoratorMetadata: true,
         },
+        target: 'es2020',
         keepClassNames: true,
+        preserveAllComments: false,
     },
+    minify: false, // Let esbuild handle minification
 })
 
 // =============================================================================
 // Plugins
 // =============================================================================
 
-// Resolves relative imports properly (handles pnpm symlinks and index.js resolution)
-const resolveRelativeImportsPlugin = {
-    name: 'resolve-relative-imports',
-    setup(build) {
-        const nodePath = require('path')
-        const nodeFs = require('fs')
-        
-        // Handle ALL relative imports starting with . or ..
-        build.onResolve({ filter: /^\./ }, (args) => {
-            const resolveDir = args.resolveDir
-            let importPath = args.path
-            
-            // Try to resolve the path
-            const fullPath = nodePath.resolve(resolveDir, importPath)
-            
-            // Check various resolution strategies
-            const candidates = [
-                fullPath + '.js',
-                fullPath + '.ts', 
-                nodePath.join(fullPath, 'index.js'),
-                nodePath.join(fullPath, 'index.ts'),
-                fullPath // as-is
-            ]
-            
-            for (const candidate of candidates) {
-                try {
-                    if (nodeFs.existsSync(candidate) && nodeFs.statSync(candidate).isFile()) {
-                        return { path: candidate }
-                    }
-                } catch (e) {
-                    // Continue to next candidate
-                }
-            }
-            
-            return null // Let esbuild handle it
-        })
-    },
-}
-
-// Excludes Node.js adapters from the bundle (FiveM compatibility)
+// Excludes Node.js adapters and builtins from the bundle
 const excludeNodeAdaptersPlugin = {
     name: 'exclude-node-adapters',
     setup(build) {
-        // Handle node: prefixed imports
-        build.onResolve({ filter: /^node:.*$/ }, args => {
-            return { path: args.path, external: true }
-        })
-        // Handle bare node builtins (events, fs, path, etc.)
-        const bareBuiltins = /^(events|fs|path|util|crypto|stream|buffer|http|https|net|os|child_process|worker_threads|url)$/
-        build.onResolve({ filter: bareBuiltins }, args => {
-            return { path: args.path, external: true }
-        })
-        // Handle framework node adapter paths
-        build.onResolve({ filter: /[/\\]node[/\\]node-.*$/ }, args => {
-            return { path: args.path, external: true }
-        })
-        build.onResolve({ filter: /@open-core[/\\]framework[/\\].*[/\\]node[/\\]/ }, args => {
-            return { path: args.path, external: true }
-        })
+        // Mark node: prefixed imports as external
+        build.onResolve({ filter: /^node:/ }, args => ({
+            path: args.path,
+            external: true
+        }))
+
+        // Mark bare node builtins as external  
+        build.onResolve({ filter: /^(events|fs|path|util|crypto|stream|buffer|http|https|net|os|child_process|worker_threads|url)$/ }, args => ({
+            path: args.path,
+            external: true
+        }))
+
+        // Exclude node adapter files from framework (return empty module)
+        build.onLoad({ filter: /[/\\]adapters[/\\]node[/\\]/ }, () => ({
+            contents: 'module.exports = {};',
+            loader: 'js'
+        }))
     },
 }
 
-// Patches exports() for FiveM compatibility
+// Patches exports() calls for FiveM compatibility
 const preserveFiveMExportsPlugin = {
     name: 'preserve-fivem-exports',
     setup(build) {
@@ -108,6 +75,7 @@ const preserveFiveMExportsPlugin = {
             try {
                 let contents = await fs.promises.readFile(outfile, 'utf8')
                 const originalContents = contents
+                // Replace exports() with globalThis.exports() for FiveM
                 contents = contents.replace(/\bexports\s*\(\s*["'`]/g, 'globalThis.exports("')
                 contents = contents.replace(/\bexports\s*\(\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*,/g, 'globalThis.exports($1,')
                 if (contents !== originalContents) {
@@ -120,15 +88,6 @@ const preserveFiveMExportsPlugin = {
     },
 }
 
-const frameworkExternal = {
-    name: 'framework-external',
-    setup(build) {
-        build.onResolve({ filter: /^@open-core\/framework/ }, args => {
-            return null
-        })
-    }
-}
-
 // =============================================================================
 // Build Configurations
 // =============================================================================
@@ -139,23 +98,38 @@ function getSharedConfig(options = {}) {
         sourcemap: options.sourceMaps ? 'inline' : false,
         minifyWhitespace: options.minify !== false,
         minifySyntax: options.minify !== false,
-        minifyIdentifiers: false,
-        keepNames: true,
+        minifyIdentifiers: false, // Keep identifiers for DI/reflection
+        keepNames: true, // Critical for tsyringe class name resolution
+        treeShaking: true,
         logLevel: 'info',
-        preserveSymlinks: false,
+        legalComments: 'none',
+    }
+}
+
+// FiveM-specific esbuild options
+function getFiveMBuildOptions() {
+    return {
+        platform: 'neutral', // FiveM is NOT Node.js - use browser platform
+        target: 'es2020',
+        format: 'iife',
+        mainFields: ['module', 'main'], // Prefer ES modules
+        conditions: ['import', 'default'],
+        supported: {
+            'dynamic-import': true,
+        },
     }
 }
 
 function getCorePlugins() {
-    return [swcConfig, resolveRelativeImportsPlugin, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
+    return [swcConfig, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
 }
 
 function getResourcePlugins() {
-    return [swcConfig, resolveRelativeImportsPlugin, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
+    return [swcConfig, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
 }
 
 function getStandalonePlugins() {
-    return [swcConfig, resolveRelativeImportsPlugin, excludeNodeAdaptersPlugin]
+    return [swcConfig, excludeNodeAdaptersPlugin]
 }
 
 // =============================================================================
@@ -167,6 +141,7 @@ function getStandalonePlugins() {
  */
 async function buildCore(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
+    const fivemOptions = getFiveMBuildOptions()
     const plugins = getCorePlugins()
 
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server.ts')
@@ -179,18 +154,13 @@ async function buildCore(resourcePath, outDir, options = {}) {
 
     const builds = []
 
-    // Node.js built-in modules to exclude (FiveM doesn't support these)
-
     // Server build
     if (options.server !== false && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
+            ...fivemOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            platform: 'node',
-            target: options.target || 'es2020',
-            format: 'iife',
-            mainFields: ['main', 'module'],
             plugins,
             external: nodeBuiltins,
         }))
@@ -200,12 +170,9 @@ async function buildCore(resourcePath, outDir, options = {}) {
     if (options.client !== false && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
+            ...fivemOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            platform: 'node',
-            target: options.target || 'es2020',
-            format: 'iife',
-            mainFields: ['main', 'module'],
             plugins,
             external: nodeBuiltins,
         }))
@@ -227,6 +194,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
  */
 async function buildResource(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
+    const fivemOptions = getFiveMBuildOptions()
     const plugins = getResourcePlugins()
 
     const resourceName = path.basename(resourcePath)
@@ -236,35 +204,29 @@ async function buildResource(resourcePath, outDir, options = {}) {
 
     const builds = []
 
-    // Server build - use entryPoints if provided, otherwise default
+    // Server build
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
     if (options.server !== false && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
+            ...fivemOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            platform: 'node',
-            target: options.target || 'es2020',
-            format: 'iife',
-            mainFields: ['main', 'module'],
             plugins,
-            external: [...nodeBuiltins]
+            external: nodeBuiltins,
         }))
     }
 
-    // Client build - use entryPoints if provided, otherwise default
+    // Client build
     const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
     if (options.client !== false && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
+            ...fivemOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            platform: 'node',
-            target: options.target || 'es2020',
-            format: 'iife',
-            mainFields: ['main', 'module'],
             plugins,
-            external: [...nodeBuiltins]
+            external: nodeBuiltins,
         }))
     }
 
@@ -286,6 +248,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
  */
 async function buildStandalone(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
+    const fivemOptions = getFiveMBuildOptions()
     const plugins = getStandalonePlugins()
 
     const resourceName = path.basename(resourcePath)
@@ -295,35 +258,29 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
 
     const builds = []
 
-    // Server build - use entryPoints if provided, otherwise default
+    // Server build
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
     if (options.server !== false && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
+            ...fivemOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            platform: 'node',
-            target: options.target || 'es2020',
-            format: 'iife',
-            mainFields: ['main', 'module'],
             plugins,
-            external: [...nodeBuiltins]
+            external: nodeBuiltins,
         }))
     }
 
-    // Client build - use entryPoints if provided, otherwise default
+    // Client build
     const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
     if (options.client !== false && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
+            ...fivemOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            platform: 'node',
-            target: options.target || 'es2020',
-            format: 'iife',
-            mainFields: ['main', 'module'],
             plugins,
-            external: [...nodeBuiltins]
+            external: nodeBuiltins,
         }))
     }
 

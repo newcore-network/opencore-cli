@@ -453,6 +453,17 @@ export interface OpenCoreConfig {
 
 /**
  * Development mode settings.
+ *
+ * @example
+ * ```typescript
+ * dev: {
+ *   port: 3847,
+ *   // txAdmin integration for CORE hot-reload
+ *   txAdminUrl: 'http://localhost:40120',
+ *   txAdminUser: 'admin',
+ *   txAdminPassword: 'my-password',
+ * }
+ * ```
  */
 export interface DevConfig {
   /**
@@ -461,6 +472,33 @@ export interface DevConfig {
    * @default 3847
    */
   port?: number;
+
+  /**
+   * txAdmin panel URL for hot-reload integration.
+   * When configured, the CLI will use txAdmin API to restart resources,
+   * which allows hot-reloading the CORE resource (not possible via internal HTTP).
+   *
+   * Can also be set via `OPENCORE_TXADMIN_URL` environment variable.
+   * @example 'http://localhost:40120'
+   */
+  txAdminUrl?: string;
+
+  /**
+   * txAdmin username for authentication.
+   * The user must have the `commands.resources` permission.
+   *
+   * Can also be set via `OPENCORE_TXADMIN_USER` environment variable.
+   * @example 'admin'
+   */
+  txAdminUser?: string;
+
+  /**
+   * txAdmin password for authentication.
+   *
+   * **Security note**: For production, prefer using the
+   * `OPENCORE_TXADMIN_PASSWORD` environment variable instead.
+   */
+  txAdminPassword?: string;
 }
 
 /**
