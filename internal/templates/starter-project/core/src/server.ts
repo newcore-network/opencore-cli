@@ -7,7 +7,18 @@ import { Server } from '@open-core/framework';
 // import './modules/banking/server/banking.controller';
 // import './features/jobs';
 
-Server.init();
-
-console.log('{{.ProjectName}} server initialized!');
-
+Server.init({
+    mode: 'CORE',
+    features: {
+        netEvents: {enabled: true},
+        commands: {enabled: true},
+        players: {enabled: true}
+    },
+    devMode: {
+        enabled: true
+    }
+}).catch( error => {
+    console.error(error)
+}).then(()=> {
+    console.log('{{.ProjectName}} server initialized!')
+})

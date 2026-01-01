@@ -11,7 +11,7 @@ export class {{.ModuleNamePascal}}Controller {
     this.ui.update(data);
   }
 
-  @Client.Key('F5', 'Open {{.ModuleNamePascal}}')
+  @Client.KeyMapping('F5', 'Open {{.ModuleNamePascal}}')
   openUI() {
     this.ui.show();
   }

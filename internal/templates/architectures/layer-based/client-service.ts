@@ -1,6 +1,6 @@
 import { Client } from '@open-core/framework';
 
-@Client.Injectable()
+@Client.Service()
 export class {{.FeatureNamePascal}}ClientService {
   private state: any = {};
 

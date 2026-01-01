@@ -1,7 +1,7 @@
 import { Server, Player } from '@open-core/framework';
 import { {{.ModuleNamePascal}}Repository } from './{{.ModuleName}}.repository';
 
-@Server.Injectable()
+@Server.Service()
 export class {{.ModuleNamePascal}}Service {
   constructor(private readonly repository: {{.ModuleNamePascal}}Repository) {}
 

@@ -1,6 +1,6 @@
 import { Server } from '@open-core/framework';
 
-@Server.Injectable()
+@Server.Service()
 export class {{.FeatureNamePascal}}Service {
   // Service logic here
   

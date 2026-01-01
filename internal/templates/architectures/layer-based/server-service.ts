@@ -1,6 +1,6 @@
 import { Server, Player } from '@open-core/framework';
 
-@Server.Injectable()
+@Server.Service()
 export class {{.FeatureNamePascal}}Service {
   constructor() {
     console.log('{{.FeatureNamePascal}}Service initialized');

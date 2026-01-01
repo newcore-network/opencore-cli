@@ -9,7 +9,7 @@ export class {{.FeatureNamePascal}}Controller {
     console.log('Received update:', data);
   }
 
-  @Client.Key('F5', 'Toggle {{.FeatureNamePascal}}')
+  @Client.KeyMapping('F5', 'Toggle {{.FeatureNamePascal}}')
   toggle() {
     console.log('{{.FeatureNamePascal}} toggled');
   }

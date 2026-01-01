@@ -1,6 +1,6 @@
 import { Server } from '@open-core/framework';
 
-@Server.Injectable()
+@Server.Repo()
 export class {{.ModuleNamePascal}}Repository {
   private storage = new Map<number, any>();
 
