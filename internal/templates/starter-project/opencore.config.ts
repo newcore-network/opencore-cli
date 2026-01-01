@@ -1,4 +1,5 @@
 import { defineConfig } from '@open-core/cli'
+// If you get a missing packages error, you should run `pnpm i` to install everything.
 
 export default defineConfig({
   name: '{{.ProjectName}}',
