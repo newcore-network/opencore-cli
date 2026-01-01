@@ -12,7 +12,9 @@ Server.init({
     features: {
         netEvents: {enabled: true},
         commands: {enabled: true},
-        players: {enabled: true}
+        players: {enabled: true},
+        exports: {enabled: true},
+        principal: {enabled: true}
     },
     devMode: {
         enabled: true

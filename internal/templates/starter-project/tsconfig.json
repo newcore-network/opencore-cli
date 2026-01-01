@@ -11,7 +11,8 @@
         "emitDecoratorMetadata": true,
         "useDefineForClassFields": false,
         "outDir": "./dist",
-        "noEmit": true
+        "noEmit": true,
+        "types": ["@citizenfx/client", "@citizenfx/server"]
     },
     "exclude": [
         "views",

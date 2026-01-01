@@ -7,10 +7,12 @@ author 'Your Name'
 version '1.0.0'
 
 server_scripts {
-    'dist/server/**/*.js'
+    'server.js'
 }
 
 client_scripts {
-    'dist/client/**/*.js'
+    'client.js'
 }
+
+
 

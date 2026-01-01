@@ -1,7 +1,7 @@
 import { Client } from '@open-core/framework';
 
 Client.init({
-    mode: 'CORE'
+    mode: 'RESOURCE'
 }).catch( error => {
     console.error(error)
 }).then(()=> {

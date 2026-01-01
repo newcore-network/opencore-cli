@@ -6,11 +6,11 @@ author 'Your Name'
 version '1.0.0'
 
 server_scripts {
-    'dist/server/**/*.js'
+    'server.js'
 }
 {{if .HasClient}}
 client_scripts {
-    'dist/client/**/*.js'
+    'client.js'
 }
 {{end}}
 {{if .HasNUI}}
@@ -20,4 +20,9 @@ files {
     'ui/**/*'
 }
 {{end}}
+
+dependencies {
+    'core',
+}
+
 

@@ -15,6 +15,8 @@
     "@swc/core": "^1.15.7"
   },
   "dependencies": {
+    "@citizenfx/client": "2.0.22443-1",
+    "@citizenfx/server": "2.0.22443-1",
     "@open-core/framework": "latest"{{if .InstallIdentity}},
     "@open-core/identity": "latest"{{end}}
   }

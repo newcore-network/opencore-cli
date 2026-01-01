@@ -10,7 +10,7 @@ export default defineConfig({
 
   core: {
     path: './core',
-    resourceName: '[core]',
+    resourceName: 'core',
     entryPoints: {
       server: './core/src/server.ts',
       client: './core/src/client.ts',
@@ -56,7 +56,7 @@ export default defineConfig({
   {{ end }}
   build: {
   minify: {{.UseMinify }},
-  sourceMaps: true,
+  sourceMaps: false,
   target: 'ES2020',
   parallel: true,
   maxWorkers: 8,
