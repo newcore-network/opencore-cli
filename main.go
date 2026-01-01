@@ -8,6 +8,7 @@ import (
 
 	"github.com/newcore-network/opencore-cli/internal/commands"
 	"github.com/newcore-network/opencore-cli/internal/ui"
+	"github.com/newcore-network/opencore-cli/internal/updater"
 )
 
 var (
@@ -36,9 +37,21 @@ func main() {
 	rootCmd.AddCommand(commands.NewDevCommand())
 	rootCmd.AddCommand(commands.NewDoctorCommand())
 	rootCmd.AddCommand(commands.NewCloneCommand())
+	rootCmd.AddCommand(commands.NewUpdateCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(ui.Error(err.Error()))
 		os.Exit(1)
+	}
+
+	// Check for updates in the background after command execution
+	if len(os.Args) > 1 && os.Args[1] != "update" && os.Args[1] != "--version" && os.Args[1] != "-v" {
+		if info, err := updater.CheckForUpdate(version); err == nil {
+			if updater.NeedsUpdate(version, info.LatestVersion) {
+				fmt.Println()
+				fmt.Println(ui.Info(fmt.Sprintf("New version available: %s -> %s", version, info.LatestVersion)))
+				fmt.Println(ui.Info("Run 'opencore update' to update to the latest version."))
+			}
+		}
 	}
 }
