@@ -61,4 +61,16 @@ export default defineConfig({
   parallel: true,
   maxWorkers: 8,
   },
+
+  dev: {
+    port: 3847,
+    // or you can use enviroment variables
+
+    // VAR: OPENCORE_TXADMIN_USER
+    txAdminUser: '',
+    // VAR: OPENCORE_TXADMIN_PASSWORD
+    txAdminPassword: '',
+    // VAR: OPENCORE_TXADMIN_URL
+    txAdminUrl: ''
+  }
 })

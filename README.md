@@ -56,9 +56,65 @@ go build -o opencore .
 |---------|-------------|
 | `opencore init [name]` | Initialize a new project with interactive wizard |
 | `opencore build` | Build all resources for production |
+| `opencore create <type>` | Create scaffolding (feature, resource, standalone) |
+| `opencore clone <template>` | Clone an official template (chat, admin, racing) |
 | `opencore dev` | Start development mode with file watching |
 | `opencore doctor` | Validate project configuration |
 | `opencore version` | Display CLI version |
+
+### Create Command
+
+The `create` command generates scaffolding for different project components:
+
+```bash
+# Create a feature in the core
+opencore create feature banking
+
+# Create a feature inside a specific resource
+opencore create feature chat -r myserver
+
+# Create a satellite resource (depends on core)
+opencore create resource admin --with-client --with-nui
+
+# Create a standalone resource (no dependencies)
+opencore create standalone utils --with-client
+```
+
+| Subcommand | Flags | Description |
+|------------|-------|-------------|
+| `feature [name]` | `-r, --resource <name>` | Create feature in core (default) or inside a resource |
+| `resource [name]` | `--with-client`, `--with-nui` | Create satellite resource in `resources/` |
+| `standalone [name]` | `--with-client`, `--with-nui` | Create standalone resource in `standalone/` |
+
+**Feature flag `-r`:** When specified, creates the feature inside an existing resource instead of the core:
+```bash
+opencore create feature banking              # → core/src/features/banking/
+opencore create feature banking -r admin     # → resources/admin/src/server/features/banking/
+```
+
+### Clone Command
+
+Download official templates from the [opencore-templates](https://github.com/newcore-network/opencore-templates) repository:
+
+```bash
+# List all available templates
+opencore clone --list
+
+# Clone a template to resources/
+opencore clone chat
+
+# Force using GitHub API instead of git sparse-checkout
+opencore clone admin --api
+```
+
+| Flag | Description |
+|------|-------------|
+| `-l, --list` | List all available templates from the repository |
+| `--api` | Force download via GitHub API (skips git sparse-checkout) |
+
+**How it works:**
+1. If git >= 2.25 is available, uses sparse-checkout (faster, downloads only the template folder)
+2. Falls back to GitHub API if git is unavailable or older version
 
 ## Quick Start
 
@@ -77,56 +133,84 @@ Projects are configured via `opencore.config.ts` with full TypeScript support an
 import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
-  name: 'my-server',
-  outDir: './build', // Cleaned before each build
+  name: 'newcore',
+  outDir: './build',
 
-  // Deploy builds directly to FiveM server
-  destination: 'C:/FXServer/server-data/resources/[my-server]',
+  destination: 'C:/Users/alexf/Projects/Newcore Software/newcore/server/resources',
 
   core: {
     path: './core',
-    resourceName: '[core]', // Brackets create category folders
+    resourceName: 'core',
     entryPoints: {
       server: './core/src/server.ts',
       client: './core/src/client.ts',
     },
-    // Optional: custom build script
-    // customCompiler: './scripts/core-build.js',
   },
 
+  // Satellite resources (depend on core at runtime)
   resources: {
-    include: ['./resources/*'], // Glob patterns for satellite resources
+    include: ['./resources/*'],
     explicit: [
       {
         path: './resources/admin',
-        resourceName: 'admin-panel',
-        build: { client: true, nui: true }, // Fine-grained control
+        resourceName: 'admin',
+        build: {minify: false, server: true, client: false, nui: false, sourceMaps: false},
+
+        // Whether to compile this resource. Set to false to just copy files without compilation.
+        // Useful for legacy Lua resources or pre-compiled code.
+        compile: true,
+
+        // Path to a custom build script for this resource. if you need
+        customCompiler: undefined,
+
+        entryPoints: {
+          client: './resources/admin/src/client/main.ts',
+          server: './resources/admin/src/server/main.ts'
+        },
+
+        // Resource type identifier (for internal use).
+        type: 'administrator',
+
+        // Views / UI, of course, recommended in build `nui: true`
         views: {
           path: './resources/admin/ui',
-          framework: 'react',
-        },
+          framework: 'react'
+        }
       },
     ],
   },
 
+  // Standalone resources (no core dependency)
   standalone: {
-    include: ['./standalone/*'], // Independent resources
-    explicit: [
-      { path: './standalone/utils', compile: true },
-      { path: './standalone/legacy', compile: false },  // Copy without compilation
-    ],
-  },
-
-  modules: ['@open-core/identity'], // OpenCore modules
+     include: ['./standalone/*'],
+     explicit: [
+       { path: './standalone/utils', compile: true },
+       { path: './standalone/legacy', compile: false },  // Just copy, no build
+       { path: './standalone/custom', customCompiler: './scripts/custom-build.js' /* Yes, you can create your own compiler. */ },
+     ],
+   },
 
   build: {
-    minify: true,           // Reduce bundle size
-    sourceMaps: true,       // Debug with inline source maps
-    target: 'ES2020',       // FiveM-compatible target
-    parallel: true,         // Multi-core compilation
-    maxWorkers: 8,          // Worker pool size
+  minify: true,
+  sourceMaps: false,
+  target: 'ES2020',
+  parallel: true,
+  maxWorkers: 8,
   },
+
+  dev: {
+    port: 3847,
+    // or you can use enviroment variables
+
+    // VAR: OPENCORE_TXADMIN_USER
+    txAdminUser: '',
+    // VAR: OPENCORE_TXADMIN_PASSWORD
+    txAdminPassword: '',
+    // VAR: OPENCORE_TXADMIN_URL
+    txAdminUrl: ''
+  }
 })
+
 ```
 
 ### Configuration Reference

@@ -1,7 +1,7 @@
 fx_version 'cerulean'
 game 'gta5'
 
-name '{{.ResourceName}}'
+name '{{.StandaloneName}}'
 author 'Your Name'
 version '1.0.0'
 
@@ -20,9 +20,3 @@ files {
     'ui/**/*'
 }
 {{end}}
-
-dependencies {
-    'core'
-}
-
-

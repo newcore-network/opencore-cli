@@ -95,11 +95,15 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 	}
 
 	fmt.Println(ui.BoxStyle.Render(
-		fmt.Sprintf("📁 Location: %s\n\n", resourcePath) +
+		fmt.Sprintf("Location: %s\n\n", resourcePath) +
 			featuresMsg + "\n\n" +
 			"Next steps:\n" +
 			fmt.Sprintf("  cd %s\n", resourcePath) +
-			"  pnpm install",
+			"  pnpm install\n\n" +
+			"Remember to add your resource to opencore.config.ts:\n" +
+			"  resources: {\n" +
+			"    include: ['./resources/*'],\n" +
+			"  }",
 	))
 	fmt.Println()
 

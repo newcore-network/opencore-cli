@@ -1,10 +1,16 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,36 +20,131 @@ import (
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
-var officialTemplates = map[string]string{
-	"chat":   "https://github.com/newcore-network/opencore-template-chat",
-	"admin":  "https://github.com/newcore-network/opencore-template-admin",
-	"racing": "https://github.com/newcore-network/opencore-template-racing",
+const (
+	templatesRepo  = "newcore-network/opencore-templates"
+	templatesURL   = "https://github.com/" + templatesRepo
+	apiBaseURL     = "https://api.github.com/repos/" + templatesRepo + "/contents"
+	rawContentURL  = "https://raw.githubusercontent.com/" + templatesRepo + "/main"
+)
+
+// GitHubContent represents a file/directory from GitHub API
+type GitHubContent struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Type        string `json:"type"` // "file" or "dir"
+	DownloadURL string `json:"download_url"`
+	URL         string `json:"url"`
 }
 
 func NewCloneCommand() *cobra.Command {
+	var listTemplates bool
+	var useAPI bool
+
 	cmd := &cobra.Command{
-		Use:   "clone [template]",
+		Use:   "clone <template>",
 		Short: "Clone an official template",
-		Long:  "Download and set up an official OpenCore template from GitHub.",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runClone,
+		Long: fmt.Sprintf(`Download and set up an official OpenCore template.
+
+Templates are fetched from: %s
+
+Use --list to see all available templates.
+
+Examples:
+  opencore clone --list
+  opencore clone chat
+  opencore clone admin --api`, templatesURL),
+		Args: func(cmd *cobra.Command, args []string) error {
+			listFlag, _ := cmd.Flags().GetBool("list")
+			if listFlag {
+				return nil
+			}
+			if len(args) < 1 {
+				return fmt.Errorf("missing template name\n\nUse 'opencore clone --list' to see available templates\n\nUsage: opencore clone <template>")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if listTemplates {
+				return runListTemplates()
+			}
+			return runClone(cmd, args, useAPI)
+		},
 	}
+
+	cmd.Flags().BoolVarP(&listTemplates, "list", "l", false, "List all available templates")
+	cmd.Flags().BoolVar(&useAPI, "api", false, "Force using GitHub API instead of git sparse checkout")
 
 	return cmd
 }
 
+func runListTemplates() error {
+	fmt.Println(ui.Logo())
+	fmt.Println(ui.TitleStyle.Render("Available Templates"))
+	fmt.Println()
+
+	templates, err := fetchTemplateList()
+	if err != nil {
+		return fmt.Errorf("failed to fetch templates: %w", err)
+	}
+
+	if len(templates) == 0 {
+		fmt.Println(ui.Warning("No templates found in repository"))
+		return nil
+	}
+
+	fmt.Println(ui.Info(fmt.Sprintf("Found %d templates in %s:\n", len(templates), templatesURL)))
+
+	for _, t := range templates {
+		fmt.Printf("  • %s\n", t)
+	}
+
+	fmt.Println()
+	fmt.Println(ui.SubtitleStyle.Render("Usage: opencore clone <template>"))
+
+	return nil
+}
+
+func fetchTemplateList() ([]string, error) {
+	resp, err := http.Get(apiBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var contents []GitHubContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, err
+	}
+
+	var templates []string
+	for _, item := range contents {
+		// Only include directories, skip files like README.md
+		if item.Type == "dir" {
+			templates = append(templates, item.Name)
+		}
+	}
+
+	return templates, nil
+}
+
 type cloneModel struct {
-	spinner  spinner.Model
-	template string
-	url      string
-	done     bool
-	err      error
+	spinner      spinner.Model
+	template     string
+	targetPath   string
+	useAPI       bool
+	status       string
+	done         bool
+	err          error
 }
 
 func (m cloneModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		m.clone(),
+		m.startClone(),
 	)
 }
 
@@ -57,6 +158,9 @@ func (m cloneModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+	case cloneStatusMsg:
+		m.status = msg.status
+		return m, nil
 	case cloneResultMsg:
 		m.done = true
 		m.err = msg.err
@@ -71,75 +175,256 @@ func (m cloneModel) View() string {
 			return ui.Error(fmt.Sprintf("Failed to clone template: %v", m.err)) + "\n"
 		}
 		return ui.Success(fmt.Sprintf("Template '%s' cloned successfully!", m.template)) + "\n\n" +
-			ui.BoxStyle.Render(fmt.Sprintf("Next steps:\n  cd resources/%s\n  pnpm install", m.template))
+			ui.BoxStyle.Render(fmt.Sprintf("Location: %s\n\nNext steps:\n  cd %s\n  pnpm install\n\nRemember to add to opencore.config.ts:\n  resources: {\n    include: ['./resources/*'],\n  }", m.targetPath, m.targetPath))
 	}
 
-	return fmt.Sprintf("%s Cloning template %s...\n", m.spinner.View(), m.template)
+	status := m.status
+	if status == "" {
+		status = "Preparing..."
+	}
+	return fmt.Sprintf("%s %s\n", m.spinner.View(), status)
+}
+
+type cloneStatusMsg struct {
+	status string
 }
 
 type cloneResultMsg struct {
 	err error
 }
 
-func (m cloneModel) clone() tea.Cmd {
+func (m cloneModel) startClone() tea.Cmd {
 	return func() tea.Msg {
-		targetPath := filepath.Join("resources", m.template)
-
 		// Check if directory already exists
-		if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
-			return cloneResultMsg{err: fmt.Errorf("directory '%s' already exists", targetPath)}
+		if _, err := os.Stat(m.targetPath); !os.IsNotExist(err) {
+			return cloneResultMsg{err: fmt.Errorf("directory '%s' already exists", m.targetPath)}
 		}
 
-		// Clone repository
-		cmd := exec.Command("git", "clone", m.url, targetPath)
-		if err := cmd.Run(); err != nil {
-			return cloneResultMsg{err: err}
+		// Try sparse checkout first if git >= 2.25 and not forced to use API
+		if !m.useAPI && canUseSparseCheckout() {
+			err := cloneWithSparseCheckout(m.template, m.targetPath)
+			if err == nil {
+				return cloneResultMsg{err: nil}
+			}
+			// If sparse checkout fails, fall back to API
 		}
 
-		// Remove .git directory
-		gitDir := filepath.Join(targetPath, ".git")
-		if err := os.RemoveAll(gitDir); err != nil {
-			// Log warning but don't fail - the clone was successful
-			return cloneResultMsg{err: fmt.Errorf("cloned successfully but failed to remove .git: %w", err)}
-		}
-
-		return cloneResultMsg{err: nil}
+		// Use GitHub API
+		err := cloneWithGitHubAPI(m.template, m.targetPath)
+		return cloneResultMsg{err: err}
 	}
 }
 
-func runClone(cmd *cobra.Command, args []string) error {
+// canUseSparseCheckout checks if git version >= 2.25
+func canUseSparseCheckout() bool {
+	cmd := exec.Command("git", "--version")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// Parse version from "git version 2.39.0" or similar
+	re := regexp.MustCompile(`(\d+)\.(\d+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) < 3 {
+		return false
+	}
+
+	major, _ := strconv.Atoi(matches[1])
+	minor, _ := strconv.Atoi(matches[2])
+
+	return major > 2 || (major == 2 && minor >= 25)
+}
+
+// cloneWithSparseCheckout uses git sparse-checkout to clone only the template folder
+func cloneWithSparseCheckout(template, targetPath string) error {
+	tempDir, err := os.MkdirTemp("", "opencore-clone-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Initialize repo
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "remote", "add", "origin", templatesURL + ".git"},
+		{"git", "config", "core.sparseCheckout", "true"},
+	}
+
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("git command failed: %w", err)
+		}
+	}
+
+	// Configure sparse-checkout
+	sparseFile := filepath.Join(tempDir, ".git", "info", "sparse-checkout")
+	if err := os.WriteFile(sparseFile, []byte(template+"/\n"), 0644); err != nil {
+		return err
+	}
+
+	// Pull
+	cmd := exec.Command("git", "pull", "origin", "main", "--depth=1")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git pull failed: %w", err)
+	}
+
+	// Move template folder to target
+	srcPath := filepath.Join(tempDir, template)
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		return fmt.Errorf("template '%s' not found in repository", template)
+	}
+
+	// Create parent directory if needed
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		return err
+	}
+
+	// Move the folder
+	if err := os.Rename(srcPath, targetPath); err != nil {
+		// If rename fails (cross-device), copy instead
+		return copyDir(srcPath, targetPath)
+	}
+
+	return nil
+}
+
+// cloneWithGitHubAPI downloads template using GitHub API
+func cloneWithGitHubAPI(template, targetPath string) error {
+	// First verify template exists
+	apiURL := fmt.Sprintf("%s/%s", apiBaseURL, template)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("template '%s' not found. Use 'opencore clone --list' to see available templates", template)
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("GitHub API error: status %d", resp.StatusCode)
+	}
+
+	// Create target directory
+	if err := os.MkdirAll(targetPath, 0755); err != nil {
+		return err
+	}
+
+	// Download recursively
+	return downloadDirectory(template, targetPath)
+}
+
+func downloadDirectory(remotePath, localPath string) error {
+	apiURL := fmt.Sprintf("%s/%s", apiBaseURL, remotePath)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var contents []GitHubContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return err
+	}
+
+	for _, item := range contents {
+		localItemPath := filepath.Join(localPath, item.Name)
+
+		if item.Type == "dir" {
+			if err := os.MkdirAll(localItemPath, 0755); err != nil {
+				return err
+			}
+			if err := downloadDirectory(item.Path, localItemPath); err != nil {
+				return err
+			}
+		} else {
+			if err := downloadFile(item.DownloadURL, localItemPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func downloadFile(url, localPath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	file, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	return err
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(targetPath, info.Mode())
+		}
+
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.Create(targetPath)
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+	})
+}
+
+func runClone(cmd *cobra.Command, args []string, forceAPI bool) error {
 	fmt.Println(ui.Logo())
 	fmt.Println(ui.TitleStyle.Render("Clone Template"))
 	fmt.Println()
 
-	// Check if git is installed
-	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git is not installed. Please install git and try again")
-	}
-
 	templateName := args[0]
 
-	// Check if template exists
-	templateURL, exists := officialTemplates[templateName]
-	if !exists {
-		fmt.Println(ui.Error(fmt.Sprintf("Unknown template: %s", templateName)))
-		fmt.Println()
-		fmt.Println("Available templates:")
-		for name := range officialTemplates {
-			fmt.Printf("  • %s\n", name)
-		}
-		return fmt.Errorf("template not found")
+	// Validate template name (basic sanitization)
+	if strings.Contains(templateName, "/") || strings.Contains(templateName, "..") {
+		return fmt.Errorf("invalid template name: %s", templateName)
 	}
+
+	targetPath := filepath.Join("resources", templateName)
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(ui.PrimaryColor)
 
 	m := cloneModel{
-		spinner:  s,
-		template: templateName,
-		url:      templateURL,
-		done:     false,
+		spinner:    s,
+		template:   templateName,
+		targetPath: targetPath,
+		useAPI:     forceAPI,
+		done:       false,
 	}
 
 	p := tea.NewProgram(m)
@@ -148,8 +433,8 @@ func runClone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if finalModel.(cloneModel).err != nil {
-		return finalModel.(cloneModel).err
+	if fm, ok := finalModel.(cloneModel); ok && fm.err != nil {
+		return fm.err
 	}
 
 	return nil

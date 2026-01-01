@@ -12,6 +12,7 @@ import (
 
 //go:embed all:starter-project
 //go:embed all:resource
+//go:embed all:standalone
 //go:embed all:feature
 //go:embed all:architectures
 var templatesFS embed.FS
@@ -27,6 +28,12 @@ type ResourceConfig struct {
 	ResourceName string
 	HasClient    bool
 	HasNUI       bool
+}
+
+type StandaloneConfig struct {
+	StandaloneName string
+	HasClient      bool
+	HasNUI         bool
 }
 
 type FeatureConfig struct {
@@ -181,6 +188,72 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) e
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
 		embedPath := path.Join("resource", tplFile)
+		content, err := templatesFS.ReadFile(embedPath)
+		if err != nil {
+			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
+		}
+
+		tmpl, err := template.New(tplFile).Parse(string(content))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
+		}
+
+		f, err := os.Create(targetFile)
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
+		}
+		defer f.Close()
+
+		if err := tmpl.Execute(f, config); err != nil {
+			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		}
+	}
+
+	return nil
+}
+
+func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI bool) error {
+	config := StandaloneConfig{
+		StandaloneName: standaloneName,
+		HasClient:      hasClient,
+		HasNUI:         hasNUI,
+	}
+
+	// Create directories
+	dirs := []string{
+		targetPath,
+		filepath.Join(targetPath, "src"),
+		filepath.Join(targetPath, "src", "server"),
+	}
+
+	if hasClient {
+		dirs = append(dirs, filepath.Join(targetPath, "src", "client"))
+	}
+
+	if hasNUI {
+		dirs = append(dirs, filepath.Join(targetPath, "ui"))
+	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Generate files
+	files := map[string]string{
+		"package.json":       filepath.Join(targetPath, "package.json"),
+		"tsconfig.json":      filepath.Join(targetPath, "tsconfig.json"),
+		"fxmanifest.lua":     filepath.Join(targetPath, "fxmanifest.lua"),
+		"src/server/main.ts": filepath.Join(targetPath, "src", "server", "main.ts"),
+	}
+
+	if hasClient {
+		files["src/client/main.ts"] = filepath.Join(targetPath, "src", "client", "main.ts")
+	}
+
+	for tplFile, targetFile := range files {
+		embedPath := path.Join("standalone", tplFile)
 		content, err := templatesFS.ReadFile(embedPath)
 		if err != nil {
 			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
