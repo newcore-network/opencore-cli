@@ -55,11 +55,11 @@ export default defineConfig({
   modules: ['@open-core/identity'],
   {{ end }}
   build: {
-  minify: {{.UseMinify }},
-  sourceMaps: false,
-  target: 'ES2020',
-  parallel: true,
-  maxWorkers: 8,
+    minify: {{.UseMinify}},
+    sourceMaps: false,
+    target: 'ES2020',
+    parallel: true,
+    maxWorkers: 8,
   },
 
   dev: {

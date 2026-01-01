@@ -176,7 +176,7 @@ func runCreateFeature(cmd *cobra.Command, args []string, resourceName string) er
 	}
 
 	fmt.Println(ui.BoxStyle.Render(
-		fmt.Sprintf("📁 Location: %s\n\n", featurePath) +
+		fmt.Sprintf("Location: %s\n\n", featurePath) +
 			"Files created:\n" +
 			filesList + "\n" +
 			"Next: Import your feature in the appropriate bootstrap file",

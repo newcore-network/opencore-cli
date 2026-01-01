@@ -93,12 +93,12 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 	fmt.Println(ui.Success("Standalone created successfully!"))
 	fmt.Println()
 
-	featuresMsg := "Features:\n  - Server-side code"
+	featuresMsg := "Features:\n  • Server-side code"
 	if withClient {
-		featuresMsg += "\n  - Client-side code"
+		featuresMsg += "\n  • Client-side code"
 	}
 	if withNUI {
-		featuresMsg += "\n  - NUI (UI)"
+		featuresMsg += "\n  • NUI (UI)"
 	}
 
 	fmt.Println(ui.BoxStyle.Render(
