@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -23,9 +24,10 @@ type Watcher struct {
 	config         *config.Config
 	builder        *builder.Builder
 	watcher        *fsnotify.Watcher
-	debounce       map[string]time.Time
+	debounceTimers map[string]*time.Timer
 	txAdminClient  *txadmin.Client
-	sessionManager *txadmin.SessionManager
+	buildingMutex  sync.Mutex
+	buildingSet    map[string]bool // Track which resources are currently being built
 }
 
 func New(cfg *config.Config) (*Watcher, error) {
@@ -35,39 +37,24 @@ func New(cfg *config.Config) (*Watcher, error) {
 	}
 
 	watcher := &Watcher{
-		config:   cfg,
-		builder:  builder.New(cfg),
-		watcher:  w,
-		debounce: make(map[string]time.Time),
+		config:         cfg,
+		builder:        builder.New(cfg),
+		watcher:        w,
+		debounceTimers: make(map[string]*time.Timer),
+		buildingSet:    make(map[string]bool),
 	}
 
 	// Initialize txAdmin client if configured
 	if cfg.Dev.IsTxAdminConfigured() {
-		sessionMgr, err := txadmin.NewSessionManager()
+		client, err := txadmin.NewClient(
+			cfg.Dev.TxAdminURL,
+			cfg.Dev.TxAdminUser,
+			cfg.Dev.TxAdminPassword,
+		)
 		if err != nil {
-			fmt.Println(ui.Warning(fmt.Sprintf("Failed to create session manager: %v", err)))
+			fmt.Println(ui.Warning(fmt.Sprintf("Failed to create txAdmin client: %v", err)))
 		} else {
-			watcher.sessionManager = sessionMgr
-
-			client, err := txadmin.NewClient(
-				cfg.Dev.TxAdminURL,
-				cfg.Dev.TxAdminUser,
-				cfg.Dev.TxAdminPassword,
-			)
-			if err != nil {
-				fmt.Println(ui.Warning(fmt.Sprintf("Failed to create txAdmin client: %v", err)))
-			} else {
-				watcher.txAdminClient = client
-
-				// Try to restore cached session
-				if cachedSession, _ := sessionMgr.Load(); cachedSession != nil {
-					if cachedSession.BaseURL == cfg.Dev.TxAdminURL {
-						if err := client.RestoreSession(cachedSession); err == nil {
-							fmt.Println(ui.Success("Restored txAdmin session from cache"))
-						}
-					}
-				}
-			}
+			watcher.txAdminClient = client
 		}
 	}
 
@@ -94,13 +81,13 @@ func (w *Watcher) Watch() error {
 	go w.startLogBridge()
 
 	fmt.Println()
-	
+
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Background(lipgloss.Color("#4F46E5")).
 		Padding(0, 1)
-	
+
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9CA3AF"))
 
@@ -118,19 +105,13 @@ func (w *Watcher) Watch() error {
 	// Show hot-reload mode
 	if w.txAdminClient != nil {
 		fmt.Println(ui.Info(fmt.Sprintf("Hot-reload: txAdmin (%s)", w.config.Dev.TxAdminURL)))
-		// Attempt initial login if not already authenticated
-		if !w.txAdminClient.IsAuthenticated() {
-			fmt.Println(ui.Muted("Authenticating with txAdmin..."))
-			if err := w.txAdminClient.Login(); err != nil {
-				fmt.Println(ui.Warning(fmt.Sprintf("txAdmin login failed: %v", err)))
-				fmt.Println(ui.Warning("Hot-reload via txAdmin will not work. Check your credentials."))
-			} else {
-				fmt.Println(ui.Success("Connected to txAdmin"))
-				// Save session for future use
-				if w.sessionManager != nil {
-					w.sessionManager.Save(w.txAdminClient.GetSession())
-				}
-			}
+		// Attempt initial login
+		fmt.Println(ui.Muted("Authenticating with txAdmin..."))
+		if err := w.txAdminClient.Login(); err != nil {
+			fmt.Println(ui.Warning(fmt.Sprintf("txAdmin login failed: %v", err)))
+			fmt.Println(ui.Warning("Hot-reload via txAdmin will not work. Check your credentials."))
+		} else {
+			fmt.Println(ui.Success("Connected to txAdmin"))
 		}
 	} else {
 		fmt.Println(ui.Muted("Hot-reload: Internal HTTP (configure txAdmin for CORE hot-reload)"))
@@ -153,52 +134,97 @@ func (w *Watcher) Watch() error {
 			}
 
 			if event.Op&fsnotify.Write == fsnotify.Write {
-				// Debounce - only rebuild if file hasn't changed in last 300ms
-				now := time.Now()
-				if lastChange, exists := w.debounce[event.Name]; exists {
-					if now.Sub(lastChange) < 300*time.Millisecond {
-						continue
-					}
-				}
-				w.debounce[event.Name] = now
+				// Debounce using timer - wait for 500ms of silence before processing
+				fileName := event.Name
 
-				// Handle config file change
-				if filepath.Base(event.Name) == "opencore.config.ts" {
-					fmt.Println(ui.Info("Configuration changed, reloading..."))
-					newCfg, err := config.Load()
+				// Cancel existing timer for this file if any
+				if timer, exists := w.debounceTimers[fileName]; exists {
+					timer.Stop()
+				}
+
+				// Create new timer that will execute after 500ms of silence
+				w.debounceTimers[fileName] = time.AfterFunc(500*time.Millisecond, func() {
+					// Handle config file change
+					if filepath.Base(fileName) == "opencore.config.ts" {
+						fmt.Println(ui.Info("Configuration changed, reloading..."))
+						newCfg, err := config.Load()
+						if err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to reload config: %v", err)))
+							return
+						}
+						w.config = newCfg
+						w.builder = builder.New(newCfg)
+						allTasks = w.builder.CollectTasks()
+
+						// Re-add all paths (fsnotify handles duplicates)
+						w.registerPaths()
+
+						fmt.Println(ui.Info("Config reloaded, triggering full build..."))
+						if err := w.builder.Build(); err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
+						}
+						return
+					}
+
+					affected := w.tasksForChangedFile(allTasks, fileName)
+					if len(affected) == 0 {
+						fmt.Println(ui.Muted(fmt.Sprintf("File changed (ignored): %s", filepath.Base(fileName))))
+						return
+					}
+
+					// Get unique base resources from affected tasks
+					affectedResources := make(map[string]bool)
+					for _, task := range affected {
+						baseResource := strings.Split(task.ResourceName, "/")[0]
+						affectedResources[baseResource] = true
+					}
+
+					// Check if any of these resources are already being built
+					w.buildingMutex.Lock()
+					shouldSkip := false
+					for resource := range affectedResources {
+						if w.buildingSet[resource] {
+							shouldSkip = true
+							break
+						}
+					}
+
+					if shouldSkip {
+						w.buildingMutex.Unlock()
+						fmt.Println(ui.Muted(fmt.Sprintf("Build already in progress for %s, skipping...", filepath.Base(fileName))))
+						delete(w.debounceTimers, fileName)
+						return
+					}
+
+					// Mark all affected resources as being built
+					for resource := range affectedResources {
+						w.buildingSet[resource] = true
+					}
+					w.buildingMutex.Unlock()
+
+					// Perform the build
+					fmt.Println(ui.Info(fmt.Sprintf("File changed: %s", filepath.Base(fileName))))
+					results, err := w.builder.BuildTasks(affected)
+
+					// Unmark resources as being built
+					w.buildingMutex.Lock()
+					for resource := range affectedResources {
+						delete(w.buildingSet, resource)
+					}
+					w.buildingMutex.Unlock()
+
 					if err != nil {
-						fmt.Println(ui.Error(fmt.Sprintf("Failed to reload config: %v", err)))
-						continue
-					}
-					w.config = newCfg
-					w.builder = builder.New(newCfg)
-					allTasks = w.builder.CollectTasks()
-
-					// Re-add all paths (fsnotify handles duplicates)
-					w.registerPaths()
-
-					fmt.Println(ui.Info("Config reloaded, triggering full build..."))
-					if err := w.builder.Build(); err != nil {
 						fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
+						delete(w.debounceTimers, fileName)
+						return
 					}
-					continue
-				}
 
-				affected := w.tasksForChangedFile(allTasks, event.Name)
-				if len(affected) == 0 {
-					fmt.Println(ui.Muted(fmt.Sprintf("File changed (ignored): %s", filepath.Base(event.Name))))
-					continue
-				}
+					// Notify framework for hot reload
+					w.notifyFramework(affected, results)
 
-				fmt.Println(ui.Info(fmt.Sprintf("File changed: %s", filepath.Base(event.Name))))
-				results, err := w.builder.BuildTasks(affected)
-				if err != nil {
-					fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
-					continue
-				}
-
-				// Notify framework for hot reload
-				w.notifyFramework(affected, results)
+					// Clean up timer reference
+					delete(w.debounceTimers, fileName)
+				})
 			}
 
 			if event.Op&fsnotify.Create == fsnotify.Create {
@@ -206,7 +232,7 @@ func (w *Watcher) Watch() error {
 				if err == nil && info.IsDir() {
 					// Automatically watch new directories
 					w.watcher.Add(event.Name)
-					
+
 					// Re-collect tasks to include new resource if it matches globs
 					newCfg, _ := config.Load()
 					if newCfg != nil {
@@ -230,7 +256,7 @@ func (w *Watcher) Watch() error {
 // registerPaths adds all source directories to the watcher
 func (w *Watcher) registerPaths() {
 	// 1. Watch the project root for config changes (already added in Watch())
-	
+
 	// 2. Watch glob parent directories to detect new resources
 	for _, pattern := range w.config.Resources.Include {
 		parent := filepath.Dir(pattern)
@@ -374,38 +400,61 @@ func (w *Watcher) notifyFramework(tasks []builder.BuildTask, results []builder.B
 
 // notifyViaTxAdmin uses txAdmin API to restart a resource
 func (w *Watcher) notifyViaTxAdmin(resourceName string) {
+	// Helper function to check if error is auth-related
+	isAuthError := func(err error) bool {
+		if err == nil {
+			return false
+		}
+		errMsg := err.Error()
+		return strings.Contains(errMsg, "authentication") ||
+			strings.Contains(errMsg, "unauthorized") ||
+			strings.Contains(errMsg, "status 401") ||
+			strings.Contains(errMsg, "status 403")
+	}
+
+	// Helper function to re-authenticate
+	reauth := func() error {
+		fmt.Println(ui.Warning("txAdmin session expired, re-authenticating..."))
+		if err := w.txAdminClient.Login(); err != nil {
+			return fmt.Errorf("login failed: %w", err)
+		}
+		fmt.Println(ui.Success("Re-authenticated with txAdmin"))
+		return nil
+	}
+
 	// First refresh resources to ensure txAdmin sees the updated files
 	if err := w.txAdminClient.RefreshResources(); err != nil {
-		fmt.Println(ui.Warning(fmt.Sprintf("Failed to refresh resources: %v", err)))
+		if isAuthError(err) {
+			if reauthErr := reauth(); reauthErr != nil {
+				fmt.Println(ui.Error(fmt.Sprintf("Re-authentication failed: %v", reauthErr)))
+				return
+			}
+			// Retry refresh after re-auth
+			if err := w.txAdminClient.RefreshResources(); err != nil {
+				fmt.Println(ui.Error(fmt.Sprintf("Failed to refresh resources: %v", err)))
+				return
+			}
+		} else {
+			fmt.Println(ui.Warning(fmt.Sprintf("Failed to refresh resources: %v", err)))
+		}
 	}
 
 	// Then restart the resource
 	if err := w.txAdminClient.RestartResource(resourceName); err != nil {
-		// Check if we need to re-authenticate
-		if strings.Contains(err.Error(), "authentication") || strings.Contains(err.Error(), "unauthorized") {
-			fmt.Println(ui.Warning("txAdmin session expired, re-authenticating..."))
-			if loginErr := w.txAdminClient.Login(); loginErr != nil {
-				fmt.Println(ui.Error(fmt.Sprintf("txAdmin login failed: %v", loginErr)))
+		if isAuthError(err) {
+			if reauthErr := reauth(); reauthErr != nil {
+				fmt.Println(ui.Error(fmt.Sprintf("Re-authentication failed: %v", reauthErr)))
 				return
 			}
-			// Save new session
-			if w.sessionManager != nil {
-				w.sessionManager.Save(w.txAdminClient.GetSession())
-			}
-			// Retry restart
-			if retryErr := w.txAdminClient.RestartResource(resourceName); retryErr != nil {
-				fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, retryErr)))
+			// Retry restart after re-auth
+			if err := w.txAdminClient.RestartResource(resourceName); err != nil {
+				fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, err)))
 				return
 			}
 		} else {
 			fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, err)))
 			return
 		}
-	}
-
-	// Save session on success (update expiry)
-	if w.sessionManager != nil {
-		w.sessionManager.Save(w.txAdminClient.GetSession())
 	}
 
 	fmt.Println(ui.Success(fmt.Sprintf("Hot-reload triggered for %s (via txAdmin)", resourceName)))
@@ -474,10 +523,10 @@ func (w *Watcher) startLogBridge() {
 
 func (w *Watcher) displayLog(log LogMessage) {
 	timeStr := time.Unix(log.Timestamp/1000, 0).Format("15:04:05")
-	
+
 	levelStyle := lipgloss.NewStyle().Bold(true)
 	levelLabel := "INFO"
-	
+
 	switch log.Level {
 	case 10: // Trace
 		levelStyle = levelStyle.Foreground(lipgloss.Color("#9CA3AF"))
@@ -503,7 +552,7 @@ func (w *Watcher) displayLog(log LogMessage) {
 	msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 	timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
 
-	fmt.Printf("%s %s %s %s\n", 
+	fmt.Printf("%s %s %s %s\n",
 		timeStyle.Render(timeStr),
 		levelStyle.Render(levelLabel),
 		domainStyle.Render(fmt.Sprintf("[%s]", log.Domain)),

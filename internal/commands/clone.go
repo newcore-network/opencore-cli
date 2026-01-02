@@ -123,7 +123,8 @@ func fetchTemplateList() ([]string, error) {
 	var templates []string
 	for _, item := range contents {
 		// Only include directories, skip files like README.md
-		if item.Type == "dir" {
+		// Also skip directories starting with _ (system folders)
+		if item.Type == "dir" && !strings.HasPrefix(item.Name, "_") {
 			templates = append(templates, item.Name)
 		}
 	}
@@ -411,6 +412,11 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool) error {
 	// Validate template name (basic sanitization)
 	if strings.Contains(templateName, "/") || strings.Contains(templateName, "..") {
 		return fmt.Errorf("invalid template name: %s", templateName)
+	}
+
+	// Prevent cloning system folders (folders starting with _)
+	if strings.HasPrefix(templateName, "_") {
+		return fmt.Errorf("cannot clone system folders (folders starting with '_')\n\nUse 'opencore clone --list' to see available templates")
 	}
 
 	targetPath := filepath.Join("resources", templateName)

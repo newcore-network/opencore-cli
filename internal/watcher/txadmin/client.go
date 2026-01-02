@@ -176,6 +176,56 @@ func (c *Client) EnsureAuthenticated() error {
 	return c.Login()
 }
 
+// ValidateSession checks if the current session is still valid on the server
+// This is useful after restoring a cached session to ensure the server still recognizes it
+func (c *Client) ValidateSession() error {
+	if c.session == nil {
+		return fmt.Errorf("no session to validate")
+	}
+
+	// Make a simple authenticated request to check if session is valid
+	// We use /fxserver/commands as it's a known endpoint that requires authentication
+	// Send an empty/invalid command - we just want to see if we get 401/403 or not
+	payload := map[string]string{
+		"action":    "status",
+		"parameter": "",
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal validation payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.baseURL+"/fxserver/commands", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed to create validation request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Add authentication headers
+	if c.csrfToken != "" {
+		req.Header.Set("x-txadmin-csrftoken", c.csrfToken)
+	}
+	if c.sessionCookie != "" {
+		req.Header.Set("Cookie", c.sessionCookie)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("validation request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// If we get 401 or 403, the session is invalid
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("session is no longer valid on server (status %d)", resp.StatusCode)
+	}
+
+	// Any other status code means we're authenticated
+	// (the command itself might fail, but we're not being rejected for auth)
+	return nil
+}
+
 // RestartResource restarts a specific resource via txAdmin
 func (c *Client) RestartResource(resourceName string) error {
 	if err := c.EnsureAuthenticated(); err != nil {
@@ -259,13 +309,9 @@ func (c *Client) executeCommand(action, parameter string) error {
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		// Session expired, try to re-authenticate
+		// Session expired, clear it and return error with status code
 		c.session = nil
-		if err := c.Login(); err != nil {
-			return fmt.Errorf("re-authentication failed: %w", err)
-		}
-		// Retry the command
-		return c.executeCommand(action, parameter)
+		return fmt.Errorf("authentication failed (status %d): session expired or invalid", resp.StatusCode)
 	}
 
 	if resp.StatusCode != http.StatusOK {
