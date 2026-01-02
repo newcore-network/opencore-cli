@@ -24,6 +24,9 @@ var (
 			Foreground(MutedColor).
 			Italic(true)
 
+	MutedStyle = lipgloss.NewStyle().
+			Foreground(MutedColor)
+
 	SuccessStyle = lipgloss.NewStyle().
 			Foreground(SuccessColor).
 			Bold(true)

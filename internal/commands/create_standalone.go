@@ -40,7 +40,6 @@ Examples:
 }
 
 func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI bool) error {
-	fmt.Println(ui.Logo())
 	fmt.Println(ui.TitleStyle.Render("Create New Standalone"))
 	fmt.Println()
 

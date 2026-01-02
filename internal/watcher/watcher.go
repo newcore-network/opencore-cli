@@ -91,16 +91,36 @@ func (w *Watcher) Watch() error {
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9CA3AF"))
 
-	// Count unique resources (not build tasks - a resource can have multiple tasks like server, client, views)
+	// Count unique resources and standalones separately
 	uniqueResources := make(map[string]struct{})
+	uniqueStandalones := make(map[string]struct{})
 	for _, task := range allTasks {
 		baseResource := strings.Split(task.ResourceName, "/")[0]
-		uniqueResources[baseResource] = struct{}{}
+		// Skip counting views separately (they're part of a resource)
+		if strings.HasSuffix(task.ResourceName, "/ui") {
+			continue
+		}
+		if task.Type == "standalone" || task.Type == "copy" {
+			uniqueStandalones[baseResource] = struct{}{}
+		} else {
+			uniqueResources[baseResource] = struct{}{}
+		}
+	}
+
+	// Build status string
+	var statusParts []string
+	statusParts = append(statusParts, fmt.Sprintf("Project: %s", w.config.Name))
+	if len(uniqueResources) > 0 && len(uniqueStandalones) > 0 {
+		statusParts = append(statusParts, fmt.Sprintf("Resources: %d | Standalones: %d", len(uniqueResources), len(uniqueStandalones)))
+	} else if len(uniqueResources) > 0 {
+		statusParts = append(statusParts, fmt.Sprintf("Resources: %d", len(uniqueResources)))
+	} else if len(uniqueStandalones) > 0 {
+		statusParts = append(statusParts, fmt.Sprintf("Standalones: %d", len(uniqueStandalones)))
 	}
 
 	fmt.Printf("%s %s\n",
 		headerStyle.Render(" DEV MODE "),
-		statusStyle.Render(fmt.Sprintf("Project: %s | Resources: %d", w.config.Name, len(uniqueResources))))
+		statusStyle.Render(strings.Join(statusParts, " | ")))
 
 	// Show hot-reload mode
 	if w.txAdminClient != nil {

@@ -12,8 +12,15 @@ func NewCreateCommand() *cobra.Command {
 
 Types:
   feature     Create a new feature in the core (or resource with -r flag)
-  resource    Create a new satellite resource (depends on core)
-  standalone  Create a new standalone resource (no dependencies)
+  resource    Create a new framework-connected module in resources/ folder
+              • Can use DI container, database, exports, events
+              • Part of the OpenCore ecosystem
+              • Best for: gameplay features, admin systems, economy, etc.
+
+  standalone  Create an independent script in standalones/ folder
+              • Self-contained, no framework dependencies
+              • Faster to develop, smaller bundle size
+              • Best for: simple utilities, libraries, legacy scripts
 
 Examples:
   opencore create feature banking

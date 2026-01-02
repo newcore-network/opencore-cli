@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	version = "0.3.2"
+	version = "0.3.3"
 )
 
 func main() {
@@ -21,7 +21,12 @@ func main() {
 		Short: "OpenCore CLI - Official tooling for OpenCore Framework",
 		Long: ui.Logo() + "\n\n" +
 			"OpenCore CLI is the official command-line tool for creating,\n" +
-			"managing, and building FiveM servers with the OpenCore Framework.",
+			"managing, and building FiveM servers with the OpenCore Framework.\n\n" +
+			"Project Structure:\n" +
+			"  • Resources:    Framework-connected modules in resources/ folder\n" +
+			"                  (can use DI container, exports, events, database, etc.)\n" +
+			"  • Standalones:  Independent scripts in standalones/ folder\n" +
+			"                  (self-contained, no framework dependencies)",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

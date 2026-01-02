@@ -19,7 +19,7 @@ const (
 )
 
 type Release struct {
-	TagName string `json:"tag_name"`
+	TagName string  `json:"tag_name"`
 	Assets  []Asset `json:"assets"`
 }
 
@@ -170,6 +170,6 @@ func IsNPMInstallation() bool {
 		return false
 	}
 	// Check if the executable is inside an 'npm' or 'node_modules' directory
-	return filepath.Base(filepath.Dir(filepath.Dir(executable))) == "npm" || 
-	       filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(executable)))) == "node_modules"
+	return filepath.Base(filepath.Dir(filepath.Dir(executable))) == "npm" ||
+		filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(executable)))) == "node_modules"
 }

@@ -14,12 +14,12 @@ import (
 
 // Client handles communication with txAdmin API
 type Client struct {
-	baseURL      string
-	username     string
-	password     string
-	httpClient   *http.Client
-	csrfToken    string
-	session      *Session
+	baseURL       string
+	username      string
+	password      string
+	httpClient    *http.Client
+	csrfToken     string
+	session       *Session
 	sessionCookie string // Raw cookie string (name=value) - txAdmin uses non-RFC cookie names
 }
 

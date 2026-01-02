@@ -82,26 +82,157 @@ func runListTemplates() error {
 	fmt.Println(ui.TitleStyle.Render("Available Templates"))
 	fmt.Println()
 
-	templates, err := fetchTemplateList()
+	resources, standalones, err := fetchGroupedTemplates()
 	if err != nil {
 		return fmt.Errorf("failed to fetch templates: %w", err)
 	}
 
-	if len(templates) == 0 {
+	totalCount := len(resources) + len(standalones)
+	if totalCount == 0 {
 		fmt.Println(ui.Warning("No templates found in repository"))
 		return nil
 	}
 
-	fmt.Println(ui.Info(fmt.Sprintf("Found %d templates in %s:\n", len(templates), templatesURL)))
+	fmt.Println(ui.Info(fmt.Sprintf("Found %d templates in %s:\n", totalCount, templatesURL)))
 
-	for _, t := range templates {
-		fmt.Printf("  • %s\n", t)
+	// Show Resources
+	if len(resources) > 0 {
+		fmt.Println(ui.SubtitleStyle.Render("Resources") + ui.MutedStyle.Render(" (framework-connected modules)"))
+		for _, t := range resources {
+			fmt.Printf("  • %s\n", t)
+		}
+		fmt.Println()
 	}
 
-	fmt.Println()
+	// Show Standalones
+	if len(standalones) > 0 {
+		fmt.Println(ui.SubtitleStyle.Render("Standalones") + ui.MutedStyle.Render(" (independent scripts)"))
+		for _, t := range standalones {
+			fmt.Printf("  • %s\n", t)
+		}
+		fmt.Println()
+	}
+
 	fmt.Println(ui.SubtitleStyle.Render("Usage: opencore clone <template>"))
 
 	return nil
+}
+
+// fetchGroupedTemplates fetches templates grouped by category (resources vs standalones)
+func fetchGroupedTemplates() (resources []string, standalones []string, err error) {
+	// Fetch root contents
+	resp, err := http.Get(apiBaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var contents []GitHubContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, nil, err
+	}
+
+	// Check for container folders (resources, standalones, standalone)
+	for _, item := range contents {
+		if item.Type != "dir" || strings.HasPrefix(item.Name, "_") {
+			continue
+		}
+
+		// Check if this is a container folder
+		if item.Name == "resources" {
+			// Fetch contents of resources/
+			resourceList, err := fetchFolderContents("resources")
+			if err == nil {
+				resources = resourceList
+			}
+		} else if item.Name == "standalones" || item.Name == "standalone" {
+			// Fetch contents of standalones/ or standalone/
+			standaloneList, err := fetchFolderContents(item.Name)
+			if err == nil {
+				standalones = standaloneList
+			}
+		}
+	}
+
+	return resources, standalones, nil
+}
+
+// fetchFolderContents fetches the list of directories inside a folder
+func fetchFolderContents(folderPath string) ([]string, error) {
+	url := fmt.Sprintf("%s/%s", apiBaseURL, folderPath)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var contents []GitHubContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, err
+	}
+
+	var items []string
+	for _, item := range contents {
+		// Only include directories, skip files and _ folders
+		if item.Type == "dir" && !strings.HasPrefix(item.Name, "_") {
+			items = append(items, item.Name)
+		}
+	}
+
+	return items, nil
+}
+
+// resolveTemplatePaths determines the source path in the repo and target path locally
+func resolveTemplatePaths(templateName string) (sourcePath, targetPath string, err error) {
+	// Prevent cloning container folders
+	if templateName == "resources" || templateName == "standalones" || templateName == "standalone" {
+		return "", "", fmt.Errorf("cannot clone container folders directly\n\nUse 'opencore clone --list' to see available templates")
+	}
+
+	resources, standalones, err := fetchGroupedTemplates()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to fetch templates: %w", err)
+	}
+
+	// Check if template exists in resources/
+	for _, res := range resources {
+		if res == templateName {
+			return "resources/" + templateName, filepath.Join("resources", templateName), nil
+		}
+	}
+
+	// Check if template exists in standalones/ (try both spellings)
+	for _, std := range standalones {
+		if std == templateName {
+			// Determine the actual folder name in the repo (could be "standalone" or "standalones")
+			// We'll need to check which one exists
+			resp, err := http.Get(apiBaseURL)
+			if err == nil {
+				defer resp.Body.Close()
+				var contents []GitHubContent
+				if json.NewDecoder(resp.Body).Decode(&contents) == nil {
+					for _, item := range contents {
+						if (item.Name == "standalones" || item.Name == "standalone") && item.Type == "dir" {
+							return item.Name + "/" + templateName, filepath.Join("standalones", templateName), nil
+						}
+					}
+				}
+			}
+			// Fallback to "standalones" if API call fails
+			return "standalones/" + templateName, filepath.Join("standalones", templateName), nil
+		}
+	}
+
+	// Template not found
+	return "", "", fmt.Errorf("template '%s' not found\n\nUse 'opencore clone --list' to see available templates", templateName)
 }
 
 func fetchTemplateList() ([]string, error) {
@@ -134,8 +265,9 @@ func fetchTemplateList() ([]string, error) {
 
 type cloneModel struct {
 	spinner      spinner.Model
-	template     string
-	targetPath   string
+	template     string // Display name (e.g., "chat")
+	sourcePath   string // Full path in repo (e.g., "resources/chat")
+	targetPath   string // Local path (e.g., "resources/chat")
 	useAPI       bool
 	status       string
 	done         bool
@@ -203,7 +335,7 @@ func (m cloneModel) startClone() tea.Cmd {
 
 		// Try sparse checkout first if git >= 2.25 and not forced to use API
 		if !m.useAPI && canUseSparseCheckout() {
-			err := cloneWithSparseCheckout(m.template, m.targetPath)
+			err := cloneWithSparseCheckout(m.sourcePath, m.targetPath)
 			if err == nil {
 				return cloneResultMsg{err: nil}
 			}
@@ -211,7 +343,7 @@ func (m cloneModel) startClone() tea.Cmd {
 		}
 
 		// Use GitHub API
-		err := cloneWithGitHubAPI(m.template, m.targetPath)
+		err := cloneWithGitHubAPI(m.sourcePath, m.targetPath)
 		return cloneResultMsg{err: err}
 	}
 }
@@ -403,7 +535,6 @@ func copyDir(src, dst string) error {
 }
 
 func runClone(cmd *cobra.Command, args []string, forceAPI bool) error {
-	fmt.Println(ui.Logo())
 	fmt.Println(ui.TitleStyle.Render("Clone Template"))
 	fmt.Println()
 
@@ -419,7 +550,11 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool) error {
 		return fmt.Errorf("cannot clone system folders (folders starting with '_')\n\nUse 'opencore clone --list' to see available templates")
 	}
 
-	targetPath := filepath.Join("resources", templateName)
+	// Determine the source path and target path
+	sourcePath, targetPath, err := resolveTemplatePaths(templateName)
+	if err != nil {
+		return err
+	}
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -428,6 +563,7 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool) error {
 	m := cloneModel{
 		spinner:    s,
 		template:   templateName,
+		sourcePath: sourcePath,
 		targetPath: targetPath,
 		useAPI:     forceAPI,
 		done:       false,

@@ -37,8 +37,6 @@ func (b *Builder) CollectTasks() []BuildTask {
 
 // Build executes the full build process
 func (b *Builder) Build() error {
-	fmt.Println(ui.Logo())
-
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
 
@@ -634,23 +632,38 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 
 // showSummary displays the build summary
 func (b *Builder) showSummary(results []BuildResult) {
-	// Count unique resources, not build tasks (a resource can have multiple tasks)
+	// Count unique resources and standalones separately
 	successResources := make(map[string]struct{})
+	successStandalones := make(map[string]struct{})
 	failedResources := make(map[string]struct{})
+	failedStandalones := make(map[string]struct{})
 	totalDuration := time.Duration(0)
 
 	for _, r := range results {
 		baseResource := strings.Split(r.Task.ResourceName, "/")[0]
+		isStandalone := r.Task.Type == TypeStandalone || r.Task.Type == TypeCopy
+
 		if r.Success {
-			successResources[baseResource] = struct{}{}
+			if isStandalone {
+				successStandalones[baseResource] = struct{}{}
+			} else if r.Task.Type != TypeViews {  // Don't count views separately
+				successResources[baseResource] = struct{}{}
+			}
 			totalDuration += r.Duration
 		} else {
-			failedResources[baseResource] = struct{}{}
+			if isStandalone {
+				failedStandalones[baseResource] = struct{}{}
+			} else if r.Task.Type != TypeViews {
+				failedResources[baseResource] = struct{}{}
+			}
 		}
 	}
 
-	successCount := len(successResources)
-	failCount := len(failedResources)
+	successResourceCount := len(successResources)
+	successStandaloneCount := len(successStandalones)
+	failResourceCount := len(failedResources)
+	failStandaloneCount := len(failedStandalones)
+	failCount := failResourceCount + failStandaloneCount
 
 	fmt.Println()
 
@@ -664,7 +677,16 @@ func (b *Builder) showSummary(results []BuildResult) {
 	if failCount == 0 {
 		var boxContent strings.Builder
 		boxContent.WriteString("Build completed successfully!\n\n")
-		boxContent.WriteString(fmt.Sprintf("Resources: %d\n", successCount))
+
+		// Show counts based on what's present
+		if successResourceCount > 0 && successStandaloneCount > 0 {
+			boxContent.WriteString(fmt.Sprintf("Resources: %d | Standalones: %d\n", successResourceCount, successStandaloneCount))
+		} else if successResourceCount > 0 {
+			boxContent.WriteString(fmt.Sprintf("Resources: %d\n", successResourceCount))
+		} else if successStandaloneCount > 0 {
+			boxContent.WriteString(fmt.Sprintf("Standalones: %d\n", successStandaloneCount))
+		}
+
 		boxContent.WriteString(fmt.Sprintf("Time: %s\n", totalDuration.Round(time.Millisecond)))
 		boxContent.WriteString(fmt.Sprintf("Output: %s\n", b.config.OutDir))
 
@@ -696,14 +718,30 @@ func (b *Builder) showSummary(results []BuildResult) {
 
 		fmt.Println(ui.SuccessBoxStyle.Render(boxContent.String()))
 	} else {
-		boxContent := fmt.Sprintf(
-			"Build completed with errors\n\n"+
-				"Success: %d\n"+
-				"Failed: %d",
-			successCount,
-			failCount,
-		)
-		fmt.Println(ui.ErrorBoxStyle.Render(boxContent))
+		var boxContent strings.Builder
+		boxContent.WriteString("Build completed with errors\n\n")
+
+		// Show success counts
+		if successResourceCount > 0 || successStandaloneCount > 0 {
+			if successResourceCount > 0 && successStandaloneCount > 0 {
+				boxContent.WriteString(fmt.Sprintf("✓ Success: Resources: %d | Standalones: %d\n", successResourceCount, successStandaloneCount))
+			} else if successResourceCount > 0 {
+				boxContent.WriteString(fmt.Sprintf("✓ Success: Resources: %d\n", successResourceCount))
+			} else if successStandaloneCount > 0 {
+				boxContent.WriteString(fmt.Sprintf("✓ Success: Standalones: %d\n", successStandaloneCount))
+			}
+		}
+
+		// Show fail counts
+		if failResourceCount > 0 && failStandaloneCount > 0 {
+			boxContent.WriteString(fmt.Sprintf("✗ Failed: Resources: %d | Standalones: %d", failResourceCount, failStandaloneCount))
+		} else if failResourceCount > 0 {
+			boxContent.WriteString(fmt.Sprintf("✗ Failed: Resources: %d", failResourceCount))
+		} else if failStandaloneCount > 0 {
+			boxContent.WriteString(fmt.Sprintf("✗ Failed: Standalones: %d", failStandaloneCount))
+		}
+
+		fmt.Println(ui.ErrorBoxStyle.Render(boxContent.String()))
 	}
 }
 

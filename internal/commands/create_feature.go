@@ -40,7 +40,6 @@ Examples:
 }
 
 func runCreateFeature(cmd *cobra.Command, args []string, resourceName string) error {
-	fmt.Println(ui.Logo())
 	fmt.Println(ui.TitleStyle.Render("Create New Feature"))
 	fmt.Println()
 

@@ -22,7 +22,6 @@ func NewDevCommand() *cobra.Command {
 }
 
 func runDev(cmd *cobra.Command, args []string) error {
-	fmt.Println(ui.Logo())
 	fmt.Println(ui.TitleStyle.Render("Development Mode"))
 	fmt.Println()
 
