@@ -17,11 +17,11 @@ func NewUpdateCommand() *cobra.Command {
 			version, _ := cmd.Root().Flags().GetString("version")
 			if version == "" {
 				// Fallback to a default if not found, though main.go sets it
-				version = "0.0.0" 
+				version = "0.0.0"
 			}
 
 			fmt.Println(ui.Info("Checking for updates..."))
-			
+
 			info, err := updater.CheckForUpdate(version)
 			if err != nil {
 				fmt.Println(ui.Error(fmt.Sprintf("Failed to check for updates: %v", err)))
@@ -29,7 +29,7 @@ func NewUpdateCommand() *cobra.Command {
 			}
 
 			if !updater.NeedsUpdate(cmd.Root().Version, info.LatestVersion) {
-				fmt.Println(ui.Success(fmt.Sprintf("OpenCore CLI is already up to date (v%s)", cmd.Root().Version)))
+				fmt.Println(ui.Success(fmt.Sprintf("OpenCore CLI is already up to date (%s)", cmd.Root().Version)))
 				return
 			}
 
