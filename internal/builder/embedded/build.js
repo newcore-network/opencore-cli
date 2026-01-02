@@ -298,6 +298,27 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
 }
 
 /**
+ * Read .ocignore file and return patterns
+ */
+function readOcIgnore(viewPath) {
+    const ocignorePath = path.join(viewPath, '.ocignore')
+    if (!fs.existsSync(ocignorePath)) {
+        return []
+    }
+
+    try {
+        const content = fs.readFileSync(ocignorePath, 'utf8')
+        return content
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#')) // Remove empty lines and comments
+    } catch (error) {
+        console.warn(`[views] Failed to read .ocignore: ${error.message}`)
+        return []
+    }
+}
+
+/**
  * Build views/NUI (React, Vue, Svelte, etc.)
  */
 async function buildViews(viewPath, outDir, options = {}) {
@@ -305,44 +326,69 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     await fs.promises.mkdir(outDir, { recursive: true })
 
-    // Detect entry point - expanded list to include more patterns
-    const possibleEntries = [
-        path.join(viewPath, 'index.tsx'),
-        path.join(viewPath, 'index.jsx'),
-        path.join(viewPath, 'index.ts'),
-        path.join(viewPath, 'index.js'),
-        path.join(viewPath, 'main.tsx'),
-        path.join(viewPath, 'main.jsx'),
-        path.join(viewPath, 'main.ts'),
-        path.join(viewPath, 'main.js'),
-        path.join(viewPath, 'app.tsx'),
-        path.join(viewPath, 'app.jsx'),
-        path.join(viewPath, 'app.ts'),
-        path.join(viewPath, 'app.js'),
-        path.join(viewPath, 'src/index.tsx'),
-        path.join(viewPath, 'src/index.ts'),
-        path.join(viewPath, 'src/main.tsx'),
-        path.join(viewPath, 'src/main.ts'),
-        path.join(viewPath, 'src/app.tsx'),
-        path.join(viewPath, 'src/app.ts'),
+    // Collect ignore patterns from config and .ocignore
+    const ignorePatterns = [
+        ...(options.ignore || []),
+        ...readOcIgnore(viewPath),
+        // Default ignores
+        'node_modules',
+        '.git',
+        '.ocignore',
     ]
 
+    console.log(`[views] Ignore patterns:`, ignorePatterns.length > 0 ? ignorePatterns : 'none')
+
     let entryPoint = null
-    for (const entry of possibleEntries) {
-        if (fs.existsSync(entry)) {
-            entryPoint = entry
-            break
+
+    // 1. Check if explicit entry point is configured
+    if (options.viewEntry) {
+        const explicitEntry = path.join(viewPath, options.viewEntry)
+        if (fs.existsSync(explicitEntry)) {
+            entryPoint = explicitEntry
+            console.log(`[views] Using explicit entry point: ${options.viewEntry}`)
+        } else {
+            throw new Error(`[views] Configured entry point not found: ${options.viewEntry}`)
         }
     }
 
+    // 2. Auto-detect entry point if not explicitly configured
     if (!entryPoint) {
-        const errorMsg = `[views] No entry point found in ${viewPath}\nSearched for: ${possibleEntries.map(p => path.basename(p)).join(', ')}`
-        console.error(errorMsg)
-        throw new Error(errorMsg)
-    }
+        const possibleEntries = [
+            path.join(viewPath, 'index.tsx'),
+            path.join(viewPath, 'index.jsx'),
+            path.join(viewPath, 'index.ts'),
+            path.join(viewPath, 'index.js'),
+            path.join(viewPath, 'main.tsx'),
+            path.join(viewPath, 'main.jsx'),
+            path.join(viewPath, 'main.ts'),
+            path.join(viewPath, 'main.js'),
+            path.join(viewPath, 'app.tsx'),
+            path.join(viewPath, 'app.jsx'),
+            path.join(viewPath, 'app.ts'),
+            path.join(viewPath, 'app.js'),
+            path.join(viewPath, 'src/index.tsx'),
+            path.join(viewPath, 'src/index.ts'),
+            path.join(viewPath, 'src/main.tsx'),
+            path.join(viewPath, 'src/main.ts'),
+            path.join(viewPath, 'src/app.tsx'),
+            path.join(viewPath, 'src/app.ts'),
+        ]
 
-    const entryName = path.basename(entryPoint, path.extname(entryPoint))
-    console.log(`[views] Found entry point: ${path.relative(viewPath, entryPoint)}`)
+        for (const entry of possibleEntries) {
+            if (fs.existsSync(entry)) {
+                entryPoint = entry
+                break
+            }
+        }
+
+        if (!entryPoint) {
+            const errorMsg = `[views] No entry point found in ${viewPath}\nSearched for: ${possibleEntries.map(p => path.basename(p)).join(', ')}\nTip: Set 'entryPoint' in views config or create one of the above files.`
+            console.error(errorMsg)
+            throw new Error(errorMsg)
+        }
+
+        console.log(`[views] Auto-detected entry point: ${path.relative(viewPath, entryPoint)}`)
+    }
 
     await esbuild.build({
         ...shared,

@@ -75,8 +75,10 @@ type StandaloneConfig struct {
 }
 
 type ViewsConfig struct {
-	Path      string `json:"path"`
-	Framework string `json:"framework,omitempty"`
+	Path       string   `json:"path"`
+	Framework  string   `json:"framework,omitempty"`
+	EntryPoint string   `json:"entryPoint,omitempty"` // Optional: explicit entry point (e.g., "main.ng.ts")
+	Ignore     []string `json:"ignore,omitempty"`     // Optional: ignore patterns (e.g., ["*.config.ts", "test/**"])
 }
 
 type BuildConfig struct {

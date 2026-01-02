@@ -58,12 +58,14 @@ export interface EntryPoints {
 /**
  * Configuration for NUI/Views (web interfaces).
  * Used for resources that have a web-based UI component.
- * 
+ *
  * @example
  * ```typescript
  * views: {
  *   path: './core/views',
  *   framework: 'react',
+ *   entryPoint: 'main.tsx',  // Optional: explicit entry point
+ *   ignore: ['*.config.ts', 'test/**'],  // Optional: ignore patterns
  * }
  * ```
  */
@@ -81,6 +83,28 @@ export interface ViewsConfig {
    * @default 'vanilla'
    */
   framework?: 'react' | 'vue' | 'svelte' | 'solid' | 'vanilla';
+
+  /**
+   * Explicit entry point file for the views build.
+   * If not specified, the CLI will auto-detect common entry points:
+   * index.tsx, index.ts, main.tsx, main.ts, app.tsx, app.ts, etc.
+   *
+   * Path is relative to the `path` directory.
+   * @example 'main.ng.ts' // For Angular projects
+   * @example 'src/index.tsx' // For nested entry points
+   */
+  entryPoint?: string;
+
+  /**
+   * Patterns of files to ignore during the build process.
+   * Works in combination with `.ocignore` file if present.
+   * Uses glob patterns similar to `.gitignore`.
+   *
+   * **Note:** `node_modules`, `.git`, and `.ocignore` are always ignored.
+   *
+   * @example ['*.config.ts', '*.config.js', 'test/**', '**\/*.spec.ts']
+   */
+  ignore?: string[];
 }
 
 /**

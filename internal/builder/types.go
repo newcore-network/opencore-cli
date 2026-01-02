@@ -34,6 +34,8 @@ type BuildOptions struct {
 	EntryPoints *EntryPoints `json:"entryPoints,omitempty"`
 	Framework   string       `json:"framework,omitempty"` // react, vue, svelte
 	Compile     bool         `json:"compile"`             // for standalone resources
+	ViewEntry   string       `json:"viewEntry,omitempty"` // explicit entry point for views (e.g., "main.ng.ts")
+	Ignore      []string     `json:"ignore,omitempty"`    // ignore patterns for views (e.g., ["*.config.ts"])
 }
 
 // EntryPoints defines entry points for core builds

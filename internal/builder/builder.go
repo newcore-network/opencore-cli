@@ -171,6 +171,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Framework:  b.config.Core.Views.Framework,
 				Minify:     b.config.Build.Minify,
 				SourceMaps: b.config.Build.SourceMaps,
+				ViewEntry:  b.config.Core.Views.EntryPoint,
+				Ignore:     b.config.Core.Views.Ignore,
 			},
 		})
 	}
@@ -253,6 +255,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 							Framework:  explicit.Views.Framework,
 							Minify:     b.config.Build.Minify,
 							SourceMaps: b.config.Build.SourceMaps,
+							ViewEntry:  explicit.Views.EntryPoint,
+							Ignore:     explicit.Views.Ignore,
 						},
 					})
 				}
@@ -331,6 +335,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Framework:  res.Views.Framework,
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
+					ViewEntry:  res.Views.EntryPoint,
+					Ignore:     res.Views.Ignore,
 				},
 			})
 		}
@@ -443,6 +449,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Framework:  res.Views.Framework,
 						Minify:     b.config.Build.Minify,
 						SourceMaps: b.config.Build.SourceMaps,
+						ViewEntry:  res.Views.EntryPoint,
+						Ignore:     res.Views.Ignore,
 					},
 				})
 			}
