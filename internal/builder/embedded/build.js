@@ -305,7 +305,7 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     await fs.promises.mkdir(outDir, { recursive: true })
 
-    // Detect entry point
+    // Detect entry point - expanded list to include more patterns
     const possibleEntries = [
         path.join(viewPath, 'index.tsx'),
         path.join(viewPath, 'index.jsx'),
@@ -313,8 +313,18 @@ async function buildViews(viewPath, outDir, options = {}) {
         path.join(viewPath, 'index.js'),
         path.join(viewPath, 'main.tsx'),
         path.join(viewPath, 'main.jsx'),
+        path.join(viewPath, 'main.ts'),
+        path.join(viewPath, 'main.js'),
+        path.join(viewPath, 'app.tsx'),
+        path.join(viewPath, 'app.jsx'),
+        path.join(viewPath, 'app.ts'),
+        path.join(viewPath, 'app.js'),
         path.join(viewPath, 'src/index.tsx'),
+        path.join(viewPath, 'src/index.ts'),
         path.join(viewPath, 'src/main.tsx'),
+        path.join(viewPath, 'src/main.ts'),
+        path.join(viewPath, 'src/app.tsx'),
+        path.join(viewPath, 'src/app.ts'),
     ]
 
     let entryPoint = null
@@ -326,9 +336,13 @@ async function buildViews(viewPath, outDir, options = {}) {
     }
 
     if (!entryPoint) {
-        console.log(`[views] No entry point found in ${viewPath}`)
-        return
+        const errorMsg = `[views] No entry point found in ${viewPath}\nSearched for: ${possibleEntries.map(p => path.basename(p)).join(', ')}`
+        console.error(errorMsg)
+        throw new Error(errorMsg)
     }
+
+    const entryName = path.basename(entryPoint, path.extname(entryPoint))
+    console.log(`[views] Found entry point: ${path.relative(viewPath, entryPoint)}`)
 
     await esbuild.build({
         ...shared,
@@ -354,11 +368,37 @@ async function buildViews(viewPath, outDir, options = {}) {
         },
     })
 
-    // Copy index.html if exists
+    // Process and copy HTML file if exists
     const htmlSrc = path.join(viewPath, 'index.html')
     const htmlDst = path.join(outDir, 'index.html')
     if (fs.existsSync(htmlSrc)) {
-        await fs.promises.copyFile(htmlSrc, htmlDst)
+        let html = await fs.promises.readFile(htmlSrc, 'utf8')
+
+        // Replace TypeScript/JSX references with compiled JS
+        // Match: <script ... src="app.ts"> or <script ... src="app.tsx">
+        html = html.replace(
+            /(<script[^>]*\ssrc=["'])([^"']+\.(ts|tsx|jsx))(['"][^>]*>)/gi,
+            (match, prefix, src, ext, suffix) => {
+                const jsFile = src.replace(/\.(ts|tsx|jsx)$/, '.js')
+                return prefix + jsFile + suffix
+            }
+        )
+
+        // Extract and copy referenced CSS files
+        const cssMatches = html.matchAll(/<link[^>]*href=["']([^"']+\.css)["'][^>]*>/gi)
+        for (const match of cssMatches) {
+            const cssFile = match[1]
+            const cssSrc = path.join(viewPath, cssFile)
+            const cssDst = path.join(outDir, cssFile)
+
+            if (fs.existsSync(cssSrc)) {
+                await fs.promises.copyFile(cssSrc, cssDst)
+                console.log(`[views] Copied ${cssFile}`)
+            }
+        }
+
+        await fs.promises.writeFile(htmlDst, html, 'utf8')
+        console.log(`[views] Processed and copied index.html`)
     }
 
     console.log(`[views] Built ${path.basename(viewPath)}`)
