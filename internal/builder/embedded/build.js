@@ -85,18 +85,97 @@ function getSharedConfig(options = {}) {
     }
 }
 
-// Build options generator with configurable platform, format, and target
-function getBuildOptions(options = {}) {
+/**
+ * Merge options with fallbacks
+ * Supports both new (options.server/client) and legacy (options.platform/format/etc) structures
+ */
+function mergeOptions(side, sideOptions, globalOptions, defaults) {
+    // If sideOptions is explicitly false, return null to skip build
+    if (sideOptions === false) {
+        return null
+    }
+
+    // Start with defaults
+    const merged = { ...defaults }
+
+    // Apply global options (legacy support)
+    if (globalOptions.platform) merged.platform = globalOptions.platform
+    if (globalOptions.format) merged.format = globalOptions.format
+    if (globalOptions.target) merged.target = globalOptions.target
+    if (globalOptions.external) merged.external = globalOptions.external
+    if (globalOptions.minify !== undefined) merged.minify = globalOptions.minify
+    if (globalOptions.sourceMaps !== undefined) merged.sourceMaps = globalOptions.sourceMaps
+
+    // Apply side-specific options (new structure)
+    if (sideOptions && typeof sideOptions === 'object') {
+        if (sideOptions.platform) merged.platform = sideOptions.platform
+        if (sideOptions.format) merged.format = sideOptions.format
+        if (sideOptions.target) merged.target = sideOptions.target
+        if (sideOptions.external) merged.external = sideOptions.external
+        if (sideOptions.minify !== undefined) merged.minify = sideOptions.minify
+        if (sideOptions.sourceMaps !== undefined) merged.sourceMaps = sideOptions.sourceMaps
+    }
+
+    return merged
+}
+
+/**
+ * Get build options for server or client
+ * @param {string} side - 'server' or 'client'
+ * @param {object} options - Combined options from config
+ * @returns {object|null} Build options or null to skip
+ */
+function getBuildOptions(side, options = {}) {
+    const defaults = {
+        platform: side === 'server' ? 'node' : 'browser',
+        target: 'es2020',
+        format: 'iife',
+        external: [],
+        minify: false,
+        sourceMaps: false,
+    }
+
+    // Get side-specific options
+    const sideOptions = options[side]
+
+    // Merge with fallbacks
+    const merged = mergeOptions(side, sideOptions, options, defaults)
+
+    if (merged === null) {
+        return null
+    }
+
+    // Return esbuild options
     return {
-        platform: options.platform || 'node', // FiveM supports full Node.js
-        target: options.target || 'es2020',
-        format: options.format || 'iife',
+        platform: merged.platform,
+        target: merged.target,
+        format: merged.format,
         mainFields: ['module', 'main'],
         conditions: ['import', 'default'],
         supported: {
             'dynamic-import': true,
         },
     }
+}
+
+/**
+ * Get external packages list for a specific side
+ */
+function getExternals(side, options = {}) {
+    const defaults = []
+
+    // Legacy support
+    if (options.external) {
+        return options.external
+    }
+
+    // New structure
+    const sideOptions = options[side]
+    if (sideOptions && typeof sideOptions === 'object' && sideOptions.external) {
+        return sideOptions.external
+    }
+
+    return defaults
 }
 
 function getCorePlugins() {
@@ -120,7 +199,6 @@ function getStandalonePlugins() {
  */
 async function buildCore(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
-    const buildOptions = getBuildOptions(options)
     const plugins = getCorePlugins()
 
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server.ts')
@@ -134,26 +212,28 @@ async function buildCore(resourcePath, outDir, options = {}) {
     const builds = []
 
     // Server build
-    if (options.server !== false && fs.existsSync(serverEntry)) {
+    const serverBuildOptions = getBuildOptions('server', options)
+    if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
-            ...buildOptions,
+            ...serverBuildOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
             plugins,
-            external: options.external || [],
+            external: getExternals('server', options),
         }))
     }
 
     // Client build
-    if (options.client !== false && fs.existsSync(clientEntry)) {
+    const clientBuildOptions = getBuildOptions('client', options)
+    if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
-            ...buildOptions,
+            ...clientBuildOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
             plugins,
-            external: options.external || [],
+            external: getExternals('client', options),
         }))
     }
 
@@ -173,7 +253,6 @@ async function buildCore(resourcePath, outDir, options = {}) {
  */
 async function buildResource(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
-    const buildOptions = getBuildOptions(options)
     const plugins = getResourcePlugins()
 
     const resourceName = path.basename(resourcePath)
@@ -185,27 +264,29 @@ async function buildResource(resourcePath, outDir, options = {}) {
 
     // Server build
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
-    if (options.server !== false && fs.existsSync(serverEntry)) {
+    const serverBuildOptions = getBuildOptions('server', options)
+    if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
-            ...buildOptions,
+            ...serverBuildOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
             plugins,
-            external: options.external || [],
+            external: getExternals('server', options),
         }))
     }
 
     // Client build
     const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
-    if (options.client !== false && fs.existsSync(clientEntry)) {
+    const clientBuildOptions = getBuildOptions('client', options)
+    if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
-            ...buildOptions,
+            ...clientBuildOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
             plugins,
-            external: options.external || [],
+            external: getExternals('client', options),
         }))
     }
 
@@ -227,7 +308,6 @@ async function buildResource(resourcePath, outDir, options = {}) {
  */
 async function buildStandalone(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
-    const buildOptions = getBuildOptions(options)
     const plugins = getStandalonePlugins()
 
     const resourceName = path.basename(resourcePath)
@@ -239,27 +319,29 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
 
     // Server build
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
-    if (options.server !== false && fs.existsSync(serverEntry)) {
+    const serverBuildOptions = getBuildOptions('server', options)
+    if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
         builds.push(esbuild.build({
             ...shared,
-            ...buildOptions,
+            ...serverBuildOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
             plugins,
-            external: options.external || [],
+            external: getExternals('server', options),
         }))
     }
 
     // Client build
     const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
-    if (options.client !== false && fs.existsSync(clientEntry)) {
+    const clientBuildOptions = getBuildOptions('client', options)
+    if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
         builds.push(esbuild.build({
             ...shared,
-            ...buildOptions,
+            ...clientBuildOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
             plugins,
-            external: options.external || [],
+            external: getExternals('client', options),
         }))
     }
 

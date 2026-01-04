@@ -178,29 +178,30 @@ export interface CoreConfig {
  * @example
  * ```typescript
  * build: {
- *   server: true,
- *   client: true,
+ *   // Control what to build
+ *   compileServer: true,
+ *   compileClient: true,
  *   nui: false,
+ *
+ *   // Global settings for this resource
  *   minify: true,
- *   platform: 'node',
- *   format: 'cjs',
- *   external: ['some-package'],
+ *   sourceMaps: false,
+ *
+ *   // Server-specific settings
+ *   server: {
+ *     platform: 'node',
+ *     external: ['typeorm', 'pg'],
+ *   },
+ *
+ *   // Client-specific settings
+ *   client: {
+ *     platform: 'browser',
+ *     external: ['three'],
+ *   },
  * }
  * ```
  */
 export interface ResourceBuildConfig {
-  /**
-   * Whether to compile server-side code.
-   * @default true
-   */
-  server?: boolean;
-
-  /**
-   * Whether to compile client-side code.
-   * @default true (if client folder exists)
-   */
-  client?: boolean;
-
   /**
    * Whether this resource has NUI (web interface).
    * @default false
@@ -210,40 +211,59 @@ export interface ResourceBuildConfig {
   /**
    * Whether to minify the output for this specific resource.
    * Overrides the global build.minify setting.
+   * Applies to both server and client unless overridden in server/client config.
    */
   minify?: boolean;
 
   /**
    * Whether to generate source maps for this specific resource.
    * Overrides the global build.sourceMaps setting.
+   * Applies to both server and client unless overridden in server/client config.
    */
   sourceMaps?: boolean;
 
   /**
-   * JavaScript target version for this resource.
-   * Overrides the global build.target setting.
-   * @example 'es2020' | 'es2021' | 'esnext'
+   * Server-side build configuration for this resource.
+   * Set to `false` to skip server build.
+   * Set to `true` or omit to use defaults.
+   * Set to object to customize server build options.
+   *
+   * @example false // Skip server build
+   * @example true // Build with defaults
+   * @example { platform: 'node', external: ['pg'] } // Custom config
+   */
+  server?: boolean | SideBuildConfig;
+
+  /**
+   * Client-side build configuration for this resource.
+   * Set to `false` to skip client build.
+   * Set to `true` or omit to use defaults.
+   * Set to object to customize client build options.
+   *
+   * @example false // Skip client build
+   * @example true // Build with defaults
+   * @example { platform: 'browser', external: [] } // Custom config
+   */
+  client?: boolean | SideBuildConfig;
+
+  // Legacy support for backward compatibility
+  /**
+   * @deprecated Use `server.target` and `client.target` instead
    */
   target?: string;
 
   /**
-   * Build platform for this resource.
-   * Overrides the global build.platform setting.
-   * @example 'node' | 'browser' | 'neutral'
+   * @deprecated Use `server.platform` and `client.platform` instead
    */
   platform?: 'node' | 'browser' | 'neutral';
 
   /**
-   * Output format for this resource.
-   * Overrides the global build.format setting.
-   * @example 'iife' | 'cjs' | 'esm'
+   * @deprecated Use `server.format` and `client.format` instead
    */
   format?: 'iife' | 'cjs' | 'esm';
 
   /**
-   * Packages to mark as external for this resource.
-   * Overrides the global build.external setting.
-   * @example ['specific-package']
+   * @deprecated Use `server.external` and `client.external` instead
    */
   external?: string[];
 }
@@ -260,10 +280,14 @@ export interface ResourceBuildConfig {
  *     path: './resources/admin',
  *     resourceName: 'admin-panel',
  *     build: {
- *       client: true,
  *       nui: true,
- *       platform: 'browser',  // Override for this resource
- *       external: ['react', 'react-dom'],  // Don't bundle React
+ *       server: {
+ *         platform: 'node',
+ *       },
+ *       client: {
+ *         platform: 'browser',
+ *         external: ['react', 'react-dom'],  // Don't bundle React
+ *       },
  *     },
  *     views: {
  *       path: './resources/admin/ui',
@@ -274,8 +298,12 @@ export interface ResourceBuildConfig {
  *     path: './resources/database-bridge',
  *     resourceName: 'db-bridge',
  *     build: {
- *       format: 'cjs',  // Use CommonJS for this resource
- *       external: [],  // Bundle everything
+ *       server: {
+ *         platform: 'node',
+ *         format: 'cjs',  // Use CommonJS for server
+ *         external: ['typeorm', 'pg'],  // External DB packages
+ *       },
+ *       client: false,  // No client build
  *     },
  *   },
  * ]
@@ -390,50 +418,23 @@ export interface StandaloneConfig {
 }
 
 /**
- * Global build configuration.
- * These settings apply to all resources unless overridden.
+ * Build configuration for server or client side.
+ * These settings control how the code is compiled.
  *
  * @example
  * ```typescript
- * build: {
- *   minify: true,
- *   sourceMaps: true,
- *   target: 'es2020',
+ * {
  *   platform: 'node',
  *   format: 'iife',
- *   parallel: true,
- *   maxWorkers: 8,
- *   external: [],
+ *   target: 'es2020',
+ *   external: ['typeorm', 'pg'],
  * }
  * ```
  */
-export interface BuildConfig {
-  /**
-   * Whether to minify the output code.
-   * Reduces file size but makes debugging harder.
-   * @default false
-   */
-  minify?: boolean;
-
-  /**
-   * Whether to generate inline source maps.
-   * Useful for debugging in development.
-   * @default false
-   */
-  sourceMaps?: boolean;
-
-  /**
-   * JavaScript target version.
-   * FiveM supports ES2020+ features with Node.js 22.
-   * @default 'es2020'
-   * @example 'es2020' | 'es2021' | 'esnext'
-   */
-  target?: string;
-
+export interface SideBuildConfig {
   /**
    * Build platform for esbuild.
-   * FiveM server supports full Node.js runtime.
-   * @default 'node'
+   * @default 'node' for server, 'browser' for client
    * @example 'node' | 'browser' | 'neutral'
    */
   platform?: 'node' | 'browser' | 'neutral';
@@ -444,6 +445,81 @@ export interface BuildConfig {
    * @example 'iife' | 'cjs' | 'esm'
    */
   format?: 'iife' | 'cjs' | 'esm';
+
+  /**
+   * JavaScript target version.
+   * @default 'es2020'
+   * @example 'es2020' | 'es2021' | 'esnext'
+   */
+  target?: string;
+
+  /**
+   * Packages to mark as external (not bundled).
+   * @default []
+   * @example ['typeorm', 'pg'] // For server with DB packages
+   * @example ['three'] // For client with large 3D libraries
+   */
+  external?: string[];
+
+  /**
+   * Whether to minify the output code.
+   * If not set, uses the global minify setting.
+   * @example true
+   */
+  minify?: boolean;
+
+  /**
+   * Whether to generate inline source maps.
+   * If not set, uses the global sourceMaps setting.
+   * @example true
+   */
+  sourceMaps?: boolean;
+}
+
+/**
+ * Global build configuration.
+ * These settings apply to all resources unless overridden.
+ *
+ * @example
+ * ```typescript
+ * build: {
+ *   minify: true,
+ *   sourceMaps: false,
+ *   parallel: true,
+ *   maxWorkers: 8,
+ *
+ *   server: {
+ *     platform: 'node',
+ *     format: 'iife',
+ *     target: 'es2020',
+ *     external: [],
+ *   },
+ *
+ *   client: {
+ *     platform: 'browser',
+ *     format: 'iife',
+ *     target: 'es2020',
+ *     external: [],
+ *   },
+ * }
+ * ```
+ */
+export interface BuildConfig {
+  /**
+   * Whether to minify the output code.
+   * Reduces file size but makes debugging harder.
+   * Applies to both server and client unless overridden.
+   * @default false
+   */
+  minify?: boolean;
+
+  /**
+   * Whether to generate inline source maps.
+   * Useful for debugging in development.
+   * Applies to both server and client unless overridden.
+   * @default false
+   */
+  sourceMaps?: boolean;
 
   /**
    * Whether to build resources in parallel.
@@ -460,14 +536,35 @@ export interface BuildConfig {
   maxWorkers?: number;
 
   /**
-   * Packages to mark as external (not bundled).
-   * Use this to exclude packages from the bundle.
-   *
-   * **Note**: With FiveM Node.js 22 support, most packages can be bundled.
-   * Only use external for packages you want to load separately at runtime.
-   *
-   * @default []
-   * @example ['some-large-package', 'optional-dependency']
+   * Server-side build configuration.
+   * Server runs in FiveM with full Node.js 22 support.
+   */
+  server?: SideBuildConfig;
+
+  /**
+   * Client-side build configuration.
+   * Client runs in a browser-like environment in the game.
+   */
+  client?: SideBuildConfig;
+
+  // Legacy support for backward compatibility
+  /**
+   * @deprecated Use `server.platform` and `client.platform` instead
+   */
+  platform?: 'node' | 'browser' | 'neutral';
+
+  /**
+   * @deprecated Use `server.format` and `client.format` instead
+   */
+  format?: 'iife' | 'cjs' | 'esm';
+
+  /**
+   * @deprecated Use `server.target` and `client.target` instead
+   */
+  target?: string;
+
+  /**
+   * @deprecated Use `server.external` and `client.external` instead
    */
   external?: string[];
 }
@@ -490,8 +587,14 @@ export interface BuildConfig {
  *     resourceName: '[core]',
  *     build: {
  *       // Core-specific build options
- *       platform: 'node',
- *       external: [],  // Bundle everything for core
+ *       server: {
+ *         platform: 'node',
+ *         external: [],  // Bundle everything for server
+ *       },
+ *       client: {
+ *         platform: 'browser',
+ *         external: [],
+ *       },
  *     },
  *   },
  *
@@ -501,9 +604,23 @@ export interface BuildConfig {
  *       {
  *         path: './resources/ui-heavy',
  *         build: {
- *           // Override for this specific resource
- *           format: 'esm',
- *           external: ['three', 'react'],
+ *           // Client-only resource with custom config
+ *           server: false,  // No server build
+ *           client: {
+ *             platform: 'browser',
+ *             external: ['three', 'react'],  // Don't bundle large libs
+ *           },
+ *         },
+ *       },
+ *       {
+ *         path: './resources/database-service',
+ *         build: {
+ *           // Server-only resource
+ *           server: {
+ *             platform: 'node',
+ *             external: ['typeorm', 'pg'],  // Node.js packages external
+ *           },
+ *           client: false,  // No client build
  *         },
  *       },
  *     ],
@@ -512,12 +629,25 @@ export interface BuildConfig {
  *   build: {
  *     // Global build options (used as defaults)
  *     minify: true,
- *     platform: 'node',
- *     format: 'iife',
- *     target: 'es2020',
+ *     sourceMaps: false,
  *     parallel: true,
  *     maxWorkers: 8,
- *     external: [],
+ *
+ *     // Default server config
+ *     server: {
+ *       platform: 'node',
+ *       format: 'iife',
+ *       target: 'es2020',
+ *       external: [],
+ *     },
+ *
+ *     // Default client config
+ *     client: {
+ *       platform: 'browser',
+ *       format: 'iife',
+ *       target: 'es2020',
+ *       external: [],
+ *     },
  *   },
  * })
  * ```
