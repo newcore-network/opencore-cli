@@ -4,6 +4,44 @@ const path = require('path')
 const fs = require('fs')
 
 // =============================================================================
+// OpenCore Build Script
+// =============================================================================
+//
+// This script compiles TypeScript resources for FiveM with full decorator support.
+//
+// KEY CONCEPTS:
+// - Server and Client builds are SEPARATE with different configurations
+// - Server runs in Node.js 22 environment (use platform: 'node')
+// - Client runs in browser-like environment (use platform: 'browser')
+// - Each resource can have custom build settings that override global defaults
+//
+// CONFIGURATION STRUCTURE:
+// Options are passed from the CLI in this format:
+// {
+//   minify: boolean,
+//   sourceMaps: boolean,
+//   server: {
+//     platform: 'node' | 'browser' | 'neutral',
+//     format: 'iife' | 'cjs' | 'esm',
+//     target: 'es2020',
+//     external: string[],
+//     minify?: boolean,      // Override global
+//     sourceMaps?: boolean,  // Override global
+//   },
+//   client: {
+//     platform: 'node' | 'browser' | 'neutral',
+//     format: 'iife' | 'cjs' | 'esm',
+//     target: 'es2020',
+//     external: string[],
+//     minify?: boolean,      // Override global
+//     sourceMaps?: boolean,  // Override global
+//   }
+// }
+//
+// Set server or client to `false` to skip that build.
+// =============================================================================
+
+// =============================================================================
 // SWC Plugin Configuration for TypeScript Decorators
 // =============================================================================
 
@@ -30,16 +68,32 @@ const swcConfig = swcPlugin({
 // Plugins
 // =============================================================================
 
-// Excludes Node.js adapter files from framework bundle (for client-side builds)
-const excludeNodeAdaptersPlugin = {
-    name: 'exclude-node-adapters',
-    setup(build) {
-        // Exclude node adapter files from framework (return empty module)
-        build.onLoad({ filter: /[/\\]adapters[/\\]node[/\\]/ }, () => ({
-            contents: 'module.exports = {};',
-            loader: 'js'
-        }))
-    },
+/**
+ * Excludes Node.js adapter files from framework bundle (for client-side builds only)
+ * Server builds with platform: 'node' should NOT use this plugin
+ */
+function createExcludeNodeAdaptersPlugin(isServerBuild) {
+    return {
+        name: 'exclude-node-adapters',
+        setup(build) {
+            // Only exclude for non-server builds (client/browser)
+            if (isServerBuild) {
+                return
+            }
+
+            // Mark node: imports as external for client builds
+            build.onResolve({ filter: /^node:/ }, args => ({
+                path: args.path,
+                external: true
+            }))
+
+            // Exclude node adapter files from framework (return empty module)
+            build.onLoad({ filter: /[/\\]adapters[/\\]node[/\\]/ }, () => ({
+                contents: 'module.exports = {};',
+                loader: 'js'
+            }))
+        },
+    }
 }
 
 // Patches exports() calls for FiveM compatibility
@@ -86,11 +140,15 @@ function getSharedConfig(options = {}) {
 }
 
 /**
- * Merge options with fallbacks
- * Supports both new (options.server/client) and legacy (options.platform/format/etc) structures
+ * Merge options with fallbacks for server or client build
+ * @param {string} side - 'server' or 'client'
+ * @param {boolean|object} sideOptions - Options from config.build.server or config.build.client
+ * @param {object} globalOptions - Global options (minify, sourceMaps)
+ * @param {object} defaults - Default values
+ * @returns {object|null} Merged options or null to skip build
  */
 function mergeOptions(side, sideOptions, globalOptions, defaults) {
-    // If sideOptions is explicitly false, return null to skip build
+    // If sideOptions is explicitly false, skip this build
     if (sideOptions === false) {
         return null
     }
@@ -98,20 +156,16 @@ function mergeOptions(side, sideOptions, globalOptions, defaults) {
     // Start with defaults
     const merged = { ...defaults }
 
-    // Apply global options (legacy support)
-    if (globalOptions.platform) merged.platform = globalOptions.platform
-    if (globalOptions.format) merged.format = globalOptions.format
-    if (globalOptions.target) merged.target = globalOptions.target
-    if (globalOptions.external) merged.external = globalOptions.external
+    // Apply global minify/sourceMaps if set
     if (globalOptions.minify !== undefined) merged.minify = globalOptions.minify
     if (globalOptions.sourceMaps !== undefined) merged.sourceMaps = globalOptions.sourceMaps
 
-    // Apply side-specific options (new structure)
+    // Apply side-specific options if provided
     if (sideOptions && typeof sideOptions === 'object') {
-        if (sideOptions.platform) merged.platform = sideOptions.platform
-        if (sideOptions.format) merged.format = sideOptions.format
-        if (sideOptions.target) merged.target = sideOptions.target
-        if (sideOptions.external) merged.external = sideOptions.external
+        if (sideOptions.platform !== undefined) merged.platform = sideOptions.platform
+        if (sideOptions.format !== undefined) merged.format = sideOptions.format
+        if (sideOptions.target !== undefined) merged.target = sideOptions.target
+        if (sideOptions.external !== undefined) merged.external = sideOptions.external
         if (sideOptions.minify !== undefined) merged.minify = sideOptions.minify
         if (sideOptions.sourceMaps !== undefined) merged.sourceMaps = sideOptions.sourceMaps
     }
@@ -159,35 +213,33 @@ function getBuildOptions(side, options = {}) {
 }
 
 /**
- * Get external packages list for a specific side
+ * Get external packages list for server or client build
+ * @param {string} side - 'server' or 'client'
+ * @param {object} options - Options from config
+ * @returns {string[]} Array of package names to mark as external
  */
 function getExternals(side, options = {}) {
-    const defaults = []
-
-    // Legacy support
-    if (options.external) {
-        return options.external
-    }
-
-    // New structure
     const sideOptions = options[side]
-    if (sideOptions && typeof sideOptions === 'object' && sideOptions.external) {
+
+    // If side config exists and has external array, use it
+    if (sideOptions && typeof sideOptions === 'object' && Array.isArray(sideOptions.external)) {
         return sideOptions.external
     }
 
-    return defaults
+    // Default: no externals (bundle everything)
+    return []
 }
 
-function getCorePlugins() {
-    return [swcConfig, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
+function getCorePlugins(isServerBuild = false) {
+    return [swcConfig, createExcludeNodeAdaptersPlugin(isServerBuild), preserveFiveMExportsPlugin]
 }
 
-function getResourcePlugins() {
-    return [swcConfig, excludeNodeAdaptersPlugin, preserveFiveMExportsPlugin]
+function getResourcePlugins(isServerBuild = false) {
+    return [swcConfig, createExcludeNodeAdaptersPlugin(isServerBuild), preserveFiveMExportsPlugin]
 }
 
-function getStandalonePlugins() {
-    return [swcConfig, excludeNodeAdaptersPlugin]
+function getStandalonePlugins(isServerBuild = false) {
+    return [swcConfig, createExcludeNodeAdaptersPlugin(isServerBuild)]
 }
 
 // =============================================================================
@@ -199,7 +251,6 @@ function getStandalonePlugins() {
  */
 async function buildCore(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
-    const plugins = getCorePlugins()
 
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server.ts')
     const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client.ts')
@@ -219,7 +270,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             ...serverBuildOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            plugins,
+            plugins: getCorePlugins(true), // true = server build
             external: getExternals('server', options),
         }))
     }
@@ -232,7 +283,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             ...clientBuildOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            plugins,
+            plugins: getCorePlugins(false), // false = client build
             external: getExternals('client', options),
         }))
     }
@@ -253,7 +304,6 @@ async function buildCore(resourcePath, outDir, options = {}) {
  */
 async function buildResource(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
-    const plugins = getResourcePlugins()
 
     const resourceName = path.basename(resourcePath)
     const resourceOutDir = path.join(outDir, resourceName)
@@ -271,7 +321,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             ...serverBuildOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            plugins,
+            plugins: getResourcePlugins(true), // true = server build
             external: getExternals('server', options),
         }))
     }
@@ -285,7 +335,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             ...clientBuildOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            plugins,
+            plugins: getResourcePlugins(false), // false = client build
             external: getExternals('client', options),
         }))
     }
@@ -308,7 +358,6 @@ async function buildResource(resourcePath, outDir, options = {}) {
  */
 async function buildStandalone(resourcePath, outDir, options = {}) {
     const shared = getSharedConfig(options)
-    const plugins = getStandalonePlugins()
 
     const resourceName = path.basename(resourcePath)
     const resourceOutDir = path.join(outDir, resourceName)
@@ -326,7 +375,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             ...serverBuildOptions,
             entryPoints: [serverEntry],
             outfile: path.join(resourceOutDir, 'server.js'),
-            plugins,
+            plugins: getStandalonePlugins(true), // true = server build
             external: getExternals('server', options),
         }))
     }
@@ -340,7 +389,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             ...clientBuildOptions,
             entryPoints: [clientEntry],
             outfile: path.join(resourceOutDir, 'client.js'),
-            plugins,
+            plugins: getStandalonePlugins(false), // false = client build
             external: getExternals('client', options),
         }))
     }

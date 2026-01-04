@@ -175,28 +175,40 @@ export interface CoreConfig {
  * Allows fine-grained control over what gets compiled for each resource.
  * All options override the global build configuration.
  *
+ * You can configure server and client builds separately:
+ * - Set to `false` to skip that side's build
+ * - Set to `true` or omit to use defaults from global config
+ * - Set to an object to customize build options for that side
+ *
  * @example
  * ```typescript
+ * // Example 1: Full-stack resource with custom configs
  * build: {
- *   // Control what to build
- *   compileServer: true,
- *   compileClient: true,
- *   nui: false,
- *
- *   // Global settings for this resource
  *   minify: true,
- *   sourceMaps: false,
- *
- *   // Server-specific settings
  *   server: {
  *     platform: 'node',
  *     external: ['typeorm', 'pg'],
  *   },
- *
- *   // Client-specific settings
  *   client: {
  *     platform: 'browser',
  *     external: ['three'],
+ *   },
+ * }
+ *
+ * // Example 2: Server-only resource
+ * build: {
+ *   server: {
+ *     platform: 'node',
+ *     format: 'cjs',
+ *   },
+ *   client: false,  // Skip client build
+ * }
+ *
+ * // Example 3: Client-only resource
+ * build: {
+ *   server: false,  // Skip server build
+ *   client: {
+ *     platform: 'browser',
  *   },
  * }
  * ```
@@ -211,61 +223,42 @@ export interface ResourceBuildConfig {
   /**
    * Whether to minify the output for this specific resource.
    * Overrides the global build.minify setting.
-   * Applies to both server and client unless overridden in server/client config.
+   * Applies to both server and client unless overridden in their configs.
    */
   minify?: boolean;
 
   /**
    * Whether to generate source maps for this specific resource.
    * Overrides the global build.sourceMaps setting.
-   * Applies to both server and client unless overridden in server/client config.
+   * Applies to both server and client unless overridden in their configs.
    */
   sourceMaps?: boolean;
 
   /**
    * Server-side build configuration for this resource.
-   * Set to `false` to skip server build.
-   * Set to `true` or omit to use defaults.
-   * Set to object to customize server build options.
    *
-   * @example false // Skip server build
-   * @example true // Build with defaults
-   * @example { platform: 'node', external: ['pg'] } // Custom config
+   * - `false`: Skip server build entirely
+   * - `true` or omit: Build server using global defaults
+   * - `object`: Custom server build configuration
+   *
+   * @example false // No server build
+   * @example true // Use global server config
+   * @example { platform: 'node', external: ['pg'] }
    */
   server?: boolean | SideBuildConfig;
 
   /**
    * Client-side build configuration for this resource.
-   * Set to `false` to skip client build.
-   * Set to `true` or omit to use defaults.
-   * Set to object to customize client build options.
    *
-   * @example false // Skip client build
-   * @example true // Build with defaults
-   * @example { platform: 'browser', external: [] } // Custom config
+   * - `false`: Skip client build entirely
+   * - `true` or omit: Build client using global defaults
+   * - `object`: Custom client build configuration
+   *
+   * @example false // No client build
+   * @example true // Use global client config
+   * @example { platform: 'browser', external: ['three'] }
    */
   client?: boolean | SideBuildConfig;
-
-  // Legacy support for backward compatibility
-  /**
-   * @deprecated Use `server.target` and `client.target` instead
-   */
-  target?: string;
-
-  /**
-   * @deprecated Use `server.platform` and `client.platform` instead
-   */
-  platform?: 'node' | 'browser' | 'neutral';
-
-  /**
-   * @deprecated Use `server.format` and `client.format` instead
-   */
-  format?: 'iife' | 'cjs' | 'esm';
-
-  /**
-   * @deprecated Use `server.external` and `client.external` instead
-   */
-  external?: string[];
 }
 
 /**
@@ -419,59 +412,95 @@ export interface StandaloneConfig {
 
 /**
  * Build configuration for server or client side.
- * These settings control how the code is compiled.
+ * These settings control how the code is compiled for each environment.
  *
- * @example
+ * **Important**: Server and client run in different environments!
+ * - **Server**: Use `platform: 'node'` (FiveM has Node.js 22 support)
+ * - **Client**: Use `platform: 'browser'` or `'neutral'` (browser-like environment)
+ *
+ * @example Server configuration
  * ```typescript
- * {
- *   platform: 'node',
- *   format: 'iife',
- *   target: 'es2020',
- *   external: ['typeorm', 'pg'],
+ * server: {
+ *   platform: 'node',      // Full Node.js APIs available
+ *   format: 'iife',        // IIFE format for FiveM
+ *   target: 'es2023',      // Modern JS features
+ *   external: [],          // Bundle everything (or specify packages to external)
+ * }
+ * ```
+ *
+ * @example Client configuration
+ * ```typescript
+ * client: {
+ *   platform: 'browser',   // Browser-like environment
+ *   format: 'iife',        // IIFE format for FiveM
+ *   target: 'es2020',      // Compatible JS features
+ *   external: ['three'],   // Don't bundle large 3D libraries
  * }
  * ```
  */
 export interface SideBuildConfig {
   /**
    * Build platform for esbuild.
+   *
+   * Choose based on the environment:
+   * - `'node'`: Full Node.js APIs (use for server)
+   * - `'browser'`: Browser environment (use for client)
+   * - `'neutral'`: No environment-specific APIs
+   *
    * @default 'node' for server, 'browser' for client
-   * @example 'node' | 'browser' | 'neutral'
    */
   platform?: 'node' | 'browser' | 'neutral';
 
   /**
    * Output format for the bundle.
+   *
+   * - `'iife'`: Immediately Invoked Function Expression (recommended for FiveM)
+   * - `'cjs'`: CommonJS (module.exports)
+   * - `'esm'`: ES Modules (import/export)
+   *
    * @default 'iife'
-   * @example 'iife' | 'cjs' | 'esm'
    */
   format?: 'iife' | 'cjs' | 'esm';
 
   /**
    * JavaScript target version.
+   * FiveM supports modern JavaScript features.
+   *
    * @default 'es2020'
-   * @example 'es2020' | 'es2021' | 'esnext'
+   * @example 'es2020' | 'es2021' | 'es2022' | 'esnext'
    */
   target?: string;
 
   /**
    * Packages to mark as external (not bundled).
+   * These packages won't be included in the output bundle.
+   *
+   * Use cases:
+   * - Large packages you want to load separately
+   * - Packages that should be loaded at runtime
+   * - Node.js packages when using platform: 'node'
+   *
    * @default []
-   * @example ['typeorm', 'pg'] // For server with DB packages
-   * @example ['three'] // For client with large 3D libraries
+   * @example ['typeorm', 'pg'] // Server with database packages
+   * @example ['three', 'gsap'] // Client with large libraries
    */
   external?: string[];
 
   /**
-   * Whether to minify the output code.
-   * If not set, uses the global minify setting.
-   * @example true
+   * Whether to minify the output code for this side.
+   * Overrides the global minify setting.
+   *
+   * @example true // Always minify this side
+   * @example false // Never minify this side
    */
   minify?: boolean;
 
   /**
-   * Whether to generate inline source maps.
-   * If not set, uses the global sourceMaps setting.
-   * @example true
+   * Whether to generate inline source maps for this side.
+   * Overrides the global sourceMaps setting.
+   *
+   * @example true // Generate source maps for debugging
+   * @example false // No source maps for production
    */
   sourceMaps?: boolean;
 }
@@ -480,26 +509,33 @@ export interface SideBuildConfig {
  * Global build configuration.
  * These settings apply to all resources unless overridden.
  *
+ * Server and client have separate configurations because they run in different environments:
+ * - **Server**: FiveM with full Node.js 22 support (use platform: 'node')
+ * - **Client**: Browser-like environment in the game (use platform: 'browser' or 'neutral')
+ *
  * @example
  * ```typescript
  * build: {
+ *   // Global settings for all builds
  *   minify: true,
  *   sourceMaps: false,
  *   parallel: true,
  *   maxWorkers: 8,
  *
+ *   // Server-side configuration (Node.js environment)
  *   server: {
- *     platform: 'node',
- *     format: 'iife',
- *     target: 'es2020',
- *     external: [],
+ *     platform: 'node',     // Use Node.js APIs
+ *     format: 'iife',       // IIFE format for FiveM
+ *     target: 'es2020',     // ES2020+ supported
+ *     external: [],         // Bundle everything by default
  *   },
  *
+ *   // Client-side configuration (Browser-like environment)
  *   client: {
- *     platform: 'browser',
- *     format: 'iife',
- *     target: 'es2020',
- *     external: [],
+ *     platform: 'browser',  // Browser environment
+ *     format: 'iife',       // IIFE format for FiveM
+ *     target: 'es2020',     // ES2020+ supported
+ *     external: [],         // Bundle everything by default
  *   },
  * }
  * ```
@@ -508,7 +544,7 @@ export interface BuildConfig {
   /**
    * Whether to minify the output code.
    * Reduces file size but makes debugging harder.
-   * Applies to both server and client unless overridden.
+   * Applies to both server and client unless overridden in their configs.
    * @default false
    */
   minify?: boolean;
@@ -516,7 +552,7 @@ export interface BuildConfig {
   /**
    * Whether to generate inline source maps.
    * Useful for debugging in development.
-   * Applies to both server and client unless overridden.
+   * Applies to both server and client unless overridden in their configs.
    * @default false
    */
   sourceMaps?: boolean;
@@ -538,35 +574,34 @@ export interface BuildConfig {
   /**
    * Server-side build configuration.
    * Server runs in FiveM with full Node.js 22 support.
+   *
+   * @example
+   * ```typescript
+   * server: {
+   *   platform: 'node',
+   *   format: 'iife',
+   *   target: 'es2023',
+   *   external: [], // or ['typeorm', 'pg'] if you want them external
+   * }
+   * ```
    */
   server?: SideBuildConfig;
 
   /**
    * Client-side build configuration.
    * Client runs in a browser-like environment in the game.
+   *
+   * @example
+   * ```typescript
+   * client: {
+   *   platform: 'browser',
+   *   format: 'iife',
+   *   target: 'es2020',
+   *   external: [], // or ['three'] for large 3D libraries
+   * }
+   * ```
    */
   client?: SideBuildConfig;
-
-  // Legacy support for backward compatibility
-  /**
-   * @deprecated Use `server.platform` and `client.platform` instead
-   */
-  platform?: 'node' | 'browser' | 'neutral';
-
-  /**
-   * @deprecated Use `server.format` and `client.format` instead
-   */
-  format?: 'iife' | 'cjs' | 'esm';
-
-  /**
-   * @deprecated Use `server.target` and `client.target` instead
-   */
-  target?: string;
-
-  /**
-   * @deprecated Use `server.external` and `client.external` instead
-   */
-  external?: string[];
 }
 
 /**
