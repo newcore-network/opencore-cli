@@ -111,7 +111,7 @@ export interface ViewsConfig {
  * Configuration for the core resource.
  * The core resource is the main entry point that initializes OpenCore Framework
  * and provides shared functionality to all satellite resources.
- * 
+ *
  * @example
  * ```typescript
  * core: {
@@ -120,6 +120,10 @@ export interface ViewsConfig {
  *   entryPoints: {
  *     server: './core/src/server.ts',
  *     client: './core/src/client.ts',
+ *   },
+ *   build: {
+ *     platform: 'node',
+ *     external: [],
  *   },
  * }
  * ```
@@ -152,6 +156,12 @@ export interface CoreConfig {
   views?: ViewsConfig;
 
   /**
+   * Build options specific to the core resource.
+   * Overrides the global build configuration.
+   */
+  build?: ResourceBuildConfig;
+
+  /**
    * Path to a custom build script.
    * Use this if you need custom build logic instead of the CLI's embedded compiler.
    * The script receives build parameters via command line arguments.
@@ -163,7 +173,8 @@ export interface CoreConfig {
 /**
  * Build options for individual resources.
  * Allows fine-grained control over what gets compiled for each resource.
- * 
+ * All options override the global build configuration.
+ *
  * @example
  * ```typescript
  * build: {
@@ -171,6 +182,9 @@ export interface CoreConfig {
  *   client: true,
  *   nui: false,
  *   minify: true,
+ *   platform: 'node',
+ *   format: 'cjs',
+ *   external: ['some-package'],
  * }
  * ```
  */
@@ -204,23 +218,64 @@ export interface ResourceBuildConfig {
    * Overrides the global build.sourceMaps setting.
    */
   sourceMaps?: boolean;
+
+  /**
+   * JavaScript target version for this resource.
+   * Overrides the global build.target setting.
+   * @example 'es2020' | 'es2021' | 'esnext'
+   */
+  target?: string;
+
+  /**
+   * Build platform for this resource.
+   * Overrides the global build.platform setting.
+   * @example 'node' | 'browser' | 'neutral'
+   */
+  platform?: 'node' | 'browser' | 'neutral';
+
+  /**
+   * Output format for this resource.
+   * Overrides the global build.format setting.
+   * @example 'iife' | 'cjs' | 'esm'
+   */
+  format?: 'iife' | 'cjs' | 'esm';
+
+  /**
+   * Packages to mark as external for this resource.
+   * Overrides the global build.external setting.
+   * @example ['specific-package']
+   */
+  external?: string[];
 }
 
 /**
  * Configuration for an explicitly defined resource.
  * Use this when you need custom settings for a specific resource
  * instead of using glob patterns.
- * 
+ *
  * @example
  * ```typescript
  * explicit: [
  *   {
  *     path: './resources/admin',
  *     resourceName: 'admin-panel',
- *     build: { client: true, nui: true },
+ *     build: {
+ *       client: true,
+ *       nui: true,
+ *       platform: 'browser',  // Override for this resource
+ *       external: ['react', 'react-dom'],  // Don't bundle React
+ *     },
  *     views: {
  *       path: './resources/admin/ui',
  *       framework: 'react',
+ *     },
+ *   },
+ *   {
+ *     path: './resources/database-bridge',
+ *     resourceName: 'db-bridge',
+ *     build: {
+ *       format: 'cjs',  // Use CommonJS for this resource
+ *       external: [],  // Bundle everything
  *     },
  *   },
  * ]
@@ -420,29 +475,49 @@ export interface BuildConfig {
 /**
  * Main OpenCore configuration object.
  * This is the root configuration that defines your entire project structure.
- * 
+ *
  * @example
  * ```typescript
  * import { defineConfig } from '@open-core/cli'
- * 
+ *
  * export default defineConfig({
  *   name: 'my-server',
  *   outDir: './build',
  *   destination: 'C:/FXServer/server-data/resources/[my-server]',
- *   
+ *
  *   core: {
  *     path: './core',
  *     resourceName: '[core]',
+ *     build: {
+ *       // Core-specific build options
+ *       platform: 'node',
+ *       external: [],  // Bundle everything for core
+ *     },
  *   },
- *   
+ *
  *   resources: {
  *     include: ['./resources/*'],
+ *     explicit: [
+ *       {
+ *         path: './resources/ui-heavy',
+ *         build: {
+ *           // Override for this specific resource
+ *           format: 'esm',
+ *           external: ['three', 'react'],
+ *         },
+ *       },
+ *     ],
  *   },
- *   
+ *
  *   build: {
+ *     // Global build options (used as defaults)
  *     minify: true,
+ *     platform: 'node',
+ *     format: 'iife',
+ *     target: 'es2020',
  *     parallel: true,
  *     maxWorkers: 8,
+ *     external: [],
  *   },
  * })
  * ```
