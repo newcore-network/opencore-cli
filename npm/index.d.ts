@@ -337,15 +337,18 @@ export interface StandaloneConfig {
 /**
  * Global build configuration.
  * These settings apply to all resources unless overridden.
- * 
+ *
  * @example
  * ```typescript
  * build: {
  *   minify: true,
  *   sourceMaps: true,
- *   target: 'ES2020',
+ *   target: 'es2020',
+ *   platform: 'node',
+ *   format: 'iife',
  *   parallel: true,
  *   maxWorkers: 8,
+ *   external: [],
  * }
  * ```
  */
@@ -366,10 +369,26 @@ export interface BuildConfig {
 
   /**
    * JavaScript target version.
-   * FiveM supports ES2020 features.
-   * @default 'ES2020'
+   * FiveM supports ES2020+ features with Node.js 22.
+   * @default 'es2020'
+   * @example 'es2020' | 'es2021' | 'esnext'
    */
   target?: string;
+
+  /**
+   * Build platform for esbuild.
+   * FiveM server supports full Node.js runtime.
+   * @default 'node'
+   * @example 'node' | 'browser' | 'neutral'
+   */
+  platform?: 'node' | 'browser' | 'neutral';
+
+  /**
+   * Output format for the bundle.
+   * @default 'iife'
+   * @example 'iife' | 'cjs' | 'esm'
+   */
+  format?: 'iife' | 'cjs' | 'esm';
 
   /**
    * Whether to build resources in parallel.
@@ -384,6 +403,18 @@ export interface BuildConfig {
    * @default CPU cores
    */
   maxWorkers?: number;
+
+  /**
+   * Packages to mark as external (not bundled).
+   * Use this to exclude packages from the bundle.
+   *
+   * **Note**: With FiveM Node.js 22 support, most packages can be bundled.
+   * Only use external for packages you want to load separately at runtime.
+   *
+   * @default []
+   * @example ['some-large-package', 'optional-dependency']
+   */
+  external?: string[];
 }
 
 /**
