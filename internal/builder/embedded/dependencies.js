@@ -3,13 +3,14 @@ const fs = require('fs')
 const { getBuildOptions, getExternals } = require('./config')
 
 // =============================================================================
-// FiveM Runtime Limitations
+// FiveM Runtime
 // =============================================================================
-// FiveM uses a NEUTRAL JavaScript runtime:
-// - NO Node.js APIs (no fs, path, http, child_process, etc.)
-// - NO Web APIs (no DOM, fetch, localStorage, etc.)
-// - NO native C++ bindings (.node files)
-// - Only pure JavaScript/ES2020 code works
+// Server: Full Node.js runtime with all Node APIs available
+// Client: Neutral JavaScript runtime with limitations:
+//   - NO Node.js APIs (no fs, path, http, child_process, etc.)
+//   - NO Web APIs (no DOM, fetch, localStorage, etc.)
+//   - NO native C++ bindings (.node files)
+//   - Only pure JavaScript/ES2020 code works
 // =============================================================================
 
 // Known native packages that won't work in FiveM (use C++ bindings)

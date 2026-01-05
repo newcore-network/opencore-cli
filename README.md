@@ -8,6 +8,16 @@
 
 ---
 
+## Documentation
+
+| Topic | Description |
+|-------|-------------|
+| [FiveM Runtime](./docs/fivem-runtime.md) | Server vs Client, platform limitations, incompatible packages |
+| [Configuration](./docs/configuration.md) | Full configuration reference and examples |
+| [Commands](./docs/commands.md) | CLI commands and usage |
+
+---
+
 ## Key Features
 
 | Feature | Description |
@@ -137,7 +147,9 @@ The clone command automatically selects the best download method:
 
 ## Configuration
 
-Projects are configured via `opencore.config.ts` with full TypeScript support and IDE autocompletion:
+> Full documentation: [docs/configuration.md](./docs/configuration.md)
+
+Projects are configured via `opencore.config.ts`:
 
 ```typescript
 import { defineConfig } from '@open-core/cli'
@@ -149,48 +161,27 @@ export default defineConfig({
   core: {
     path: './core',
     resourceName: 'core',
-    entryPoints: {
-      server: './core/src/server.ts',
-      client: './core/src/client.ts',
-    },
   },
 
   resources: {
     include: ['./resources/*'],
-    explicit: [
-      {
-        path: './resources/admin',
-        resourceName: 'admin',
-        build: { server: true, client: true, nui: true },
-        views: {
-          path: './resources/admin/ui',
-          framework: 'react',
-        },
-      },
-    ],
-  },
-
-  standalone: {
-    include: ['./standalone/*'],
-    explicit: [
-      { path: './standalone/utils', compile: true },
-      { path: './standalone/legacy', compile: false },
-    ],
   },
 
   build: {
     minify: true,
-    sourceMaps: false,
-    target: 'ES2020',
     parallel: true,
-    maxWorkers: 8,
-  },
 
-  dev: {
-    port: 3847,
-    txAdminUser: '',
-    txAdminPassword: '',
-    txAdminUrl: '',
+    // Server: Node.js runtime
+    server: {
+      platform: 'node',
+      format: 'cjs',
+    },
+
+    // Client: Neutral runtime (no Node/Web APIs)
+    client: {
+      platform: 'neutral',
+      format: 'iife',
+    },
   },
 })
 ```
@@ -253,53 +244,27 @@ The CLI embeds a complete build toolchain based on esbuild with SWC for TypeScri
 
 ---
 
-## FiveM Runtime Limitations
+## FiveM Runtime Environments
 
-FiveM uses a **neutral JavaScript runtime** with significant limitations. Understanding these is critical for package selection.
+> Full documentation: [docs/fivem-runtime.md](./docs/fivem-runtime.md)
 
-### What Works
+FiveM has **three distinct runtime environments**:
 
-| Feature | Status |
-|---------|--------|
-| ES2020+ JavaScript | Supported |
-| Pure JS packages | Supported |
-| WebAssembly | Supported |
-| TypeScript (compiled) | Supported |
+| Feature | Server | Client | Views (NUI) |
+|---------|--------|--------|-------------|
+| Runtime | Node.js | Neutral JS | Web Browser |
+| Platform | `node` | `neutral` | `browser` |
+| Node.js APIs | Available | NOT available | NOT available |
+| Web APIs | NOT available | NOT available | Available |
+| FiveM APIs | Available | Available | Via callbacks |
+| GTA Natives | NOT available | Available | NOT available |
+| External pkgs | Supported | NOT supported | N/A |
 
-### What Does NOT Work
+**Server**: Full Node.js runtime with all APIs.
 
-| Feature | Reason |
-|---------|--------|
-| Node.js APIs | `fs`, `path`, `http`, `child_process`, etc. not available |
-| Web APIs | `DOM`, `fetch`, `localStorage`, `window`, etc. not available |
-| Native C++ packages | `.node` bindings cannot be loaded |
+**Client**: Neutral JS - FiveM APIs + GTA natives only. All deps MUST be bundled.
 
-### Client vs Server
-
-| Feature | Client | Server |
-|---------|--------|--------|
-| Platform | `neutral` | `neutral` |
-| External packages | **NOT supported** | Supported |
-| node_modules access | No filesystem | Has filesystem |
-| Bundle strategy | Everything bundled | Bundle recommended |
-
-**Client**: All dependencies MUST be bundled into the final `.js` file. The client downloads files from the server but cannot access `node_modules`.
-
-**Server**: Can optionally use `external` for large packages, but bundling everything is recommended for portability.
-
-### Incompatible Packages
-
-These packages use C++ bindings and will NOT work:
-
-| Package | Alternative |
-|---------|-------------|
-| `bcrypt` | `bcryptjs` |
-| `argon2` | `hash.js`, `js-sha3` |
-| `sharp` | `jimp` |
-| `canvas` | `pureimage` |
-| `sqlite3`, `better-sqlite3` | `sql.js` |
-
-The CLI will warn you if it detects incompatible packages in your `node_modules`
+**Views**: Embedded Chromium browser with some version limitations.
 
 ### Custom Build Scripts
 

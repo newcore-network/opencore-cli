@@ -50,11 +50,11 @@ function mergeOptions(side, sideOptions, globalOptions, defaults) {
 }
 
 function getBuildOptions(side, options = {}) {
-    // FiveM uses a neutral JS runtime - no Node.js APIs, no Web APIs
-    // Client: neutral platform, everything must be bundled
-    // Server: neutral platform, but can use externals (has filesystem access)
+    // FiveM runtime:
+    // Server: Node.js runtime with full Node APIs
+    // Client: Neutral JS runtime - no Node.js APIs, no Web APIs
     const defaults = {
-        platform: 'neutral',
+        platform: side === 'server' ? 'node' : 'neutral',
         target: 'es2020',
         format: side === 'server' ? 'cjs' : 'iife',
         external: [],

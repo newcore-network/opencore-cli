@@ -4,32 +4,31 @@
  * OpenCore CLI is the official build tool for OpenCore Framework projects.
  * It compiles TypeScript resources for FiveM servers with full decorator support.
  *
- * ## FiveM Runtime Limitations
+ * ## FiveM Runtime Environments
  *
- * FiveM uses a **neutral JavaScript runtime** with significant limitations:
+ * FiveM has **three distinct runtime environments**:
  *
- * - **NO Node.js APIs**: `fs`, `path`, `http`, `child_process`, etc. are NOT available
- * - **NO Web APIs**: `DOM`, `fetch`, `localStorage`, `window`, etc. are NOT available
- * - **NO native C++ packages**: Packages with `.node` bindings will NOT work
- * - **Only pure JavaScript/ES2020**: All code must be platform-neutral
+ * ### Server (Node.js)
+ * - Full Node.js runtime with all APIs
+ * - Can use `external` packages
+ * - FiveM server APIs available
+ * - Platform: `node`
  *
- * ### Client vs Server
+ * ### Client (Neutral JS)
+ * - NO Node.js APIs, NO Web APIs
+ * - FiveM client APIs + GTA natives available
+ * - All dependencies MUST be bundled
+ * - Platform: `neutral`
  *
- * | Feature | Client | Server |
- * |---------|--------|--------|
- * | Externals | NOT supported | Supported |
- * | node_modules | NO access | Has filesystem access |
- * | Bundling | Everything bundled | Can use externals |
+ * ### Views/NUI (Web Browser)
+ * - Embedded Chromium browser
+ * - Standard Web APIs (DOM, fetch, etc.)
+ * - Some version limitations (not fully documented)
+ * - Platform: `browser`
  *
- * **Client**: All dependencies MUST be bundled into the final `.js` file.
- * The client has no filesystem access and cannot load external modules.
+ * ### Incompatible Packages (Client)
  *
- * **Server**: Can optionally use `external` for large packages, but bundling
- * everything is recommended for portability.
- *
- * ### Incompatible Packages
- *
- * These packages use C++ bindings and will NOT work in FiveM:
+ * These packages use C++ bindings and will NOT work on client:
  * - `bcrypt` -> use `bcryptjs`
  * - `sharp` -> use `jimp`
  * - `sqlite3` / `better-sqlite3` -> use `sql.js`
@@ -448,12 +447,8 @@ export interface StandaloneConfig {
  *
  * ## FiveM Runtime
  *
- * FiveM uses a **neutral JavaScript runtime** - neither Node.js nor browser.
- * Both server and client compile to `platform: 'neutral'` by default.
- *
- * - **NO Node.js APIs**: `fs`, `path`, `http`, etc. are NOT available
- * - **NO Web APIs**: `DOM`, `fetch`, `localStorage`, etc. are NOT available
- * - **Only pure JavaScript**: All dependencies must be platform-neutral
+ * - **Server**: Full Node.js runtime (`platform: 'node'`)
+ * - **Client**: Neutral runtime (`platform: 'neutral'`) - no Node/Web APIs
  *
  * ## Client Limitations
  *
@@ -463,25 +458,24 @@ export interface StandaloneConfig {
  * - All dependencies MUST be bundled into the final `.js` file
  * - If you configure `client.external`, it will be ignored with a warning
  *
- * ## Server Externals
+ * ## Server
  *
- * Server CAN use `external` packages because it has filesystem access.
- * However, bundling everything is recommended for portability.
+ * Server has full Node.js APIs and CAN use `external` packages.
  *
  * @example Server configuration
  * ```typescript
  * server: {
- *   platform: 'neutral',   // FiveM neutral runtime (default)
+ *   platform: 'node',      // Full Node.js runtime (default)
  *   format: 'cjs',         // CommonJS format
  *   target: 'es2020',      // ES2020 features
- *   external: [],          // Bundle everything (recommended)
+ *   external: [],          // Bundle everything, or specify externals
  * }
  * ```
  *
  * @example Client configuration
  * ```typescript
  * client: {
- *   platform: 'neutral',   // FiveM neutral runtime (default)
+ *   platform: 'neutral',   // Neutral runtime (default)
  *   format: 'iife',        // IIFE format for FiveM
  *   target: 'es2020',      // ES2020 features
  *   // external: NOT supported - all deps must be bundled
@@ -492,12 +486,11 @@ export interface SideBuildConfig {
   /**
    * Build platform for esbuild.
    *
-   * FiveM uses a neutral runtime without Node.js or browser APIs.
-   * - `'neutral'`: No environment-specific APIs (recommended for FiveM)
-   * - `'node'`: Node.js APIs (will cause runtime errors in FiveM)
-   * - `'browser'`: Browser APIs (will cause runtime errors in FiveM)
+   * - `'node'`: Full Node.js APIs (default for server)
+   * - `'neutral'`: No environment-specific APIs (default for client)
+   * - `'browser'`: Browser APIs (not recommended for FiveM)
    *
-   * @default 'neutral' for both server and client
+   * @default 'node' for server, 'neutral' for client
    */
   platform?: 'node' | 'browser' | 'neutral';
 
@@ -570,17 +563,13 @@ export interface SideBuildConfig {
  *
  * ## FiveM Runtime
  *
- * FiveM uses a **neutral JavaScript runtime**:
- * - NO Node.js APIs (`fs`, `path`, `http`, etc.)
- * - NO Web APIs (`DOM`, `fetch`, `localStorage`, etc.)
- * - Only pure JavaScript/ES2020 code works
- *
- * Both server and client default to `platform: 'neutral'`.
+ * - **Server**: Full Node.js runtime with all APIs
+ * - **Client**: Neutral runtime (no Node.js/Web APIs)
  *
  * ## Client vs Server
  *
  * - **Client**: All dependencies MUST be bundled. `external` is NOT supported.
- * - **Server**: Can use `external` (has filesystem access), but bundling is recommended.
+ * - **Server**: Full Node.js, can use `external` packages.
  *
  * @example
  * ```typescript
@@ -590,20 +579,19 @@ export interface SideBuildConfig {
  *   parallel: true,
  *   maxWorkers: 8,
  *
- *   // Server: neutral runtime, can use externals
+ *   // Server: Node.js runtime
  *   server: {
- *     platform: 'neutral',
+ *     platform: 'node',
  *     format: 'cjs',
  *     target: 'es2020',
- *     external: [],  // Bundle everything (recommended)
+ *     external: [],
  *   },
  *
- *   // Client: neutral runtime, NO externals allowed
+ *   // Client: Neutral runtime, NO externals
  *   client: {
  *     platform: 'neutral',
  *     format: 'iife',
  *     target: 'es2020',
- *     // external: NOT supported
  *   },
  * }
  * ```
@@ -641,16 +629,16 @@ export interface BuildConfig {
 
   /**
    * Server-side build configuration.
-   * Server runs in FiveM's neutral runtime with filesystem access.
-   * Can use `external` packages if needed.
+   * Server runs in FiveM with full Node.js runtime.
+   * Can use `external` packages.
    *
    * @example
    * ```typescript
    * server: {
-   *   platform: 'neutral',
+   *   platform: 'node',
    *   format: 'cjs',
    *   target: 'es2020',
-   *   external: [],  // Bundle everything (recommended)
+   *   external: [],
    * }
    * ```
    */
@@ -658,7 +646,7 @@ export interface BuildConfig {
 
   /**
    * Client-side build configuration.
-   * Client runs in FiveM's neutral runtime WITHOUT filesystem access.
+   * Client runs in neutral runtime WITHOUT Node.js/Web APIs.
    * All dependencies MUST be bundled - `external` is NOT supported.
    *
    * @example
@@ -667,7 +655,6 @@ export interface BuildConfig {
    *   platform: 'neutral',
    *   format: 'iife',
    *   target: 'es2020',
-   *   // external: NOT supported for client
    * }
    * ```
    */

@@ -26,17 +26,16 @@ pnpm install
 opencore dev
 ```
 
-## FiveM Runtime Limitations
+## FiveM Runtime Environments
 
-FiveM uses a **neutral JavaScript runtime**:
+| | Server | Client | Views |
+|--|--------|--------|-------|
+| Runtime | Node.js | Neutral | Browser |
+| FiveM APIs | Yes | Yes | Callbacks |
+| GTA Natives | No | Yes | No |
+| External pkgs | Yes | No | N/A |
 
-- **NO Node.js APIs**: `fs`, `path`, `http`, etc. not available
-- **NO Web APIs**: `DOM`, `fetch`, `localStorage`, etc. not available
-- **NO native C++ packages**: Use pure JS alternatives (`bcryptjs`, `jimp`, `sql.js`)
-
-**Client**: All dependencies bundled into single `.js` file (no `external` support)
-
-**Server**: Can use `external` packages, but bundling everything is recommended
+**Server**: Node.js with all APIs. **Client**: Neutral JS + GTA natives. **Views**: Chromium browser.
 
 ## Documentation
 
