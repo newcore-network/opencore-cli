@@ -1,6 +1,9 @@
 const path = require('path')
 const fs = require('fs')
 
+// FiveM runtime limitations warning
+let clientExternalsWarningShown = false
+
 function getSharedConfig(options = {}) {
     const config = {
         bundle: true,
@@ -18,9 +21,7 @@ function getSharedConfig(options = {}) {
         supported: {
             'class-static-blocks': false,
         },
-        alias: {
-            'bcrypt': 'bcryptjs',
-        }
+        alias: {}
     }
 
     return config
@@ -49,8 +50,11 @@ function mergeOptions(side, sideOptions, globalOptions, defaults) {
 }
 
 function getBuildOptions(side, options = {}) {
+    // FiveM uses a neutral JS runtime - no Node.js APIs, no Web APIs
+    // Client: neutral platform, everything must be bundled
+    // Server: neutral platform, but can use externals (has filesystem access)
     const defaults = {
-        platform: side === 'server' ? 'node' : 'browser',
+        platform: 'neutral',
         target: 'es2020',
         format: side === 'server' ? 'cjs' : 'iife',
         external: [],
@@ -80,6 +84,24 @@ function getBuildOptions(side, options = {}) {
 
 function getExternals(side, options = {}) {
     const sideOptions = options[side]
+
+    // Client cannot use externals - FiveM client has no filesystem access
+    // All dependencies MUST be bundled into the final JS file
+    if (side === 'client') {
+        if (sideOptions?.external?.length > 0 && !clientExternalsWarningShown) {
+            clientExternalsWarningShown = true
+            console.log('')
+            console.log('\x1b[31m┌──────────────────────────────────────────────────────────────────┐\x1b[0m')
+            console.log('\x1b[31m│  ERROR: externals not supported for FiveM client                 │\x1b[0m')
+            console.log('\x1b[31m└──────────────────────────────────────────────────────────────────┘\x1b[0m')
+            console.log('\x1b[33m  FiveM client has no access to node_modules or filesystem.\x1b[0m')
+            console.log('\x1b[33m  All dependencies must be bundled into the final .js file.\x1b[0m')
+            console.log('\x1b[90m  Ignoring client.external configuration...\x1b[0m')
+            console.log('')
+        }
+        return []
+    }
+
     if (sideOptions && typeof sideOptions === 'object' && Array.isArray(sideOptions.external)) {
         return sideOptions.external
     }

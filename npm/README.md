@@ -26,6 +26,18 @@ pnpm install
 opencore dev
 ```
 
+## FiveM Runtime Limitations
+
+FiveM uses a **neutral JavaScript runtime**:
+
+- **NO Node.js APIs**: `fs`, `path`, `http`, etc. not available
+- **NO Web APIs**: `DOM`, `fetch`, `localStorage`, etc. not available
+- **NO native C++ packages**: Use pure JS alternatives (`bcryptjs`, `jimp`, `sql.js`)
+
+**Client**: All dependencies bundled into single `.js` file (no `external` support)
+
+**Server**: Can use `external` packages, but bundling everything is recommended
+
 ## Documentation
 
 Full documentation: https://github.com/newcore-network/opencore-cli

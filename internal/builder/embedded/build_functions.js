@@ -2,7 +2,7 @@ const path = require('path')
 const fs = require('fs')
 const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
-const { handleDependencies, shouldHandleDependencies } = require('./dependencies')
+const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
 
 function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife') {
     return [
@@ -33,6 +33,19 @@ function getStandalonePlugins(isServerBuild = false, externals = [], target = 'e
     ]
 }
 
+/**
+ * Check for native packages and warn the user
+ */
+async function checkNativePackages(resourcePath, options = {}) {
+    const nodeModulesPath = path.join(resourcePath, 'node_modules')
+    const serverExternals = getExternals('server', options)
+    const clientExternals = getExternals('client', options)
+    const allExternals = [...new Set([...serverExternals, ...clientExternals])]
+
+    const { warnings, errors } = await detectNativePackages(nodeModulesPath, allExternals)
+    printNativePackageWarnings(warnings, errors)
+}
+
 async function buildCore(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
@@ -40,6 +53,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
     const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client.ts')
 
     await fs.promises.mkdir(outDir, { recursive: true })
+    await checkNativePackages(resourcePath, options)
     const builds = []
 
     const serverBuildOptions = getBuildOptions('server', options)
@@ -92,6 +106,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
     await fs.promises.mkdir(outDir, { recursive: true })
+    await checkNativePackages(resourcePath, options)
     const builds = []
 
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
@@ -144,6 +159,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
     await fs.promises.mkdir(outDir, { recursive: true })
+    await checkNativePackages(resourcePath, options)
     const builds = []
 
     const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')

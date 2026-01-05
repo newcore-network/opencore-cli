@@ -248,8 +248,58 @@ The CLI embeds a complete build toolchain based on esbuild with SWC for TypeScri
 **Build Pipeline:**
 1. SWC Transformation: TypeScript to JavaScript with decorators
 2. esbuild Bundling: JavaScript to optimized bundles
-3. FiveM Optimization: Node.js module exclusion, export patching
+3. FiveM Optimization: Neutral platform targeting, export patching
 4. Size Analysis: Bundle size tracking and reporting
+
+---
+
+## FiveM Runtime Limitations
+
+FiveM uses a **neutral JavaScript runtime** with significant limitations. Understanding these is critical for package selection.
+
+### What Works
+
+| Feature | Status |
+|---------|--------|
+| ES2020+ JavaScript | Supported |
+| Pure JS packages | Supported |
+| WebAssembly | Supported |
+| TypeScript (compiled) | Supported |
+
+### What Does NOT Work
+
+| Feature | Reason |
+|---------|--------|
+| Node.js APIs | `fs`, `path`, `http`, `child_process`, etc. not available |
+| Web APIs | `DOM`, `fetch`, `localStorage`, `window`, etc. not available |
+| Native C++ packages | `.node` bindings cannot be loaded |
+
+### Client vs Server
+
+| Feature | Client | Server |
+|---------|--------|--------|
+| Platform | `neutral` | `neutral` |
+| External packages | **NOT supported** | Supported |
+| node_modules access | No filesystem | Has filesystem |
+| Bundle strategy | Everything bundled | Bundle recommended |
+
+**Client**: All dependencies MUST be bundled into the final `.js` file. The client downloads files from the server but cannot access `node_modules`.
+
+**Server**: Can optionally use `external` for large packages, but bundling everything is recommended for portability.
+
+### Incompatible Packages
+
+These packages use C++ bindings and will NOT work:
+
+| Package | Alternative |
+|---------|-------------|
+| `bcrypt` | `bcryptjs` |
+| `argon2` | `hash.js`, `js-sha3` |
+| `sharp` | `jimp` |
+| `canvas` | `pureimage` |
+| `sqlite3`, `better-sqlite3` | `sql.js` |
+
+The CLI will warn you if it detects incompatible packages in your `node_modules`
 
 ### Custom Build Scripts
 
