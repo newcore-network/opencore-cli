@@ -633,6 +633,7 @@ type ResourceSize struct {
 	ServerSize int64
 	ClientSize int64
 	TotalSize  int64
+	IsViews    bool // true if this is a views/UI bundle
 }
 
 // formatSize formats bytes into human readable format (KB/MB)
@@ -646,6 +647,23 @@ func formatSize(bytes int64) string {
 	}
 }
 
+// getDirSize calculates total size of all files in a directory recursively
+func getDirSize(dirPath string) int64 {
+	var total int64
+	filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			if info, err := d.Info(); err == nil {
+				total += info.Size()
+			}
+		}
+		return nil
+	})
+	return total
+}
+
 // getResourceSizes calculates the size of compiled files for each resource
 func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 	var sizes []ResourceSize
@@ -657,13 +675,25 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 		}
 
 		resourceName := r.Task.ResourceName
-		// Skip if already processed (e.g., views are part of a resource)
-		if seen[resourceName] || strings.HasSuffix(resourceName, "/ui") {
+		if seen[resourceName] {
 			continue
 		}
 		seen[resourceName] = true
 
 		resourceDir := filepath.Join(b.config.OutDir, resourceName)
+
+		// Handle views separately - calculate total directory size
+		if r.Task.Type == TypeViews {
+			totalSize := getDirSize(resourceDir)
+			if totalSize > 0 {
+				sizes = append(sizes, ResourceSize{
+					Name:      resourceName,
+					TotalSize: totalSize,
+					IsViews:   true,
+				})
+			}
+			continue
+		}
 
 		var serverSize, clientSize int64
 
@@ -762,17 +792,24 @@ func (b *Builder) showSummary(results []BuildResult) {
 			boxContent.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA")).Render("--- Bundle Sizes ---"))
 			boxContent.WriteString("\n")
 			for _, s := range sizes {
-				serverStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
-				clientStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
-				if s.ServerSize > 0 {
-					serverStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA")).Render(formatSize(s.ServerSize))
-				}
-				if s.ClientSize > 0 {
-					clientStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")).Render(formatSize(s.ClientSize))
-				}
 				nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
-				boxContent.WriteString(fmt.Sprintf("%s  Server: %s  Client: %s\n",
-					nameStyle.Render(fmt.Sprintf("%-14s", s.Name)), serverStr, clientStr))
+				if s.IsViews {
+					// Views show only total size (includes JS, CSS, HTML, assets)
+					totalStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#E879F9")).Render(formatSize(s.TotalSize))
+					boxContent.WriteString(fmt.Sprintf("%s  Total: %s\n",
+						nameStyle.Render(fmt.Sprintf("%-14s", s.Name)), totalStr))
+				} else {
+					serverStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
+					clientStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
+					if s.ServerSize > 0 {
+						serverStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA")).Render(formatSize(s.ServerSize))
+					}
+					if s.ClientSize > 0 {
+						clientStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")).Render(formatSize(s.ClientSize))
+					}
+					boxContent.WriteString(fmt.Sprintf("%s  Server: %s  Client: %s\n",
+						nameStyle.Render(fmt.Sprintf("%-14s", s.Name)), serverStr, clientStr))
+				}
 			}
 			totalStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F59E0B"))
 			boxContent.WriteString(fmt.Sprintf("\nTotal: %s", totalStyle.Render(formatSize(grandTotal))))

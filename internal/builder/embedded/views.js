@@ -49,34 +49,37 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
     ]
     const allIgnore = [...defaultIgnore, ...ignorePatterns]
 
-    async function copyDir(srcDir, dstDir, relativePath = '') {
+    async function getFilesToCopy(srcDir, relativePath = '') {
+        const files = []
         const entries = await fs.promises.readdir(srcDir, { withFileTypes: true })
 
         for (const entry of entries) {
             const srcPath = path.join(srcDir, entry.name)
-            const dstPath = path.join(dstDir, entry.name)
             const relPath = path.join(relativePath, entry.name)
 
             if (shouldIgnore(relPath, allIgnore)) continue
 
             if (entry.isDirectory()) {
-                await fs.promises.mkdir(dstPath, { recursive: true })
-                await copyDir(srcPath, dstPath, relPath)
+                const subFiles = await getFilesToCopy(srcPath, relPath)
+                files.push(...subFiles)
             } else {
                 // Skip files that esbuild already handles via imports
                 const ext = path.extname(entry.name).toLowerCase()
                 const esbuildExtensions = ['.js', '.ts', '.tsx', '.jsx']
                 if (esbuildExtensions.includes(ext)) continue
 
-                // Copy static assets (css, images, fonts, etc.)
-                const dstDir = path.dirname(dstPath)
-                await fs.promises.mkdir(dstDir, { recursive: true })
-                await fs.promises.copyFile(srcPath, dstPath)
+                files.push({ src: srcPath, rel: relPath })
             }
         }
+        return files
     }
 
-    await copyDir(viewPath, outDir)
+    const files = await getFilesToCopy(viewPath)
+    for (const file of files) {
+        const dstPath = path.join(outDir, file.rel)
+        await fs.promises.mkdir(path.dirname(dstPath), { recursive: true })
+        await fs.promises.copyFile(file.src, dstPath)
+    }
 }
 
 async function buildViews(viewPath, outDir, options = {}) {
