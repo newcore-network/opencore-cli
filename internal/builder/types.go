@@ -1,6 +1,9 @@
 package builder
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ResourceType defines the type of resource for build configuration
 type ResourceType string
@@ -23,10 +26,60 @@ type BuildTask struct {
 	CustomCompiler string // Path to custom compiler, empty = use embedded
 }
 
+// BuildSideOptions represents per-side build options that are forwarded to build.js.
+// In JSON, `server`/`client` can be either:
+// - false: skip building that side
+// - object: these options
+type BuildSideOptions struct {
+	Platform   string   `json:"platform,omitempty"`
+	Format     string   `json:"format,omitempty"`
+	Target     string   `json:"target,omitempty"`
+	External   []string `json:"external,omitempty"`
+	Minify     *bool    `json:"minify,omitempty"`
+	SourceMaps *bool    `json:"sourceMaps,omitempty"`
+}
+
+// SideConfigValue marshals as either:
+// - false (to skip building that side)
+// - an object with BuildSideOptions (to configure that side)
+type SideConfigValue struct {
+	Enabled bool
+	Options *BuildSideOptions
+}
+
+func (s SideConfigValue) MarshalJSON() ([]byte, error) {
+	if !s.Enabled {
+		return []byte("false"), nil
+	}
+	if s.Options == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(s.Options)
+}
+
+func (s *SideConfigValue) UnmarshalJSON(data []byte) error {
+	// Accept bool or object
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		s.Enabled = b
+		s.Options = nil
+		return nil
+	}
+
+	var opts BuildSideOptions
+	if err := json.Unmarshal(data, &opts); err != nil {
+		return err
+	}
+	// Object implies enabled
+	s.Enabled = true
+	s.Options = &opts
+	return nil
+}
+
 // BuildOptions contains build configuration for a resource
 type BuildOptions struct {
-	Server      bool         `json:"server"`
-	Client      bool         `json:"client"`
+	Server      SideConfigValue `json:"server"`
+	Client      SideConfigValue `json:"client"`
 	NUI         bool         `json:"nui"`
 	Minify      bool         `json:"minify"`
 	SourceMaps  bool         `json:"sourceMaps"`

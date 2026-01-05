@@ -22,6 +22,7 @@ type ProjectConfig struct {
 	Architecture    string
 	InstallIdentity bool
 	UseMinify       bool
+	Destination     string
 }
 
 type ResourceConfig struct {
@@ -41,12 +42,13 @@ type FeatureConfig struct {
 	FeatureNamePascal string
 }
 
-func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool) error {
+func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool, destination string) error {
 	config := ProjectConfig{
 		ProjectName:     projectName,
 		Architecture:    architecture,
 		InstallIdentity: installIdentity,
 		UseMinify:       useMinify,
+		Destination:     destination,
 	}
 
 	// Create base directories

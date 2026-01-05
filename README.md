@@ -144,7 +144,6 @@ import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: 'my-server',
-  outDir: './build',
   destination: '/path/to/fxserver/resources',
 
   core: {
@@ -201,8 +200,7 @@ export default defineConfig({
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `name` | `string` | - | Project identifier |
-| `outDir` | `string` | `./build` | Output directory (cleaned before each build) |
-| `destination` | `string` | - | FiveM server deployment path |
+| `destination` | `string` | - | FiveM server deployment path (mandatory) |
 | `core` | `CoreConfig` | - | Core resource configuration (required) |
 | `resources` | `ResourcesConfig` | - | Satellite resources configuration |
 | `standalone` | `StandaloneConfig` | - | Independent resources configuration |

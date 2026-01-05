@@ -100,6 +100,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Description: "Enable code minification in production builds?",
 			Type:        ui.StepTypeConfirm,
 		},
+		{
+			Title:       "Server Destination",
+			Description: "Path to your FiveM server resources folder (mandatory)",
+			Type:        ui.StepTypeInput,
+			Validate: func(s string) error {
+				if s == "" {
+					return fmt.Errorf("destination path is required")
+				}
+				return nil
+			},
+		},
 	}
 
 	// Pre-fill project name if provided as argument
@@ -128,6 +139,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	architecture := result.GetStringValue("Architecture")
 	modules := result.GetStringSliceValue("Modules")
 	useMinify := result.GetBoolValue("Minification")
+	destination := result.GetStringValue("Server Destination")
 
 	// Check if identity module is selected
 	installIdentity := false
@@ -148,7 +160,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Generate project from template
-	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify); err != nil {
+	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination); err != nil {
 		return fmt.Errorf("failed to generate project: %w", err)
 	}
 
@@ -167,7 +179,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		"Project: %s\n"+
 			"Architecture: %s\n"+
 			"Modules: %s\n"+
-			"Minify: %s\n\n"+
+			"Minify: %s\n"+
+			"Destination: %s\n\n"+
 			"Next steps:\n"+
 			"  cd %s\n"+
 			"  pnpm install\n"+
@@ -176,6 +189,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		architecture,
 		modulesStr,
 		boolToYesNo(useMinify),
+		destination,
 		projectName,
 	)
 

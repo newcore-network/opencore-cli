@@ -33,8 +33,8 @@ func TestBuildTaskStructure(t *testing.T) {
 		OutDir:         "./dist",
 		CustomCompiler: "./scripts/build.js",
 		Options: BuildOptions{
-			Server:     true,
-			Client:     true,
+			Server:     SideConfigValue{Enabled: true},
+			Client:     SideConfigValue{Enabled: true},
 			Minify:     true,
 			SourceMaps: true,
 			Target:     "ES2020",
@@ -54,8 +54,8 @@ func TestBuildTaskStructure(t *testing.T) {
 		t.Errorf("Expected type TypeCore, got %v", task.Type)
 	}
 
-	if !task.Options.Server {
-		t.Error("Expected Options.Server to be true")
+	if !task.Options.Server.Enabled {
+		t.Error("Expected Options.Server.Enabled to be true")
 	}
 
 	if !task.Options.Minify {
@@ -65,8 +65,8 @@ func TestBuildTaskStructure(t *testing.T) {
 
 func TestBuildOptionsJSON(t *testing.T) {
 	options := BuildOptions{
-		Server:     true,
-		Client:     false,
+		Server:     SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
+		Client:     SideConfigValue{Enabled: false},
 		NUI:        true,
 		Minify:     true,
 		SourceMaps: false,
@@ -92,8 +92,11 @@ func TestBuildOptionsJSON(t *testing.T) {
 		t.Fatalf("Failed to unmarshal BuildOptions: %v", err)
 	}
 
-	if parsed.Server != options.Server {
-		t.Errorf("Server mismatch: got %v, expected %v", parsed.Server, options.Server)
+	if parsed.Server.Enabled != options.Server.Enabled {
+		t.Errorf("Server.Enabled mismatch: got %v, expected %v", parsed.Server.Enabled, options.Server.Enabled)
+	}
+	if parsed.Client.Enabled != options.Client.Enabled {
+		t.Errorf("Client.Enabled mismatch: got %v, expected %v", parsed.Client.Enabled, options.Client.Enabled)
 	}
 
 	if parsed.Target != options.Target {

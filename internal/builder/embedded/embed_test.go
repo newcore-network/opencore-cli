@@ -6,63 +6,55 @@ import (
 )
 
 func TestEmbeddedBuildScript(t *testing.T) {
-	script := GetBuildScript()
-
-	if len(script) == 0 {
-		t.Fatal("Embedded build script is empty")
+	// 1. Check entry script (build.js)
+	entryScript := string(GetBuildScript())
+	if !strings.Contains(entryScript, "buildSingle") {
+		t.Error("build.js missing buildSingle")
+	}
+	if !strings.Contains(entryScript, "require('./build_functions')") {
+		t.Error("build.js missing build_functions require")
 	}
 
-	content := string(script)
+	// 2. Check plugins.js
+	pluginsScript, _ := BuildFS.ReadFile("plugins.js")
+	pluginsContent := string(pluginsScript)
+	requiredPlugins := []string{
+		"createSwcPlugin",
+		"createExcludeNodeAdaptersPlugin",
+		"preserveFiveMExportsPlugin",
+	}
+	for _, plugin := range requiredPlugins {
+		if !strings.Contains(pluginsContent, plugin) {
+			t.Errorf("plugins.js missing required plugin: %s", plugin)
+		}
+	}
+	if !strings.Contains(pluginsContent, "require('esbuild')") {
+		t.Error("plugins.js missing esbuild require")
+	}
+	if !strings.Contains(pluginsContent, "require('@swc/core')") {
+		t.Error("plugins.js missing @swc/core require")
+	}
 
-	// Check for required functions
+	// 3. Check build_functions.js
+	buildFuncsScript, _ := BuildFS.ReadFile("build_functions.js")
+	buildFuncsContent := string(buildFuncsScript)
 	requiredFunctions := []string{
 		"buildCore",
 		"buildResource",
 		"buildStandalone",
-		"buildViews",
-		"buildSingle",
 	}
-
 	for _, fn := range requiredFunctions {
-		if !strings.Contains(content, fn) {
-			t.Errorf("Embedded script missing required function: %s", fn)
+		if !strings.Contains(buildFuncsContent, fn) {
+			t.Errorf("build_functions.js missing required function: %s", fn)
 		}
-	}
-
-	// Check for required plugins
-	requiredPlugins := []string{
-		"swcPlugin",
-		"excludeNodeAdaptersPlugin",
-		"preserveFiveMExportsPlugin",
-	}
-
-	for _, plugin := range requiredPlugins {
-		if !strings.Contains(content, plugin) {
-			t.Errorf("Embedded script missing required plugin: %s", plugin)
-		}
-	}
-
-	// Check for esbuild import
-	if !strings.Contains(content, "require('esbuild')") {
-		t.Error("Embedded script missing esbuild require")
-	}
-
-	// Check for SWC plugin import
-	if !strings.Contains(content, "esbuild-plugin-swc") {
-		t.Error("Embedded script missing esbuild-plugin-swc require")
-	}
-
-	// Check that it handles the 'single' mode for CLI invocation
-	if !strings.Contains(content, "'single'") && !strings.Contains(content, "\"single\"") {
-		t.Error("Embedded script missing 'single' mode handling")
 	}
 }
 
 func TestBuildScriptNotEmpty(t *testing.T) {
-	script := BuildScript
+	script := GetBuildScript()
 
-	// Script should be at least a few KB
-	minSize := 1000 // bytes
+	// The entry script itself is small now, but should still be valid
+	minSize := 100 // bytes
 	if len(script) < minSize {
 		t.Errorf("Build script seems too small: %d bytes (expected at least %d)", len(script), minSize)
 	}

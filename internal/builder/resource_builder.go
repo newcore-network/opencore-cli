@@ -35,29 +35,38 @@ func (rb *ResourceBuilder) ensureEmbeddedScript() (string, error) {
 	defer rb.embeddedScriptMutex.Unlock()
 
 	if rb.embeddedScriptReady && rb.embeddedScriptPath != "" {
-		// Check if file still exists
 		if _, err := os.Stat(rb.embeddedScriptPath); err == nil {
 			return rb.embeddedScriptPath, nil
 		}
 	}
 
-	// Create script in project's node_modules/.cache directory so it can resolve modules
 	cacheDir := filepath.Join(rb.projectPath, "node_modules", ".cache", "opencore")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	scriptPath := filepath.Join(cacheDir, "build.js")
-
-	// Write embedded script to cache directory
-	if err := os.WriteFile(scriptPath, embedded.GetBuildScript(), 0644); err != nil {
-		return "", fmt.Errorf("failed to extract embedded build script: %w", err)
+	entries, err := embedded.BuildFS.ReadDir(".")
+	if err != nil {
+		return "", fmt.Errorf("failed to read embedded directory: %w", err)
 	}
 
-	rb.embeddedScriptPath = scriptPath
-	rb.embeddedScriptReady = true
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		content, err := embedded.BuildFS.ReadFile(entry.Name())
+		if err != nil {
+			return "", fmt.Errorf("failed to read embedded file %s: %w", entry.Name(), err)
+		}
+		destPath := filepath.Join(cacheDir, entry.Name())
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			return "", fmt.Errorf("failed to extract embedded file %s: %w", entry.Name(), err)
+		}
+	}
 
-	return scriptPath, nil
+	rb.embeddedScriptPath = filepath.Join(cacheDir, "build.js")
+	rb.embeddedScriptReady = true
+	return rb.embeddedScriptPath, nil
 }
 
 // Cleanup removes temporary files created by the builder
@@ -66,7 +75,8 @@ func (rb *ResourceBuilder) Cleanup() {
 	defer rb.embeddedScriptMutex.Unlock()
 
 	if rb.embeddedScriptPath != "" {
-		os.Remove(rb.embeddedScriptPath)
+		cacheDir := filepath.Dir(rb.embeddedScriptPath)
+		os.RemoveAll(cacheDir)
 		rb.embeddedScriptPath = ""
 		rb.embeddedScriptReady = false
 	}
@@ -225,45 +235,27 @@ func (rb *ResourceBuilder) buildViews(task BuildTask) (string, error) {
 
 // copyResource copies a resource without compilation (for compile: false)
 func (rb *ResourceBuilder) copyResource(task BuildTask) (string, error) {
-	srcPath := task.Path
-	dstPath := filepath.Join(task.OutDir, filepath.Base(task.Path))
-
-	// Create destination directory
-	if err := os.MkdirAll(dstPath, 0755); err != nil {
-		return "", fmt.Errorf("failed to create destination directory: %w", err)
-	}
-
-	// Copy all files recursively
-	err := filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Get relative path
-		relPath, err := filepath.Rel(srcPath, path)
-		if err != nil {
-			return err
-		}
-
-		// Skip node_modules and other build artifacts
-		if info.IsDir() && (info.Name() == "node_modules" || info.Name() == "dist") {
-			return filepath.SkipDir
-		}
-
-		targetPath := filepath.Join(dstPath, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(targetPath, info.Mode())
-		}
-
-		return copyFile(path, targetPath)
-	})
-
+	scriptPath, err := rb.getBuildScriptPath(task)
 	if err != nil {
-		return "", fmt.Errorf("failed to copy resource: %w", err)
+		return "", err
 	}
 
-	return fmt.Sprintf("Copied %s to %s", srcPath, dstPath), nil
+	optionsJSON, err := json.Marshal(task.Options)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal options: %w", err)
+	}
+
+	// Use the embedded script to handle the copy so it also handles dependencies/symlinks
+	cmd := exec.Command("node", scriptPath, "single",
+		"copy", task.Path, task.OutDir, string(optionsJSON))
+	cmd.Dir = rb.projectPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("resource copy failed: %w\nOutput:\n%s", err, string(output))
+	}
+
+	return string(output), nil
 }
 
 // copyFile copies a single file

@@ -10,8 +10,9 @@ import (
 
 func TestCollectAllTasks_CoreOnly(t *testing.T) {
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:           "./core",
 			ResourceName:   "[core]",
@@ -52,8 +53,9 @@ func TestCollectAllTasks_CoreOnly(t *testing.T) {
 
 func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:           "./core",
 			ResourceName:   "[core]",
@@ -99,8 +101,9 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 
 func TestCollectAllTasks_WithExplicitResources(t *testing.T) {
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:         "./core",
 			ResourceName: "[core]",
@@ -173,8 +176,9 @@ func TestCollectAllTasks_WithStandalone(t *testing.T) {
 	trueVal := true
 
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:         "./core",
 			ResourceName: "[core]",
@@ -268,8 +272,9 @@ func TestCollectAllTasks_WithGlobPatterns(t *testing.T) {
 	defer os.Chdir(oldWd)
 
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:         "./core",
 			ResourceName: "[core]",
@@ -305,8 +310,9 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 	serverFalse := false
 
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:         "./core",
 			ResourceName: "[core]",
@@ -344,7 +350,7 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 		t.Fatal("Expected client-only task")
 	}
 
-	if clientOnlyTask.Options.Server {
+	if clientOnlyTask.Options.Server.Enabled {
 		t.Error("Expected Server to be false")
 	}
 
@@ -393,8 +399,9 @@ func TestHasClientCode(t *testing.T) {
 
 func TestCollectAllTasks_EntryPoints(t *testing.T) {
 	cfg := &config.Config{
-		Name:   "test-project",
-		OutDir: "./dist",
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
 		Core: config.CoreConfig{
 			Path:         "./core",
 			ResourceName: "[core]",

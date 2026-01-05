@@ -23,6 +23,71 @@ type Builder struct {
 	deployer        *Deployer
 }
 
+func buildSideOptionsFromConfig(cfg *config.BuildSideConfig) *BuildSideOptions {
+	if cfg == nil {
+		return nil
+	}
+	return &BuildSideOptions{
+		Platform:   cfg.Platform,
+		Format:     cfg.Format,
+		Target:     cfg.Target,
+		External:   cfg.External,
+		Minify:     cfg.Minify,
+		SourceMaps: cfg.SourceMaps,
+	}
+}
+
+func mergeBuildSideConfig(base *config.BuildSideConfig, override *config.BuildSideConfig) *config.BuildSideConfig {
+	if base == nil {
+		return override
+	}
+	if override == nil {
+		return base
+	}
+
+	merged := &config.BuildSideConfig{}
+
+	merged.Platform = base.Platform
+	if override.Platform != "" {
+		merged.Platform = override.Platform
+	}
+
+	merged.Format = base.Format
+	if override.Format != "" {
+		merged.Format = override.Format
+	}
+
+	merged.Target = base.Target
+	if override.Target != "" {
+		merged.Target = override.Target
+	}
+
+	merged.External = base.External
+	// nil means "not specified"; empty slice means "specified as empty"
+	if override.External != nil {
+		merged.External = override.External
+	}
+
+	merged.Minify = base.Minify
+	if override.Minify != nil {
+		merged.Minify = override.Minify
+	}
+
+	merged.SourceMaps = base.SourceMaps
+	if override.SourceMaps != nil {
+		merged.SourceMaps = override.SourceMaps
+	}
+
+	return merged
+}
+
+func buildSideValue(enabled bool, cfg *config.BuildSideConfig) SideConfigValue {
+	if !enabled {
+		return SideConfigValue{Enabled: false, Options: nil}
+	}
+	return SideConfigValue{Enabled: true, Options: buildSideOptionsFromConfig(cfg)}
+}
+
 func New(cfg *config.Config) *Builder {
 	return &Builder{
 		config:          cfg,
@@ -40,16 +105,25 @@ func (b *Builder) Build() error {
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
 
-	// Clean output directory before build
-	if err := b.cleanOutputDir(); err != nil {
-		return fmt.Errorf("failed to clean output directory: %w", err)
-	}
-
 	// Collect all build tasks
 	tasks := b.collectAllTasks()
 
 	if len(tasks) == 0 {
 		return fmt.Errorf("no resources to build")
+	}
+
+	// Clean only the resources we are about to build
+	uniqueResources := make(map[string]struct{})
+	for _, task := range tasks {
+		// ResourceName can be "core" or "myresource/ui"
+		baseResource := strings.Split(task.ResourceName, "/")[0]
+		uniqueResources[baseResource] = struct{}{}
+	}
+
+	for baseResource := range uniqueResources {
+		if err := b.cleanResourceOutputDir(baseResource); err != nil {
+			return fmt.Errorf("failed to clean resource output directory: %w", err)
+		}
 	}
 
 	// Determine number of workers
@@ -75,8 +149,8 @@ func (b *Builder) Build() error {
 		return err
 	}
 
-	// Deploy to destination if configured
-	if b.deployer.HasDestination() {
+	// Deploy to destination if configured and necessary
+	if b.deployer.ShouldDeploy() {
 		fmt.Printf("\n%s Deploying to %s...\n", ui.Info("→"), b.config.Destination)
 		if err := b.deployer.Deploy(); err != nil {
 			return fmt.Errorf("deployment failed: %w", err)
@@ -115,7 +189,7 @@ func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
 		return results, err
 	}
 
-	if b.deployer.HasDestination() {
+	if b.deployer.ShouldDeploy() {
 		for baseResource := range uniqueResources {
 			if err := b.deployer.DeployResource(baseResource); err != nil {
 				return results, fmt.Errorf("deployment failed for %s: %w", baseResource, err)
@@ -131,15 +205,23 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
 
 	// Core task
+	coreBuildCfg := &b.config.Build
+	if b.config.Core.Build != nil {
+		coreBuildCfg = b.config.Core.Build
+	}
+
+	coreServerCfg := mergeBuildSideConfig(b.config.Build.Server, coreBuildCfg.Server)
+	coreClientCfg := mergeBuildSideConfig(b.config.Build.Client, coreBuildCfg.Client)
+
 	coreTask := BuildTask{
 		Path:           b.config.Core.Path,
 		ResourceName:   b.config.Core.ResourceName,
 		Type:           TypeCore,
-		OutDir:         b.config.OutDir,
+		OutDir:         filepath.Join(b.config.OutDir, b.config.Core.ResourceName),
 		CustomCompiler: b.config.Core.CustomCompiler,
 		Options: BuildOptions{
-			Server:     true,
-			Client:     true,
+			Server:     buildSideValue(true, coreServerCfg),
+			Client:     buildSideValue(true, coreClientCfg),
 			Minify:     b.config.Build.Minify,
 			SourceMaps: b.config.Build.SourceMaps,
 			Target:     b.config.Build.Target,
@@ -198,10 +280,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Path:         match,
 				ResourceName: resourceName,
 				Type:         TypeResource,
-				OutDir:       b.config.OutDir,
+				OutDir:       filepath.Join(b.config.OutDir, resourceName),
 				Options: BuildOptions{
-					Server:     true,
-					Client:     b.hasClientCode(match),
+					Server:     buildSideValue(true, b.config.Build.Server),
+					Client:     buildSideValue(b.hasClientCode(match), b.config.Build.Client),
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
 					Target:     b.config.Build.Target,
@@ -225,10 +307,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				}
 				if explicit.Build != nil {
 					if explicit.Build.Server != nil {
-						task.Options.Server = *explicit.Build.Server
+						task.Options.Server = buildSideValue(*explicit.Build.Server, b.config.Build.Server)
 					}
 					if explicit.Build.Client != nil {
-						task.Options.Client = *explicit.Build.Client
+						task.Options.Client = buildSideValue(*explicit.Build.Client, b.config.Build.Client)
 					}
 					if explicit.Build.NUI != nil {
 						task.Options.NUI = *explicit.Build.NUI
@@ -287,11 +369,11 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			Path:           res.Path,
 			ResourceName:   resourceName,
 			Type:           TypeResource,
-			OutDir:         b.config.OutDir,
+			OutDir:         filepath.Join(b.config.OutDir, resourceName),
 			CustomCompiler: res.CustomCompiler,
 			Options: BuildOptions{
-				Server:     true,
-				Client:     true,
+				Server:     buildSideValue(true, b.config.Build.Server),
+				Client:     buildSideValue(true, b.config.Build.Client),
 				Minify:     b.config.Build.Minify,
 				SourceMaps: b.config.Build.SourceMaps,
 				Target:     b.config.Build.Target,
@@ -309,10 +391,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 
 		if res.Build != nil {
 			if res.Build.Server != nil {
-				task.Options.Server = *res.Build.Server
+				task.Options.Server = buildSideValue(*res.Build.Server, b.config.Build.Server)
 			}
 			if res.Build.Client != nil {
-				task.Options.Client = *res.Build.Client
+				task.Options.Client = buildSideValue(*res.Build.Client, b.config.Build.Client)
 			}
 			if res.Build.NUI != nil {
 				task.Options.NUI = *res.Build.NUI
@@ -377,11 +459,11 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Path:           match,
 					ResourceName:   resourceName,
 					Type:           taskType,
-					OutDir:         b.config.OutDir,
+					OutDir:         filepath.Join(b.config.OutDir, resourceName),
 					CustomCompiler: customCompiler,
 					Options: BuildOptions{
-						Server:      true,
-						Client:      b.hasClientCode(match),
+						Server:      buildSideValue(true, b.config.Build.Server),
+						Client:      buildSideValue(b.hasClientCode(match), b.config.Build.Client),
 						Minify:      b.config.Build.Minify,
 						SourceMaps:  b.config.Build.SourceMaps,
 						Target:      b.config.Build.Target,
@@ -413,11 +495,11 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Path:           res.Path,
 				ResourceName:   resourceName,
 				Type:           taskType,
-				OutDir:         b.config.OutDir,
+				OutDir:         filepath.Join(b.config.OutDir, resourceName),
 				CustomCompiler: res.CustomCompiler,
 				Options: BuildOptions{
-					Server:     true,
-					Client:     b.hasClientCode(res.Path),
+					Server:     buildSideValue(true, b.config.Build.Server),
+					Client:     buildSideValue(b.hasClientCode(res.Path), b.config.Build.Client),
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
 					Target:     b.config.Build.Target,
@@ -525,26 +607,6 @@ func (b *Builder) hasClientCode(resourcePath string) bool {
 	clientPath := filepath.Join(resourcePath, "src", "client")
 	info, err := os.Stat(clientPath)
 	return err == nil && info.IsDir()
-}
-
-// cleanOutputDir removes the output directory before building
-func (b *Builder) cleanOutputDir() error {
-	outDir := b.config.OutDir
-	if outDir == "" {
-		outDir = "./build"
-	}
-
-	// Check if directory exists
-	if _, err := os.Stat(outDir); os.IsNotExist(err) {
-		return nil // Nothing to clean
-	}
-
-	fmt.Printf("%s Cleaning %s...\n", ui.Info("→"), outDir)
-	if err := os.RemoveAll(outDir); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (b *Builder) cleanResourceOutputDir(resourceName string) error {

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
@@ -47,6 +48,12 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Check if in OpenCore project
 	projectCheck := checkOpenCoreProject()
 	checks = append(checks, projectCheck)
+
+	// Check configuration
+	if projectCheck.Passed {
+		configCheck := checkConfig()
+		checks = append(checks, configCheck)
+	}
 
 	// Check if dependencies are installed
 	if projectCheck.Passed {
@@ -126,6 +133,31 @@ func checkOpenCoreProject() CheckResult {
 		Name:    "OpenCore Project",
 		Passed:  false,
 		Message: "Not in an OpenCore project directory",
+	}
+}
+
+func checkConfig() CheckResult {
+	cfg, err := config.Load()
+	if err != nil {
+		return CheckResult{
+			Name:    "Configuration",
+			Passed:  false,
+			Message: err.Error(),
+		}
+	}
+
+	if cfg.Destination == "" {
+		return CheckResult{
+			Name:    "Configuration",
+			Passed:  false,
+			Message: "'destination' is required in opencore.config.ts",
+		}
+	}
+
+	return CheckResult{
+		Name:    "Configuration",
+		Passed:  true,
+		Message: "Valid configuration",
 	}
 }
 

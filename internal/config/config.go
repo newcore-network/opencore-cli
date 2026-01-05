@@ -37,6 +37,7 @@ type CoreConfig struct {
 	ResourceName   string       `json:"resourceName"`
 	EntryPoints    *EntryPoints `json:"entryPoints,omitempty"`
 	Views          *ViewsConfig `json:"views,omitempty"`
+	Build          *BuildConfig `json:"build,omitempty"`
 	CustomCompiler string       `json:"customCompiler,omitempty"` // Path to custom build script
 }
 
@@ -81,12 +82,23 @@ type ViewsConfig struct {
 	Ignore     []string `json:"ignore,omitempty"`     // Optional: ignore patterns (e.g., ["*.config.ts", "test/**"])
 }
 
+type BuildSideConfig struct {
+	Platform  string   `json:"platform,omitempty"`
+	Format    string   `json:"format,omitempty"`
+	Target    string   `json:"target,omitempty"`
+	External  []string `json:"external,omitempty"`
+	Minify    *bool    `json:"minify,omitempty"`
+	SourceMaps *bool   `json:"sourceMaps,omitempty"`
+}
+
 type BuildConfig struct {
 	Minify     bool   `json:"minify"`
 	SourceMaps bool   `json:"sourceMaps"`
 	Target     string `json:"target,omitempty"`
 	Parallel   bool   `json:"parallel"`
 	MaxWorkers int    `json:"maxWorkers,omitempty"`
+	Server     *BuildSideConfig `json:"server,omitempty"`
+	Client     *BuildSideConfig `json:"client,omitempty"`
 }
 
 // Load reads and transpiles opencore.config.ts to Config
@@ -158,10 +170,14 @@ const path = require('path');
 		return nil, fmt.Errorf("failed to parse config JSON: %w\nOutput: %s", err, string(output))
 	}
 
-	// Set defaults
-	if config.OutDir == "" {
-		config.OutDir = "./build"
+	// Validate destination
+	if config.Destination == "" {
+		return nil, fmt.Errorf("'destination' is required in opencore.config.ts")
 	}
+
+	// OutDir is now always the same as Destination to skip intermediate build/
+	config.OutDir = config.Destination
+
 	if config.Build.Target == "" {
 		config.Build.Target = "ES2020"
 	}

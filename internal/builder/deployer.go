@@ -124,6 +124,11 @@ func (d *Deployer) GetDeployedPath(resourceName string) string {
 	return filepath.Join(d.config.Destination, resourceName)
 }
 
+// ShouldDeploy returns whether a deployment step is needed
+func (d *Deployer) ShouldDeploy() bool {
+	return d.config.Destination != "" && d.config.OutDir != d.config.Destination
+}
+
 // HasDestination returns whether a destination is configured
 func (d *Deployer) HasDestination() bool {
 	return d.config.Destination != ""

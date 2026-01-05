@@ -3,8 +3,44 @@ package builder
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func getRepoRoot(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get wd: %v", err)
+	}
+
+	// Walk up a few levels to find repo root (where node_modules is a real install)
+	cur := wd
+	for i := 0; i < 6; i++ {
+		nm := filepath.Join(cur, "node_modules")
+		if info, err := os.Stat(nm); err == nil && info.IsDir() {
+			// Ignore cache-only node_modules created during tests (e.g. internal/builder/node_modules/.cache)
+			// We need a node_modules that can resolve esbuild/swc.
+			esbuildPath := filepath.Join(nm, "esbuild")
+			pnpmPath := filepath.Join(nm, ".pnpm")
+			if ei, eerr := os.Stat(esbuildPath); eerr == nil && ei.IsDir() {
+				return cur
+			}
+			if pi, perr := os.Stat(pnpmPath); perr == nil && pi.IsDir() {
+				return cur
+			}
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+
+	t.Fatalf("could not find repo root with node_modules starting from %s", wd)
+	return ""
+}
 
 func TestNewResourceBuilder(t *testing.T) {
 	rb := NewResourceBuilder("/test/project")
@@ -223,10 +259,14 @@ func TestCopyResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rb := NewResourceBuilder(".")
+	rb := NewResourceBuilder(getRepoRoot(t))
 	task := BuildTask{
 		Path:   srcDir,
 		OutDir: outDir,
+		Options: BuildOptions{
+			Server: SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
+			Client: SideConfigValue{Enabled: false},
+		},
 	}
 
 	output, err := rb.copyResource(task)
@@ -240,7 +280,7 @@ func TestCopyResource(t *testing.T) {
 	}
 
 	// Verify files were copied
-	dstDir := filepath.Join(outDir, filepath.Base(srcDir))
+	dstDir := outDir
 
 	if _, err := os.Stat(filepath.Join(dstDir, "file1.lua")); os.IsNotExist(err) {
 		t.Error("file1.lua should be copied")
@@ -250,9 +290,17 @@ func TestCopyResource(t *testing.T) {
 		t.Error("subdir/file2.lua should be copied")
 	}
 
-	// Verify node_modules was skipped
-	if _, err := os.Stat(filepath.Join(dstDir, "node_modules")); !os.IsNotExist(err) {
-		t.Error("node_modules should not be copied")
+	// Verify node_modules junction/symlink was created by handleDependencies
+	modsPath := filepath.Join(dstDir, "node_modules")
+	fi, err := os.Lstat(modsPath)
+	if err != nil {
+		t.Fatalf("node_modules should exist: %v", err)
+	}
+	// On Windows, junctions typically show as symlinks via Lstat.
+	if runtime.GOOS == "windows" {
+		if fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("expected node_modules to be a junction/symlink, mode=%v", fi.Mode())
+		}
 	}
 }
 
@@ -291,7 +339,7 @@ func TestCopyFile(t *testing.T) {
 }
 
 func TestBuildTaskTypes(t *testing.T) {
-	rb := NewResourceBuilder(".")
+	rb := NewResourceBuilder(getRepoRoot(t))
 	defer rb.Cleanup()
 
 	tests := []struct {

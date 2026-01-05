@@ -308,9 +308,16 @@ func (w *Watcher) registerPaths() {
 				return nil // Skip directories we can't access
 			}
 			if d.IsDir() {
-				// Skip node_modules and build output directories
+				// Skip node_modules and other common non-source directories
 				name := d.Name()
-				if name == "node_modules" || name == "dist" || name == "build" || name == ".git" {
+				if name == "node_modules" || name == "dist" || name == ".git" {
+					return filepath.SkipDir
+				}
+
+				// Skip the destination directory if it's inside the project
+				absPath, _ := filepath.Abs(path)
+				absDest, _ := filepath.Abs(w.config.Destination)
+				if absPath == absDest {
 					return filepath.SkipDir
 				}
 				if watchErr := w.watcher.Add(path); watchErr != nil {

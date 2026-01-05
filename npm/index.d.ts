@@ -11,10 +11,10 @@
  * 
  * export default defineConfig({
  *   name: 'my-server',
- *   outDir: './build',
+ *   destination: 'C:/FXServer/server-data/resources/[my-server]',
  *   core: {
  *     path: './core',
- *     resourceName: '[core]',
+ *     resourceName: 'core',
  *   },
  *   resources: {
  *     include: ['./resources/*'],
@@ -696,20 +696,12 @@ export interface OpenCoreConfig {
   name: string;
 
   /**
-   * Output directory for compiled resources.
-   * This folder is **cleaned before each build**.
-   * @default './build'
-   * @example './build'
-   */
-  outDir?: string;
-
-  /**
    * Deployment destination path.
-   * If set, compiled resources will be copied here after build.
+   * **Required**. Compiled resources will be output directly to this path.
    * Typically points to your FiveM server's resources folder.
    * @example 'C:/FXServer/server-data/resources/[my-server]'
    */
-  destination?: string;
+  destination: string;
 
   /**
    * Core resource configuration.
@@ -812,10 +804,10 @@ export interface DevConfig {
  * 
  * export default defineConfig({
  *   name: 'my-server',
- *   outDir: './build',
+ *   destination: 'C:/FXServer/server-data/resources/[my-server]',
  *   core: {
  *     path: './core',
- *     resourceName: '[core]',
+ *     resourceName: 'core',
  *   },
  *   resources: {
  *     include: ['./resources/*'],

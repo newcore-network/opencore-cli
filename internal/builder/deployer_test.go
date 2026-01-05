@@ -25,6 +25,32 @@ func TestNewDeployer(t *testing.T) {
 	}
 }
 
+func TestShouldDeploy(t *testing.T) {
+	tests := []struct {
+		outDir      string
+		destination string
+		expected    bool
+	}{
+		{"./build", "C:/FXServer/resources", true},
+		{"C:/FXServer/resources", "C:/FXServer/resources", false},
+		{"./build", "", false},
+	}
+
+	for _, tt := range tests {
+		cfg := &config.Config{
+			OutDir:      tt.outDir,
+			Destination: tt.destination,
+		}
+		deployer := NewDeployer(cfg)
+
+		result := deployer.ShouldDeploy()
+		if result != tt.expected {
+			t.Errorf("ShouldDeploy() with outDir='%s', dest='%s' = %v, expected %v",
+				tt.outDir, tt.destination, result, tt.expected)
+		}
+	}
+}
+
 func TestHasDestination(t *testing.T) {
 	tests := []struct {
 		destination string

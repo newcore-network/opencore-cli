@@ -1,13 +1,14 @@
 package embedded
 
 import (
-	_ "embed"
+	"embed"
 )
 
-//go:embed build.js
-var BuildScript []byte
+//go:embed *.js
+var BuildFS embed.FS
 
-// GetBuildScript returns the embedded build script content
+// GetBuildScript returns the main build script content
 func GetBuildScript() []byte {
-	return BuildScript
+	content, _ := BuildFS.ReadFile("build.js")
+	return content
 }

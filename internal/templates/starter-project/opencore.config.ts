@@ -3,10 +3,8 @@ import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: '{{.ProjectName}}',
-  outDir: './build',
-
-  // Optional: Deploy to FiveM server
-  // destination: 'C:/FXServer/server-data/resources/[{{.ProjectName}}]',
+  // Mandatory: Deploy to FiveM server
+  destination: 'C:/FXServer/server-data/resources/[{{.ProjectName}}]',
 
   core: {
     path: './core',
