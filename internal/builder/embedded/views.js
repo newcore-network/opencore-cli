@@ -21,6 +21,64 @@ function readOcIgnore(viewPath) {
     }
 }
 
+function shouldIgnore(filePath, ignorePatterns) {
+    const fileName = path.basename(filePath)
+    for (const pattern of ignorePatterns) {
+        if (pattern === fileName) return true
+        if (pattern.startsWith('*.')) {
+            const ext = pattern.slice(1)
+            if (fileName.endsWith(ext)) return true
+        }
+        if (filePath.includes(pattern)) return true
+    }
+    return false
+}
+
+async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
+    const defaultIgnore = [
+        'node_modules',
+        '.git',
+        'package.json',
+        'package-lock.json',
+        'tsconfig.json',
+        '.ocignore',
+        'index.html', // Handled separately with script path replacement
+        '*.ts',
+        '*.tsx',
+        '*.jsx',
+    ]
+    const allIgnore = [...defaultIgnore, ...ignorePatterns]
+
+    async function copyDir(srcDir, dstDir, relativePath = '') {
+        const entries = await fs.promises.readdir(srcDir, { withFileTypes: true })
+
+        for (const entry of entries) {
+            const srcPath = path.join(srcDir, entry.name)
+            const dstPath = path.join(dstDir, entry.name)
+            const relPath = path.join(relativePath, entry.name)
+
+            if (shouldIgnore(relPath, allIgnore)) continue
+
+            if (entry.isDirectory()) {
+                await fs.promises.mkdir(dstPath, { recursive: true })
+                await copyDir(srcPath, dstPath, relPath)
+            } else {
+                // Skip files that esbuild already handles via imports
+                const ext = path.extname(entry.name).toLowerCase()
+                const esbuildExtensions = ['.js', '.ts', '.tsx', '.jsx']
+                if (esbuildExtensions.includes(ext)) continue
+
+                // Copy static assets (css, images, fonts, etc.)
+                const dstDir = path.dirname(dstPath)
+                await fs.promises.mkdir(dstDir, { recursive: true })
+                await fs.promises.copyFile(srcPath, dstPath)
+            }
+        }
+    }
+
+    await copyDir(viewPath, outDir)
+}
+
 async function buildViews(viewPath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
@@ -103,6 +161,10 @@ async function buildViews(viewPath, outDir, options = {}) {
             'process.env.NODE_ENV': options.minify ? '"production"' : '"development"',
         },
     })
+
+    // Copy static assets (CSS, images, fonts, etc.) that aren't imported in JS
+    const ignorePatterns = readOcIgnore(viewPath)
+    await copyStaticAssets(viewPath, outDir, ignorePatterns)
 
     const htmlSrc = path.join(viewPath, 'index.html')
     const htmlDst = path.join(outDir, 'index.html')
