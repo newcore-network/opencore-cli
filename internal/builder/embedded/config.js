@@ -14,8 +14,12 @@ function getSharedConfig(options = {}) {
         legalComments: 'none',
         define: {
             'process.env.NODE_ENV': options.minify ? '"production"' : '"development"',
-            '__dirname': 'globalThis.__dirname',
-            '__filename': 'globalThis.__filename',
+        },
+        supported: {
+            'class-static-blocks': false,
+        },
+        alias: {
+            'bcrypt': 'bcryptjs',
         }
     }
 
@@ -48,7 +52,7 @@ function getBuildOptions(side, options = {}) {
     const defaults = {
         platform: side === 'server' ? 'node' : 'browser',
         target: 'es2020',
-        format: 'iife',
+        format: side === 'server' ? 'cjs' : 'iife',
         external: [],
         minify: false,
         sourceMaps: false,
@@ -69,6 +73,7 @@ function getBuildOptions(side, options = {}) {
         conditions: ['import', 'default'],
         supported: {
             'dynamic-import': true,
+            'class-static-blocks': false,
         },
     }
 }

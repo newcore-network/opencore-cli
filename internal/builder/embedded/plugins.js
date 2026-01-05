@@ -115,22 +115,35 @@ function createExternalPackagesPlugin(externals = []) {
 const preserveFiveMExportsPlugin = {
     name: 'preserve-fivem-exports',
     setup(build) {
-        build.onEnd(async (result) => {
-            if (result.errors.length > 0) return
-            const outfile = build.initialOptions.outfile
-            if (!outfile) return
+        // Replace exports() with globalThis.exports() DURING load phase
+        // This prevents esbuild from renaming exports to exports2
+        // Only apply to .js files in node_modules (already compiled)
+        build.onLoad({ filter: /\.js$/ }, async (args) => {
+            // Only transform files in node_modules that might use FiveM exports
+            if (!args.path.includes('node_modules')) {
+                return null
+            }
+            if (!args.path.includes('@open-core') && !args.path.includes('fivem')) {
+                return null
+            }
 
             try {
-                let contents = await fs.promises.readFile(outfile, 'utf8')
+                let contents = await fs.promises.readFile(args.path, 'utf8')
                 const originalContents = contents
+
+                // Replace FiveM exports() calls with globalThis.exports()
+                // Pattern 1: exports("name", handler) or exports('name', handler)
                 contents = contents.replace(/\bexports\s*\(\s*["'`]/g, 'globalThis.exports("')
+                // Pattern 2: exports(variableName, handler)
                 contents = contents.replace(/\bexports\s*\(\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*,/g, 'globalThis.exports($1,')
+
                 if (contents !== originalContents) {
-                    await fs.promises.writeFile(outfile, contents, 'utf8')
+                    return { contents, loader: 'js' }
                 }
             } catch (err) {
-                console.error(`[preserve-fivem-exports] Error:`, err)
+                // Ignore read errors, let esbuild handle them
             }
+            return null
         })
     },
 }

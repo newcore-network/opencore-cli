@@ -46,13 +46,14 @@ async function buildCore(resourcePath, outDir, options = {}) {
     if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
         const serverExternals = getExternals('server', options)
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
+        const serverFormat = serverBuildOptions.format || 'cjs'
         builds.push(esbuild.build({
             ...shared,
             ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getCorePlugins(true, serverExternals, serverTarget),
+            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat),
             external: serverExternals,
         }))
     }
@@ -61,13 +62,14 @@ async function buildCore(resourcePath, outDir, options = {}) {
     if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
         const clientExternals = getExternals('client', options)
         const clientTarget = (clientBuildOptions.target || 'es2020').toLowerCase()
+        const clientFormat = clientBuildOptions.format || 'iife'
         builds.push(esbuild.build({
             ...shared,
             ...clientBuildOptions,
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getCorePlugins(false, clientExternals, clientTarget),
+            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat),
             external: clientExternals,
         }))
     }
@@ -97,12 +99,13 @@ async function buildResource(resourcePath, outDir, options = {}) {
     if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
         const serverExternals = getExternals('server', options)
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
+        const serverFormat = serverBuildOptions.format || 'cjs'
         builds.push(esbuild.build({
             ...shared, ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getResourcePlugins(true, serverExternals, serverTarget),
+            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat),
             external: serverExternals,
         }))
     }
@@ -112,12 +115,13 @@ async function buildResource(resourcePath, outDir, options = {}) {
     if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
         const clientExternals = getExternals('client', options)
         const clientTarget = (clientBuildOptions.target || 'es2020').toLowerCase()
+        const clientFormat = clientBuildOptions.format || 'iife'
         builds.push(esbuild.build({
             ...shared, ...clientBuildOptions,
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getResourcePlugins(false, clientExternals, clientTarget),
+            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat),
             external: clientExternals,
         }))
     }
@@ -147,12 +151,13 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
         const serverExternals = getExternals('server', options)
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
+        const serverFormat = serverBuildOptions.format || 'cjs'
         builds.push(esbuild.build({
             ...shared, ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getStandalonePlugins(true, serverExternals, serverTarget),
+            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat),
             external: serverExternals,
         }))
     }
@@ -162,12 +167,13 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
         const clientExternals = getExternals('client', options)
         const clientTarget = (clientBuildOptions.target || 'es2020').toLowerCase()
+        const clientFormat = clientBuildOptions.format || 'iife'
         builds.push(esbuild.build({
             ...shared, ...clientBuildOptions,
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getStandalonePlugins(false, clientExternals, clientTarget),
+            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat),
             external: clientExternals,
         }))
     }
