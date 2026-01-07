@@ -34,3 +34,4 @@ Thumbs.db
 # NPM
 node_modules/
 npm/*.tgz
+pnpm-lock.yaml

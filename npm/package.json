@@ -1,6 +1,6 @@
 {
   "name": "@open-core/cli",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Official CLI tool for OpenCore Framework",
   "main": "index.js",
   "types": "index.d.ts",

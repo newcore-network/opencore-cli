@@ -113,7 +113,7 @@ export interface ViewsConfig {
    * The CLI will use the appropriate build configuration for each framework.
    * @default 'vanilla'
    */
-  framework?: 'react' | 'vue' | 'svelte' | 'solid' | 'vanilla';
+  framework?: 'react' | 'vue' | 'svelte' | 'vanilla';
 
   /**
    * Explicit entry point file for the views build.
