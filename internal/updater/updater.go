@@ -34,10 +34,11 @@ type UpdateInfo struct {
 }
 
 // CheckForUpdate checks if a new version is available on GitHub
-func CheckForUpdate(currentVersion string) (*UpdateInfo, error) {
-	// 1. Check cache first
+// If force is true, the cache will be ignored
+func CheckForUpdate(currentVersion string, force bool) (*UpdateInfo, error) {
+	// 1. Check cache first (unless force is true)
 	cachePath, _ := getCachePath()
-	if cachePath != "" {
+	if !force && cachePath != "" {
 		if data, err := os.ReadFile(cachePath); err == nil {
 			var info UpdateInfo
 			if err := json.Unmarshal(data, &info); err == nil {

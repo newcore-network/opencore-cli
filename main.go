@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	version = "0.4.7"
+	version = "0.4.8"
 )
 
 func main() {
@@ -51,7 +51,7 @@ func main() {
 
 	// Check for updates in the background after command execution
 	if len(os.Args) > 1 && os.Args[1] != "update" && os.Args[1] != "--version" && os.Args[1] != "-v" {
-		if info, err := updater.CheckForUpdate(version); err == nil {
+		if info, err := updater.CheckForUpdate(version, false); err == nil {
 			if updater.NeedsUpdate(version, info.LatestVersion) {
 				fmt.Println()
 				fmt.Println(ui.Info(fmt.Sprintf("New version available: %s -> %s", version, info.LatestVersion)))

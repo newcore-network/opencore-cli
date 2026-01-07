@@ -10,7 +10,9 @@ import (
 )
 
 func NewUpdateCommand() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update OpenCore CLI to the latest version",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -20,9 +22,13 @@ func NewUpdateCommand() *cobra.Command {
 				version = "0.0.0"
 			}
 
-			fmt.Println(ui.Info("Checking for updates..."))
+			if force {
+				fmt.Println(ui.Info("Forcing update check (ignoring cache)..."))
+			} else {
+				fmt.Println(ui.Info("Checking for updates..."))
+			}
 
-			info, err := updater.CheckForUpdate(version)
+			info, err := updater.CheckForUpdate(version, force)
 			if err != nil {
 				fmt.Println(ui.Error(fmt.Sprintf("Failed to check for updates: %v", err)))
 				return
@@ -52,4 +58,8 @@ func NewUpdateCommand() *cobra.Command {
 			fmt.Println(ui.Success(fmt.Sprintf("Successfully updated to %s!", info.LatestVersion)))
 		},
 	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update check, ignoring cache")
+
+	return cmd
 }

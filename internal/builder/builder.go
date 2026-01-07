@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -633,7 +634,47 @@ type ResourceSize struct {
 	ServerSize int64
 	ClientSize int64
 	TotalSize  int64
-	IsViews    bool // true if this is a views/UI bundle
+	IsViews    bool   // true if this is a views/UI bundle
+	Framework  string // framework used (react, vue, svelte, vanilla) - only for views
+}
+
+// detectFramework detects the framework used in a views directory
+func detectFramework(viewPath string) string {
+	// Check for framework-specific files
+	hasReact := false
+	hasVue := false
+	hasSvelte := false
+
+	filepath.WalkDir(viewPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			if d != nil && d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := filepath.Ext(d.Name())
+		switch ext {
+		case ".tsx", ".jsx":
+			hasReact = true
+		case ".vue":
+			hasVue = true
+		case ".svelte":
+			hasSvelte = true
+		}
+		return nil
+	})
+
+	// Return detected framework (prioritize by specificity)
+	if hasSvelte {
+		return "svelte"
+	}
+	if hasVue {
+		return "vue"
+	}
+	if hasReact {
+		return "react"
+	}
+	return "vanilla"
 }
 
 // formatSize formats bytes into human readable format (KB/MB)
@@ -686,10 +727,13 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 		if r.Task.Type == TypeViews {
 			totalSize := getDirSize(resourceDir)
 			if totalSize > 0 {
+				// Detect framework from source path
+				framework := detectFramework(r.Task.Path)
 				sizes = append(sizes, ResourceSize{
 					Name:      resourceName,
 					TotalSize: totalSize,
 					IsViews:   true,
+					Framework: framework,
 				})
 			}
 			continue
@@ -719,14 +763,30 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 		}
 	}
 
+	// Sort sizes to group related resources together (core, core/ui, xchat, xchat/ui, etc.)
+	sort.Slice(sizes, func(i, j int) bool {
+		// Extract base names (before any /)
+		baseI := strings.Split(sizes[i].Name, "/")[0]
+		baseJ := strings.Split(sizes[j].Name, "/")[0]
+
+		// If different base names, sort alphabetically by base
+		if baseI != baseJ {
+			return baseI < baseJ
+		}
+
+		// Same base: main resource comes before sub-resources (e.g., core before core/ui)
+		return len(sizes[i].Name) < len(sizes[j].Name)
+	})
+
 	return sizes
 }
 
 // showSummary displays the build summary
 func (b *Builder) showSummary(results []BuildResult) {
-	// Count unique resources and standalones separately
+	// Count unique resources, standalones, and UIs separately
 	successResources := make(map[string]struct{})
 	successStandalones := make(map[string]struct{})
+	successUIs := make(map[string]struct{})
 	failedResources := make(map[string]struct{})
 	failedStandalones := make(map[string]struct{})
 	totalDuration := time.Duration(0)
@@ -738,7 +798,9 @@ func (b *Builder) showSummary(results []BuildResult) {
 		if r.Success {
 			if isStandalone {
 				successStandalones[baseResource] = struct{}{}
-			} else if r.Task.Type != TypeViews {  // Don't count views separately
+			} else if r.Task.Type == TypeViews {
+				successUIs[r.Task.ResourceName] = struct{}{}
+			} else {
 				successResources[baseResource] = struct{}{}
 			}
 			totalDuration += r.Duration
@@ -753,6 +815,7 @@ func (b *Builder) showSummary(results []BuildResult) {
 
 	successResourceCount := len(successResources)
 	successStandaloneCount := len(successStandalones)
+	successUICount := len(successUIs)
 	failResourceCount := len(failedResources)
 	failStandaloneCount := len(failedStandalones)
 	failCount := failResourceCount + failStandaloneCount
@@ -771,12 +834,18 @@ func (b *Builder) showSummary(results []BuildResult) {
 		boxContent.WriteString("Build completed successfully!\n\n")
 
 		// Show counts based on what's present
-		if successResourceCount > 0 && successStandaloneCount > 0 {
-			boxContent.WriteString(fmt.Sprintf("Resources: %d | Standalones: %d\n", successResourceCount, successStandaloneCount))
-		} else if successResourceCount > 0 {
-			boxContent.WriteString(fmt.Sprintf("Resources: %d\n", successResourceCount))
-		} else if successStandaloneCount > 0 {
-			boxContent.WriteString(fmt.Sprintf("Standalones: %d\n", successStandaloneCount))
+		var countParts []string
+		if successResourceCount > 0 {
+			countParts = append(countParts, fmt.Sprintf("Resources: %d", successResourceCount))
+		}
+		if successUICount > 0 {
+			countParts = append(countParts, fmt.Sprintf("UIs: %d", successUICount))
+		}
+		if successStandaloneCount > 0 {
+			countParts = append(countParts, fmt.Sprintf("Standalones: %d", successStandaloneCount))
+		}
+		if len(countParts) > 0 {
+			boxContent.WriteString(strings.Join(countParts, " | ") + "\n")
 		}
 
 		boxContent.WriteString(fmt.Sprintf("Time: %s\n", totalDuration.Round(time.Millisecond)))
@@ -794,10 +863,14 @@ func (b *Builder) showSummary(results []BuildResult) {
 			for _, s := range sizes {
 				nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 				if s.IsViews {
-					// Views show only total size (includes JS, CSS, HTML, assets)
+					// Views show only total size (includes JS, CSS, HTML, assets) + framework
 					totalStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#E879F9")).Render(formatSize(s.TotalSize))
-					boxContent.WriteString(fmt.Sprintf("%s  Total: %s\n",
-						nameStyle.Render(fmt.Sprintf("%-14s", s.Name)), totalStr))
+					frameworkStr := ""
+					if s.Framework != "" {
+						frameworkStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render(fmt.Sprintf(" (%s)", s.Framework))
+					}
+					boxContent.WriteString(fmt.Sprintf("%s  Total: %s%s\n",
+						nameStyle.Render(fmt.Sprintf("%-14s", s.Name)), totalStr, frameworkStr))
 				} else {
 					serverStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
 					clientStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render("-")
@@ -821,14 +894,18 @@ func (b *Builder) showSummary(results []BuildResult) {
 		boxContent.WriteString("Build completed with errors\n\n")
 
 		// Show success counts
-		if successResourceCount > 0 || successStandaloneCount > 0 {
-			if successResourceCount > 0 && successStandaloneCount > 0 {
-				boxContent.WriteString(fmt.Sprintf("✓ Success: Resources: %d | Standalones: %d\n", successResourceCount, successStandaloneCount))
-			} else if successResourceCount > 0 {
-				boxContent.WriteString(fmt.Sprintf("✓ Success: Resources: %d\n", successResourceCount))
-			} else if successStandaloneCount > 0 {
-				boxContent.WriteString(fmt.Sprintf("✓ Success: Standalones: %d\n", successStandaloneCount))
+		if successResourceCount > 0 || successStandaloneCount > 0 || successUICount > 0 {
+			var successParts []string
+			if successResourceCount > 0 {
+				successParts = append(successParts, fmt.Sprintf("Resources: %d", successResourceCount))
 			}
+			if successUICount > 0 {
+				successParts = append(successParts, fmt.Sprintf("UIs: %d", successUICount))
+			}
+			if successStandaloneCount > 0 {
+				successParts = append(successParts, fmt.Sprintf("Standalones: %d", successStandaloneCount))
+			}
+			boxContent.WriteString(fmt.Sprintf("✓ Success: %s\n", strings.Join(successParts, " | ")))
 		}
 
 		// Show fail counts
@@ -1030,6 +1107,12 @@ func (m buildModel) renderFinal() string {
 				errMsg = fmt.Sprintf(": %v", ts.result.Error)
 			}
 			b.WriteString(fmt.Sprintf("%s [%s] failed%s\n", ui.Error("✗"), ts.task.ResourceName, errMsg))
+			// Show build output for failed tasks (contains detailed error messages)
+			if ts.result != nil && ts.result.Output != "" {
+				b.WriteString(ui.Muted("Build output:\n"))
+				b.WriteString(ts.result.Output)
+				b.WriteString("\n")
+			}
 		default:
 			b.WriteString(fmt.Sprintf("○ [%s] skipped\n", ts.task.ResourceName))
 		}

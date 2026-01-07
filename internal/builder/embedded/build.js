@@ -3,6 +3,51 @@ const { buildCore, buildResource, buildStandalone, copyResource } = require('./b
 const { buildViews } = require('./views')
 
 /**
+ * Check if a dependency is installed
+ */
+function checkDependency(name) {
+    try {
+        require.resolve(name)
+        return true
+    } catch (e) {
+        return false
+    }
+}
+
+/**
+ * Verify required base dependencies are installed
+ */
+function checkBaseDependencies() {
+    const required = [
+        { name: 'esbuild', install: 'esbuild' },
+        { name: '@swc/core', install: '@swc/core' },
+    ]
+
+    const missing = required.filter(dep => !checkDependency(dep.name))
+
+    if (missing.length > 0) {
+        const names = missing.map(d => d.name).join(', ')
+        const installCmd = missing.map(d => d.install).join(' ')
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [build] Missing required dependencies\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  The following dependencies are required but not installed:\n` +
+            `\n` +
+            `  Missing: ${names}\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    pnpm add -D ${installCmd}\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+}
+
+/**
  * Build a single resource by type (called from Go CLI)
  */
 async function buildSingle(type, resourcePath, outDir, options = {}) {
@@ -38,6 +83,9 @@ async function main() {
         const options = args[4] ? JSON.parse(args[4]) : {}
 
         try {
+            // Check base dependencies before building
+            checkBaseDependencies()
+
             await buildSingle(type, resourcePath, outDir, options)
             console.log(JSON.stringify({ success: true }))
         } catch (error) {
