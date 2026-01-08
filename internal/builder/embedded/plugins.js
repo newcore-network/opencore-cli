@@ -2,6 +2,7 @@ const path = require('path')
 const fs = require('fs')
 
 let _esbuild
+let _tsconfigPaths
 function getEsbuild() {
     if (!_esbuild) {
         _esbuild = require('esbuild')
@@ -15,6 +16,17 @@ function getSwc() {
         _swc = require('@swc/core')
     }
     return _swc
+}
+
+function getTsconfigPaths() {
+    if (!_tsconfigPaths) {
+        try {
+            _tsconfigPaths = require('tsconfig-paths')
+        } catch (e) {
+            _tsconfigPaths = null
+        }
+    }
+    return _tsconfigPaths
 }
 
 function createSwcPlugin(target = 'es2020') {
@@ -207,11 +219,114 @@ function getNodeGlobalsDefine() {
     }
 }
 
+/**
+ * Creates an esbuild plugin that resolves TypeScript path aliases from tsconfig.json.
+ * Uses the tsconfig-paths library to handle path resolution including wildcards.
+ * @param {string} resourcePath - Path to the resource directory containing tsconfig.json
+ * @returns {object|null} esbuild plugin or null if tsconfig-paths is not available
+ */
+function createTsconfigPathsPlugin(resourcePath) {
+    const tsconfigPaths = getTsconfigPaths()
+    if (!tsconfigPaths) {
+        return null
+    }
+
+    // Load tsconfig from the resource directory
+    const configLoaderResult = tsconfigPaths.loadConfig(resourcePath)
+
+    if (configLoaderResult.resultType === 'failed') {
+        // No tsconfig.json found or no paths configured - this is fine, just skip
+        return null
+    }
+
+    const { absoluteBaseUrl, paths } = configLoaderResult
+
+    // If no paths are configured, skip plugin
+    if (!paths || Object.keys(paths).length === 0) {
+        return null
+    }
+
+    const matchPath = tsconfigPaths.createMatchPath(absoluteBaseUrl, paths)
+    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.json']
+    // Also check for index files in directories
+    const indexExtensions = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx']
+
+    console.log(`[tsconfig-paths] Loaded path aliases from ${resourcePath}`)
+
+    /**
+     * Find the actual file path with extension
+     * matchPath returns base path without extension, we need to find the real file
+     */
+    function resolveWithExtension(basePath) {
+        // First check if the path already has an extension and exists
+        if (fs.existsSync(basePath)) {
+            const stat = fs.statSync(basePath)
+            if (stat.isFile()) {
+                return basePath
+            }
+            // If it's a directory, try index files
+            if (stat.isDirectory()) {
+                for (const ext of indexExtensions) {
+                    const indexPath = basePath + ext.slice(1) // Remove leading /
+                    if (fs.existsSync(indexPath)) {
+                        return indexPath
+                    }
+                }
+            }
+        }
+
+        // Try adding extensions
+        for (const ext of extensions) {
+            const fullPath = basePath + ext
+            if (fs.existsSync(fullPath)) {
+                return fullPath
+            }
+        }
+
+        // Try index files (for directory imports like '@/components')
+        for (const ext of indexExtensions) {
+            const fullPath = basePath + ext
+            if (fs.existsSync(fullPath)) {
+                return fullPath
+            }
+        }
+
+        return null
+    }
+
+    return {
+        name: 'tsconfig-paths',
+        setup(build) {
+            // Only intercept imports that look like aliases (start with @ or are not relative/absolute)
+            build.onResolve({ filter: /^[^./]/ }, (args) => {
+                // Skip node_modules resolution
+                if (args.resolveDir.includes('node_modules')) {
+                    return null
+                }
+
+                // Try to match the path using tsconfig paths
+                const basePath = matchPath(args.path, undefined, undefined, extensions)
+
+                if (basePath) {
+                    // Resolve the actual file with extension
+                    const resolvedPath = resolveWithExtension(basePath)
+                    if (resolvedPath) {
+                        return { path: resolvedPath }
+                    }
+                }
+
+                return null
+            })
+        }
+    }
+}
+
 module.exports = {
     getEsbuild,
     createSwcPlugin,
     createExcludeNodeAdaptersPlugin,
     createExternalPackagesPlugin,
     preserveFiveMExportsPlugin,
-    createNodeGlobalsShimPlugin
+    createNodeGlobalsShimPlugin,
+    createTsconfigPathsPlugin
 }

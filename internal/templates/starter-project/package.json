@@ -11,8 +11,8 @@
     "@open-core/cli": "latest",
     "typescript": "^5.3.3",
     "esbuild": "^0.27.2",
-    "esbuild-plugin-swc": "^1.0.1",
-    "@swc/core": "^1.15.7"
+    "@swc/core": "^1.15.7",
+    "tsconfig-paths": "^4.2.0"
   },
   "dependencies": {
     "@citizenfx/client": "2.0.22443-1",

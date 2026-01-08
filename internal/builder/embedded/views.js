@@ -130,6 +130,35 @@ function checkReactDependencies(viewPath) {
     }
 }
 
+function hasSassFiles(dir) {
+    return hasFilesWithExtension(dir, '.scss') || hasFilesWithExtension(dir, '.sass')
+}
+
+function getSassPlugin() {
+    if (!checkDependency('esbuild-sass-plugin')) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing SASS/SCSS dependencies\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  SASS/SCSS files (.scss/.sass) were detected but required\n` +
+            `  dependencies are not installed.\n` +
+            `\n` +
+            `  Missing: esbuild-sass-plugin\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    pnpm add -D esbuild-sass-plugin sass\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    const { sassPlugin } = require('esbuild-sass-plugin')
+    return sassPlugin()
+}
+
 function readOcIgnore(viewPath) {
     const ocignorePath = path.join(viewPath, '.ocignore')
     if (!fs.existsSync(ocignorePath)) {
@@ -167,6 +196,8 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
         '.git',
         'package.json',
         'package-lock.json',
+        'pnpm-lock.yaml',
+        'yarn.lock',
         'tsconfig.json',
         '.ocignore',
         'index.html', // Handled separately with script path replacement
@@ -175,6 +206,8 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
         '*.jsx',
         '*.svelte',
         '*.vue',
+        '*.scss',
+        '*.sass',
     ]
     const allIgnore = [...defaultIgnore, ...ignorePatterns]
 
@@ -194,7 +227,7 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
             } else {
                 // Skip files that esbuild already handles via imports
                 const ext = path.extname(entry.name).toLowerCase()
-                const esbuildExtensions = ['.js', '.ts', '.tsx', '.jsx', '.svelte', '.vue']
+                const esbuildExtensions = ['.js', '.ts', '.tsx', '.jsx', '.svelte', '.vue', '.scss', '.sass']
                 if (esbuildExtensions.includes(ext)) continue
 
                 files.push({ src: srcPath, rel: relPath })
@@ -289,6 +322,10 @@ async function buildViews(viewPath, outDir, options = {}) {
         console.log(`[views] Vue files detected, loading vue plugin...`)
         plugins.push(getVuePlugin())
     }
+    if (hasSassFiles(viewPath)) {
+        console.log(`[views] SASS/SCSS files detected, loading sass plugin...`)
+        plugins.push(getSassPlugin())
+    }
 
     await esbuild.build({
         ...shared,
@@ -303,15 +340,42 @@ async function buildViews(viewPath, outDir, options = {}) {
         assetNames: 'assets/[name]-[hash]',
         plugins,
         loader: {
+            // JavaScript/TypeScript
             '.tsx': 'tsx',
             '.jsx': 'jsx',
+            // Styles
             '.css': 'css',
+            // Images
             '.svg': 'file',
             '.png': 'file',
             '.jpg': 'file',
+            '.jpeg': 'file',
             '.gif': 'file',
+            '.webp': 'file',
+            '.ico': 'file',
+            '.bmp': 'file',
+            '.avif': 'file',
+            // Fonts
             '.woff': 'file',
             '.woff2': 'file',
+            '.ttf': 'file',
+            '.otf': 'file',
+            '.eot': 'file',
+            // Audio
+            '.mp3': 'file',
+            '.wav': 'file',
+            '.ogg': 'file',
+            '.m4a': 'file',
+            // Video
+            '.mp4': 'file',
+            '.webm': 'file',
+            '.ogv': 'file',
+            // Data
+            '.json': 'json',
+            '.txt': 'text',
+            // Other
+            '.pdf': 'file',
+            '.xml': 'text',
         },
         define: {
             'process.env.NODE_ENV': options.minify ? '"production"' : '"development"',

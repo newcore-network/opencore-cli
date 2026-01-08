@@ -1,36 +1,64 @@
 const path = require('path')
 const fs = require('fs')
-const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin } = require('./plugins')
+const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
 const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
 
-function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife') {
-    return [
+function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
+    const plugins = [
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
         preserveFiveMExportsPlugin,
         createNodeGlobalsShimPlugin(format)
     ]
+
+    // Add tsconfig-paths plugin if resourcePath is provided
+    if (resourcePath) {
+        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
+        if (tsconfigPlugin) {
+            plugins.unshift(tsconfigPlugin) // Add at the beginning for early resolution
+        }
+    }
+
+    return plugins
 }
 
-function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife') {
-    return [
+function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
+    const plugins = [
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
         preserveFiveMExportsPlugin,
         createNodeGlobalsShimPlugin(format)
     ]
+
+    if (resourcePath) {
+        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
+        if (tsconfigPlugin) {
+            plugins.unshift(tsconfigPlugin)
+        }
+    }
+
+    return plugins
 }
 
-function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife') {
-    return [
+function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
+    const plugins = [
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
         createNodeGlobalsShimPlugin(format)
     ]
+
+    if (resourcePath) {
+        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
+        if (tsconfigPlugin) {
+            plugins.unshift(tsconfigPlugin)
+        }
+    }
+
+    return plugins
 }
 
 /**
@@ -67,7 +95,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat),
+            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
             external: serverExternals,
         }))
     }
@@ -83,7 +111,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat),
+            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
             external: clientExternals,
         }))
     }
@@ -120,7 +148,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat),
+            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
             external: serverExternals,
         }))
     }
@@ -136,7 +164,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat),
+            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
             external: clientExternals,
         }))
     }
@@ -173,7 +201,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat),
+            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
             external: serverExternals,
         }))
     }
@@ -189,7 +217,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat),
+            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
             external: clientExternals,
         }))
     }
@@ -199,7 +227,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     if (fs.existsSync(manifestSrc)) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
-    
+
     if (shouldHandleDependencies(options)) {
         await handleDependencies(resourcePath, outDir)
     }
