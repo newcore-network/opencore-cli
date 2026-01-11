@@ -10,8 +10,8 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
-    name: Test + Build + Publish + Release
+  pipeline:
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -19,16 +19,23 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-            artifact_name: opencore-linux-amd64
+            artifact: opencore-linux-amd64
+            isPublisher: false
+
           - goos: darwin
             goarch: amd64
-            artifact_name: opencore-darwin-amd64
+            artifact: opencore-darwin-amd64
+            isPublisher: false
+
           - goos: darwin
             goarch: arm64
-            artifact_name: opencore-darwin-arm64
+            artifact: opencore-darwin-arm64
+            isPublisher: false
+
           - goos: windows
             goarch: amd64
-            artifact_name: opencore-windows-amd64.exe
+            artifact: opencore-windows-amd64.exe
+            isPublisher: true
 
     steps:
       - name: Checkout
@@ -40,56 +47,59 @@ jobs:
           go-version: "1.24.5"
 
       - name: Go tests
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        if: ${{ matrix.isPublisher }}
         run: go test ./...
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags "-X main.version=${{ github.ref_name }}" -o "${{ matrix.artifact_name }}" .
+          go build -ldflags "-X main.version=${{ github.ref_name }}" -o "${{ matrix.artifact }}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
 
-      - name: Setup Node (only once)
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+      - name: Setup Node
+        if: ${{ matrix.isPublisher }}
         uses: actions/setup-node@v4
         with:
           node-version: "24"
 
-      - name: Update package version (only once)
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+      - name: Update package version
+        if: ${{ matrix.isPublisher }}
+        shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
-      - name: Publish to NPM (OIDC Trusted Publisher) (only once)
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+      - name: Publish to NPM (Trusted Publisher)
+        if: ${{ matrix.isPublisher }}
         env:
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
         run: npm publish --access public --provenance
 
-      - name: Download all artifacts (only once)
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+      - name: Download all artifacts
+        if: ${{ matrix.isPublisher }}
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
-      - name: Prepare release assets (only once)
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+      - name: Prepare release assets
+        if: ${{ matrix.isPublisher }}
+        shell: bash
         run: |
           mkdir -p release
           find ./artifacts -type f -maxdepth 2 -exec cp {} ./release/ \;
           ls -lah ./release/
 
-      - name: Create Release (only once)
-        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+      - name: Create GitHub Release
+        if: ${{ matrix.isPublisher }}
         uses: softprops/action-gh-release@v2
         with:
           files: ./release/*
