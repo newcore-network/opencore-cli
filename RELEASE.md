@@ -12,6 +12,7 @@
 ### Fixes
 - Removed duplicated validation and prompt logic across create flows
 - Eliminated inconsistent success messages between feature, resource, and standalone creation
+- Test `resource_builder_test` fixed, to add dependencies
 
 ### Notes
 - No breaking changes

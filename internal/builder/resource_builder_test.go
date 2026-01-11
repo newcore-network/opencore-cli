@@ -2,10 +2,26 @@ package builder
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
+
+func hasRequiredNodeDeps(t *testing.T, repoRoot string) bool {
+	t.Helper()
+
+	if _, err := exec.LookPath("node"); err != nil {
+		return false
+	}
+
+	cmd := exec.Command("node", "-e", "require('esbuild'); require('@swc/core');")
+	cmd.Dir = repoRoot
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
 
 func getRepoRoot(t *testing.T) string {
 	t.Helper()
@@ -259,7 +275,12 @@ func TestCopyResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rb := NewResourceBuilder(getRepoRoot(t))
+	repoRoot := getRepoRoot(t)
+	if !hasRequiredNodeDeps(t, repoRoot) {
+		t.Skip("skipping: required Node.js dependencies not installed (esbuild, @swc/core)")
+	}
+
+	rb := NewResourceBuilder(repoRoot)
 	task := BuildTask{
 		Path:   srcDir,
 		OutDir: outDir,
