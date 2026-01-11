@@ -96,7 +96,7 @@ jobs:
 
       - name: Publish to NPM
         working-directory: ./npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
 
 
   release:
