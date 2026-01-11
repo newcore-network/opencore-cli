@@ -1,4 +1,4 @@
-## OpenCore CLI v0.4.10
+## OpenCore CLI v0.4.9
 
 ### Highlights
 - New Sass/CSS support with integrated alias resolution for cleaner and more flexible imports

@@ -1,6 +1,6 @@
 {
   "name": "@open-core/cli",
-  "version": "0.4.10",
+  "version": "0.4.9",
   "description": "Official CLI tool for OpenCore Framework",
   "main": "index.js",
   "types": "index.d.ts",
@@ -19,6 +19,7 @@
     "type": "git",
     "url": "https://github.com/newcore-network/opencore-cli.git"
   },
+  "homepage": "https://opencorejs.dev",
   "keywords": [
     "opencore",
     "fivem",
@@ -38,8 +39,11 @@
   "files": [
     "index.js",
     "index.d.ts",
-    "install.js",
     "binary.js",
+    "install.js",
     "config-helper.js"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
