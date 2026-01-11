@@ -8,6 +8,44 @@ import (
 	"testing"
 )
 
+func createFakeRepoWithNodeDeps(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+
+	// node_modules/
+	nodeModules := filepath.Join(root, "node_modules")
+	if err := os.MkdirAll(nodeModules, 0755); err != nil {
+		t.Fatalf("failed to create node_modules: %v", err)
+	}
+
+	// Fake esbuild
+	esbuildDir := filepath.Join(nodeModules, "esbuild")
+	if err := os.MkdirAll(esbuildDir, 0755); err != nil {
+		t.Fatalf("failed to create fake esbuild: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(esbuildDir, "package.json"), []byte("{\"name\":\"esbuild\",\"version\":\"0.0.0-test\",\"main\":\"index.js\"}"), 0644); err != nil {
+		t.Fatalf("failed to write fake esbuild package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(esbuildDir, "index.js"), []byte("module.exports = { version: '0.0.0-test' };"), 0644); err != nil {
+		t.Fatalf("failed to write fake esbuild index.js: %v", err)
+	}
+
+	// Fake @swc/core
+	swcDir := filepath.Join(nodeModules, "@swc", "core")
+	if err := os.MkdirAll(swcDir, 0755); err != nil {
+		t.Fatalf("failed to create fake swc: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(swcDir, "package.json"), []byte("{\"name\":\"@swc/core\",\"version\":\"0.0.0-test\",\"main\":\"index.js\"}"), 0644); err != nil {
+		t.Fatalf("failed to write fake swc package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(swcDir, "index.js"), []byte("module.exports = {};"), 0644); err != nil {
+		t.Fatalf("failed to write fake swc index.js: %v", err)
+	}
+
+	return root
+}
+
 func hasRequiredNodeDeps(t *testing.T, repoRoot string) bool {
 	t.Helper()
 
@@ -252,6 +290,15 @@ func TestGetBuildScriptPath_CustomCompilerNotFound(t *testing.T) {
 }
 
 func TestCopyResource(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("skipping: node is not installed")
+	}
+
+	repoRoot := createFakeRepoWithNodeDeps(t)
+	if !hasRequiredNodeDeps(t, repoRoot) {
+		t.Skip("skipping: node is available but cannot resolve required dependencies (esbuild, @swc/core)")
+	}
+
 	// Create source directory with files
 	srcDir := t.TempDir()
 	outDir := t.TempDir()
@@ -267,17 +314,9 @@ func TestCopyResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create node_modules to test skip
+	// node_modules inside resource (should be skipped)
 	if err := os.MkdirAll(filepath.Join(srcDir, "node_modules"), 0755); err != nil {
 		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "node_modules", "package.json"), []byte("{}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	repoRoot := getRepoRoot(t)
-	if !hasRequiredNodeDeps(t, repoRoot) {
-		t.Skip("skipping: required Node.js dependencies not installed (esbuild, @swc/core)")
 	}
 
 	rb := NewResourceBuilder(repoRoot)
@@ -360,7 +399,15 @@ func TestCopyFile(t *testing.T) {
 }
 
 func TestBuildTaskTypes(t *testing.T) {
-	rb := NewResourceBuilder(getRepoRoot(t))
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("skipping: node is not installed")
+	}
+
+	repoRoot := createFakeRepoWithNodeDeps(t)
+	if !hasRequiredNodeDeps(t, repoRoot) {
+		t.Skip("skipping: node is available but cannot resolve required dependencies (esbuild, @swc/core)")
+	}
+	rb := NewResourceBuilder(repoRoot)
 	defer rb.Cleanup()
 
 	tests := []struct {
