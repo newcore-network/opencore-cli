@@ -13,6 +13,8 @@
 - Removed duplicated validation and prompt logic across create flows
 - Eliminated inconsistent success messages between feature, resource, and standalone creation
 - Test `resource_builder_test` fixed, to add dependencies
+- CI: fix in push with `Trusted Publisher` and tests added
+- Updated all CI actions
 
 ### Notes
 - No breaking changes
