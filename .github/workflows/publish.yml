@@ -89,13 +89,11 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Update package version
-        working-directory: ./npm
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Publish to NPM
-        working-directory: ./npm
         run: npm publish --access public --provenance
 
 
