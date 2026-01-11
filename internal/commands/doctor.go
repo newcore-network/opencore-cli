@@ -149,15 +149,15 @@ func checkConfig() CheckResult {
 	if cfg.Destination == "" {
 		return CheckResult{
 			Name:    "Configuration",
-			Passed:  false,
-			Message: "'destination' is required in opencore.config.ts",
+			Passed:  true,
+			Message: fmt.Sprintf("Valid configuration (no destination; build output: %s)", cfg.OutDir),
 		}
 	}
 
 	return CheckResult{
 		Name:    "Configuration",
 		Passed:  true,
-		Message: "Valid configuration",
+		Message: fmt.Sprintf("Valid configuration (destination: %s)", cfg.Destination),
 	}
 }
 

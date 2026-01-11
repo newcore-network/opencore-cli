@@ -43,6 +43,12 @@ type FeatureConfig struct {
 }
 
 func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool, destination string) error {
+	if destination != "" {
+		// Ensure the generated TypeScript config is safe on Windows.
+		// Backslashes can be interpreted as escape sequences in JS/TS strings.
+		destination = strings.ReplaceAll(destination, "\\", "/")
+	}
+
 	config := ProjectConfig{
 		ProjectName:     projectName,
 		Architecture:    architecture,

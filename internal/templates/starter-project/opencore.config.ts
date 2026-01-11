@@ -3,8 +3,10 @@ import { defineConfig } from '@open-core/cli'
 
 export default defineConfig({
   name: '{{.ProjectName}}',
+
   // Mandatory: Deploy to FiveM server
-  destination: 'C:/FXServer/server-data/resources/[{{.ProjectName}}]',
+  // Here you must add the path where your FiveM resources are located.
+  destination: '{{.Destination}}',
 
   core: {
     path: './core',
@@ -18,7 +20,7 @@ export default defineConfig({
     //
     // Optional: Views/NUI for core
     // views: {
-    //   path: './core/views',
+    //   path: './views/core',
     //   framework: 'react',
     // },
   },
@@ -55,9 +57,21 @@ export default defineConfig({
   build: {
     minify: {{.UseMinify}},
     sourceMaps: false,
-    target: 'ES2020',
     parallel: true,
     maxWorkers: 8,
+
+    server: {
+      format: 'cjs',
+      platform: 'node',
+      target: 'es2023',
+    },
+
+    client: {
+      format: 'iife',
+      platform: 'neutral',
+      target: 'es2020',
+    },
+
   },
 
   dev: {

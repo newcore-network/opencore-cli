@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/newcore-network/opencore-cli/internal/config"
@@ -43,33 +41,13 @@ func runCreateFeature(cmd *cobra.Command, args []string, resourceName string) er
 	fmt.Println(ui.TitleStyle.Render("Create New Feature"))
 	fmt.Println()
 
-	var featureName string
-
-	// Get feature name from args or prompt
-	if len(args) > 0 {
-		featureName = args[0]
-	} else {
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Feature Name").
-					Description("Name for your feature (e.g., banking, jobs)").
-					Value(&featureName).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("feature name cannot be empty")
-						}
-						if strings.Contains(s, " ") {
-							return fmt.Errorf("feature name cannot contain spaces")
-						}
-						return nil
-					}),
-			),
-		)
-
-		if err := form.Run(); err != nil {
-			return err
-		}
+	featureName, err := getNameFromArgsOrPrompt(args, createNamePrompt{
+		Title:       "Feature Name",
+		Description: "Name for your feature (e.g., banking, jobs)",
+		Kind:        "feature",
+	})
+	if err != nil {
+		return err
 	}
 
 	var featurePath string
@@ -174,13 +152,12 @@ func runCreateFeature(cmd *cobra.Command, args []string, resourceName string) er
 		filesList += fmt.Sprintf("  • %s\n", file)
 	}
 
-	fmt.Println(ui.BoxStyle.Render(
+	renderCreateBox(
 		fmt.Sprintf("Location: %s\n\n", featurePath) +
 			"Files created:\n" +
 			filesList + "\n" +
 			"Next: Import your feature in the appropriate bootstrap file",
-	))
-	fmt.Println()
+	)
 
 	return nil
 }

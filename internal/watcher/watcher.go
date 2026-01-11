@@ -315,10 +315,12 @@ func (w *Watcher) registerPaths() {
 				}
 
 				// Skip the destination directory if it's inside the project
-				absPath, _ := filepath.Abs(path)
-				absDest, _ := filepath.Abs(w.config.Destination)
-				if absPath == absDest {
-					return filepath.SkipDir
+				if w.config.Destination != "" {
+					absPath, _ := filepath.Abs(path)
+					absDest, _ := filepath.Abs(w.config.Destination)
+					if absPath == absDest {
+						return filepath.SkipDir
+					}
 				}
 				if watchErr := w.watcher.Add(path); watchErr != nil {
 					// Silent fail for duplicates or already watched

@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -36,27 +35,19 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 	fmt.Println(ui.TitleStyle.Render("Create New Resource"))
 	fmt.Println()
 
-	var resourceName string
+	resourceName, err := getNameFromArgsOrPrompt(args, createNamePrompt{
+		Title:       "Resource Name",
+		Description: "Name for your resource (e.g., chat, admin)",
+		Kind:        "resource",
+	})
+	if err != nil {
+		return err
+	}
 
-	// Get resource name from args or prompt
-	if len(args) > 0 {
-		resourceName = args[0]
-	} else {
+	// Ask for optional features interactively if user didn't specify a name argument.
+	if len(args) == 0 {
 		form := huh.NewForm(
 			huh.NewGroup(
-				huh.NewInput().
-					Title("Resource Name").
-					Description("Name for your resource (e.g., chat, admin)").
-					Value(&resourceName).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("resource name cannot be empty")
-						}
-						if strings.Contains(s, " ") {
-							return fmt.Errorf("resource name cannot contain spaces")
-						}
-						return nil
-					}),
 				huh.NewConfirm().
 					Title("Include client-side code?").
 					Value(&withClient),
@@ -65,7 +56,6 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 					Value(&withNUI),
 			),
 		)
-
 		if err := form.Run(); err != nil {
 			return err
 		}
@@ -85,17 +75,9 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 	fmt.Println(ui.Success("Resource created successfully!"))
 	fmt.Println()
 
-	featuresMsg := "Features:\n  • Server-side code"
-	if withClient {
-		featuresMsg += "\n  • Client-side code"
-	}
-	if withNUI {
-		featuresMsg += "\n  • NUI (UI)"
-	}
-
-	fmt.Println(ui.BoxStyle.Render(
+	renderCreateBox(
 		fmt.Sprintf("Location: %s\n\n", resourcePath) +
-			featuresMsg + "\n\n" +
+			featuresMessage(withClient, withNUI) + "\n\n" +
 			"Next steps:\n" +
 			fmt.Sprintf("  cd %s\n", resourcePath) +
 			"  pnpm install\n\n" +
@@ -103,8 +85,7 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 			"  resources: {\n" +
 			"    include: ['./resources/*'],\n" +
 			"  }",
-	))
-	fmt.Println()
+	)
 
 	return nil
 }

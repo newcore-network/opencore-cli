@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -43,27 +42,19 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 	fmt.Println(ui.TitleStyle.Render("Create New Standalone"))
 	fmt.Println()
 
-	var standaloneName string
+	standaloneName, err := getNameFromArgsOrPrompt(args, createNamePrompt{
+		Title:       "Standalone Name",
+		Description: "Name for your standalone resource (e.g., utils, logger)",
+		Kind:        "standalone",
+	})
+	if err != nil {
+		return err
+	}
 
-	// Get standalone name from args or prompt
-	if len(args) > 0 {
-		standaloneName = args[0]
-	} else {
+	// Ask for optional features interactively if user didn't specify a name argument.
+	if len(args) == 0 {
 		form := huh.NewForm(
 			huh.NewGroup(
-				huh.NewInput().
-					Title("Standalone Name").
-					Description("Name for your standalone resource (e.g., utils, logger)").
-					Value(&standaloneName).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("standalone name cannot be empty")
-						}
-						if strings.Contains(s, " ") {
-							return fmt.Errorf("standalone name cannot contain spaces")
-						}
-						return nil
-					}),
 				huh.NewConfirm().
 					Title("Include client-side code?").
 					Value(&withClient),
@@ -72,7 +63,6 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 					Value(&withNUI),
 			),
 		)
-
 		if err := form.Run(); err != nil {
 			return err
 		}
@@ -92,17 +82,9 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 	fmt.Println(ui.Success("Standalone created successfully!"))
 	fmt.Println()
 
-	featuresMsg := "Features:\n  • Server-side code"
-	if withClient {
-		featuresMsg += "\n  • Client-side code"
-	}
-	if withNUI {
-		featuresMsg += "\n  • NUI (UI)"
-	}
-
-	fmt.Println(ui.BoxStyle.Render(
+	renderCreateBox(
 		fmt.Sprintf("Location: %s\n\n", standalonePath) +
-			featuresMsg + "\n\n" +
+			featuresMessage(withClient, withNUI) + "\n\n" +
 			"Next steps:\n" +
 			fmt.Sprintf("  cd %s\n", standalonePath) +
 			"  pnpm install\n\n" +
@@ -110,8 +92,7 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 			"  standalone: {\n" +
 			"    include: ['./standalone/*'],\n" +
 			"  }",
-	))
-	fmt.Println()
+	)
 
 	return nil
 }

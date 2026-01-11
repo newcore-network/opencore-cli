@@ -170,13 +170,16 @@ const path = require('path');
 		return nil, fmt.Errorf("failed to parse config JSON: %w\nOutput: %s", err, string(output))
 	}
 
-	// Validate destination
-	if config.Destination == "" {
-		return nil, fmt.Errorf("'destination' is required in opencore.config.ts")
+	// Destination is optional. If provided, we build directly into it.
+	// If not provided, we build into a local output directory and skip deploy.
+	if config.Destination != "" {
+		// OutDir is now always the same as Destination to skip intermediate build/
+		config.OutDir = config.Destination
+	} else {
+		if config.OutDir == "" {
+			config.OutDir = "build"
+		}
 	}
-
-	// OutDir is now always the same as Destination to skip intermediate build/
-	config.OutDir = config.Destination
 
 	if config.Build.Target == "" {
 		config.Build.Target = "ES2020"

@@ -22,10 +22,26 @@ func NewInitCommand() *cobra.Command {
 		RunE:  runInit,
 	}
 
+	cmd.Flags().StringP("dir", "d", ".", "Directory where the project folder will be created")
+	cmd.Flags().String("architecture", "", "Project architecture (domain-driven|layer-based|feature-based|hybrid)")
+	cmd.Flags().Bool("minify", false, "Enable code minification in production builds")
+	cmd.Flags().StringArray("module", nil, "Add a module to install (repeatable)")
+	cmd.Flags().String("destination", "", "Build output directory (usually your FiveM resources folder)")
+	cmd.Flags().Bool("skip-destination", false, "Do not set destination during init (you can edit opencore.config.ts later)")
+	cmd.Flags().Bool("non-interactive", false, "Do not run the interactive wizard; use flags/defaults")
+
 	return cmd
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	baseDir, _ := cmd.Flags().GetString("dir")
+	architectureFlag, _ := cmd.Flags().GetString("architecture")
+	minifyFlag, _ := cmd.Flags().GetBool("minify")
+	modulesFlag, _ := cmd.Flags().GetStringArray("module")
+	destinationFlag, _ := cmd.Flags().GetString("destination")
+	skipDestination, _ := cmd.Flags().GetBool("skip-destination")
+	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
+
 	// Define wizard steps
 	steps := []ui.WizardStep{
 		{
@@ -39,8 +55,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 				if strings.Contains(s, " ") {
 					return fmt.Errorf("project name cannot contain spaces")
 				}
-				if _, err := os.Stat(s); !os.IsNotExist(err) {
-					return fmt.Errorf("directory '%s' already exists", s)
+				projectDir := filepath.Join(baseDir, s)
+				if _, err := os.Stat(projectDir); !os.IsNotExist(err) {
+					return fmt.Errorf("directory '%s' already exists", projectDir)
 				}
 				return nil
 			},
@@ -100,23 +117,75 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Description: "Enable code minification in production builds?",
 			Type:        ui.StepTypeConfirm,
 		},
-		{
+	}
+	if !skipDestination {
+		steps = append(steps, ui.WizardStep{
 			Title:       "Server Destination",
-			Description: "Path to your FiveM server resources folder (mandatory)",
+			Description: "Build output directory (optional; usually your FiveM resources folder)",
 			Type:        ui.StepTypeInput,
 			Validate: func(s string) error {
-				if s == "" {
-					return fmt.Errorf("destination path is required")
-				}
 				return nil
 			},
-		},
+		})
+	}
+
+	// Non-interactive mode: rely on flags/defaults
+	if nonInteractive {
+		projectName := ""
+		if len(args) > 0 {
+			projectName = args[0]
+		}
+		if projectName == "" {
+			return fmt.Errorf("project name is required in non-interactive mode")
+		}
+		architecture := architectureFlag
+		if architecture == "" {
+			architecture = "feature-based"
+		}
+		useMinify := minifyFlag
+		modules := modulesFlag
+		destination := ""
+		if !skipDestination {
+			destination = destinationFlag
+		}
+
+		installIdentity := false
+		for _, mod := range modules {
+			if mod == "@open-core/identity" {
+				installIdentity = true
+				break
+			}
+		}
+
+		projectPath := filepath.Join(baseDir, projectName)
+		fmt.Println()
+		fmt.Println(ui.Logo())
+		fmt.Println()
+		fmt.Println(ui.Info(fmt.Sprintf("Creating project: %s", projectName)))
+		fmt.Println()
+		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination); err != nil {
+			return fmt.Errorf("failed to generate project: %w", err)
+		}
+		fmt.Println()
+		fmt.Println(ui.Success("Project created successfully!"))
+		fmt.Println()
+		return nil
 	}
 
 	// Pre-fill project name if provided as argument
 	wizard := ui.NewWizard(steps)
 	if len(args) > 0 {
 		wizard.GetValues()["Project Name"] = args[0]
+	}
+	if architectureFlag != "" {
+		wizard.GetValues()["Architecture"] = architectureFlag
+	}
+	if len(modulesFlag) > 0 {
+		wizard.GetValues()["Modules"] = modulesFlag
+	}
+	wizard.GetValues()["Minification"] = minifyFlag
+	if destinationFlag != "" {
+		wizard.GetValues()["Server Destination"] = destinationFlag
 	}
 
 	// Run the wizard
@@ -139,7 +208,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	architecture := result.GetStringValue("Architecture")
 	modules := result.GetStringSliceValue("Modules")
 	useMinify := result.GetBoolValue("Minification")
-	destination := result.GetStringValue("Server Destination")
+	destination := ""
+	if !skipDestination {
+		destination = result.GetStringValue("Server Destination")
+	}
 
 	// Check if identity module is selected
 	installIdentity := false
@@ -151,7 +223,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create project directory
-	projectPath := filepath.Join(".", projectName)
+	projectPath := filepath.Join(baseDir, projectName)
 
 	fmt.Println()
 	fmt.Println(ui.Logo())
