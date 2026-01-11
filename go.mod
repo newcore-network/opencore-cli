@@ -1,6 +1,6 @@
 module github.com/newcore-network/opencore-cli
 
-go 1.21
+go 1.24.5
 
 require (
 	github.com/charmbracelet/bubbles v0.18.0
