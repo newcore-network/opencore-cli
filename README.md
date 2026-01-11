@@ -10,6 +10,9 @@
 
 ## Documentation
 
+This may be outdated, the latest information is recommended at [opencorejs.dev](https://opencorejs.dev/docs/compiler/about)
+
+
 | Topic | Description |
 |-------|-------------|
 | [FiveM Runtime](./docs/fivem-runtime.md) | Server vs Client, platform limitations, incompatible packages |
