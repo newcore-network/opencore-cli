@@ -655,9 +655,25 @@ func (b *Builder) buildSequential(tasks []BuildTask) ([]BuildResult, error) {
 
 // hasClientCode checks if a resource has client code
 func (b *Builder) hasClientCode(resourcePath string) bool {
-	clientPath := filepath.Join(resourcePath, "src", "client")
-	info, err := os.Stat(clientPath)
-	return err == nil && info.IsDir()
+	patterns := []string{
+		"src/client.ts",
+		"src/client/main.ts",
+		"src/client/index.ts",
+	}
+
+	for _, pattern := range patterns {
+		if _, err := os.Stat(filepath.Join(resourcePath, pattern)); err == nil {
+			return true
+		}
+	}
+
+	// Also check if src/client is a directory (legacy/fallback)
+	clientDir := filepath.Join(resourcePath, "src", "client")
+	if info, err := os.Stat(clientDir); err == nil && info.IsDir() {
+		return true
+	}
+
+	return false
 }
 
 func (b *Builder) cleanResourceOutputDir(resourceName string) error {

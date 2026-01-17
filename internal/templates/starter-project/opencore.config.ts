@@ -30,9 +30,9 @@ export default defineConfig({
   modules: ['@open-core/identity'],
 {{ end }}
   build: {
-    logLevel: 'INFO',
-    minify: {{.UseMinify}},
-    sourceMaps: false,
+    logLevel: 'INFO', // INFO by default
+    minify: {{.UseMinify}}, // If you want to debug the compiled JS, you can set it to 'false' but it makes the build heavier.
+    sourceMaps: false, // It's also useful for debugging, but it makes the build very large.
     parallel: true,
     maxWorkers: 8,
 

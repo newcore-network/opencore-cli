@@ -1,12 +1,14 @@
 ## OpenCore CLI v0.5.0
 
 ### Highlights
+- **Smart Entry Point Auto-Discovery**: The builder now automatically detects `server.ts`/`client.ts` in `src/`, as well as `main.ts` or `index.ts` within `server/` and `client/` directories. No manual configuration required for most projects.
 - **New Architecture Support**: Added "No-Architecture" mode for minimal projects (simple `server.ts` and `client.ts` in `core/src`).
 - **Improved Scaffolding**: Refactored layer-based templates for better server/client separation and consistent dependency injection.
 - **Enhanced UI Support**: Added auto-detection and plugin support for Svelte and Vue frameworks.
 - **Styling Improvements**: Added support for SASS/CSS and custom alias resolver plugins.
 
 ### Changes
+- **Automatic Entry Point Resolution**: Implemented a flexible resolution logic in the build system to support multiple project structures out-of-the-box.
 - **No-Architecture Mode**: New CLI option to generate projects without complex folder structures.
 - **Layer-Based Refactor**: Controllers now correctly inject services by default for better architectural separation.
 - **Bootstrap Updates**: Updated `server.ts` and `client.ts` templates with clearer examples and better initialization logic.

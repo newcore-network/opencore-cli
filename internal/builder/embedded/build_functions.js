@@ -74,18 +74,44 @@ async function checkNativePackages(resourcePath, options = {}) {
     printNativePackageWarnings(warnings, errors)
 }
 
+/**
+ * Resolves entry points based on multiple possible patterns
+ */
+function resolveEntry(resourcePath, side, explicitEntry = null) {
+    if (explicitEntry) return explicitEntry;
+
+    const patterns = side === 'server' ? [
+        'src/server.ts',       // Root src (no-architecture)
+        'src/server/main.ts',  // Layer-based / Standard
+        'src/server/index.ts'  // Standard index
+    ] : [
+        'src/client.ts',       // Root src (no-architecture)
+        'src/client/main.ts',  // Layer-based / Standard
+        'src/client/index.ts'  // Standard index
+    ];
+
+    for (const pattern of patterns) {
+        const fullPath = path.join(resourcePath, pattern);
+        if (fs.existsSync(fullPath)) {
+            return fullPath;
+        }
+    }
+
+    return null;
+}
+
 async function buildCore(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
-    const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server.ts')
-    const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client.ts')
+    const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
+    const clientEntry = resolveEntry(resourcePath, 'client', options.entryPoints?.client)
 
     await fs.promises.mkdir(outDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
     const builds = []
 
     const serverBuildOptions = getBuildOptions('server', options)
-    if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
+    if (serverBuildOptions !== null && serverEntry) {
         const serverExternals = getExternals('server', options)
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
         const serverFormat = serverBuildOptions.format || 'cjs'
@@ -105,7 +131,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
     }
 
     const clientBuildOptions = getBuildOptions('client', options)
-    if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
+    if (clientBuildOptions !== null && clientEntry) {
         const clientExternals = getExternals('client', options)
         const clientTarget = (clientBuildOptions.target || 'es2020').toLowerCase()
         const clientFormat = clientBuildOptions.format || 'iife'
@@ -145,9 +171,9 @@ async function buildResource(resourcePath, outDir, options = {}) {
     await checkNativePackages(resourcePath, options)
     const builds = []
 
-    const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
+    const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
     const serverBuildOptions = getBuildOptions('server', options)
-    if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
+    if (serverBuildOptions !== null && serverEntry) {
         const serverExternals = getExternals('server', options)
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
         const serverFormat = serverBuildOptions.format || 'cjs'
@@ -161,9 +187,9 @@ async function buildResource(resourcePath, outDir, options = {}) {
         }))
     }
 
-    const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
+    const clientEntry = resolveEntry(resourcePath, 'client', options.entryPoints?.client)
     const clientBuildOptions = getBuildOptions('client', options)
-    if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
+    if (clientBuildOptions !== null && clientEntry) {
         const clientExternals = getExternals('client', options)
         const clientTarget = (clientBuildOptions.target || 'es2020').toLowerCase()
         const clientFormat = clientBuildOptions.format || 'iife'
@@ -198,9 +224,9 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     await checkNativePackages(resourcePath, options)
     const builds = []
 
-    const serverEntry = options.entryPoints?.server || path.join(resourcePath, 'src/server/main.ts')
+    const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
     const serverBuildOptions = getBuildOptions('server', options)
-    if (serverBuildOptions !== null && fs.existsSync(serverEntry)) {
+    if (serverBuildOptions !== null && serverEntry) {
         const serverExternals = getExternals('server', options)
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
         const serverFormat = serverBuildOptions.format || 'cjs'
@@ -214,9 +240,9 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
         }))
     }
 
-    const clientEntry = options.entryPoints?.client || path.join(resourcePath, 'src/client/main.ts')
+    const clientEntry = resolveEntry(resourcePath, 'client', options.entryPoints?.client)
     const clientBuildOptions = getBuildOptions('client', options)
-    if (clientBuildOptions !== null && fs.existsSync(clientEntry)) {
+    if (clientBuildOptions !== null && clientEntry) {
         const clientExternals = getExternals('client', options)
         const clientTarget = (clientBuildOptions.target || 'es2020').toLowerCase()
         const clientFormat = clientBuildOptions.format || 'iife'

@@ -55,7 +55,7 @@ function getBuildOptions(side, options = {}) {
     // Client: Neutral JS runtime - no Node.js APIs, no Web APIs
     const defaults = {
         platform: side === 'server' ? 'node' : 'neutral',
-        target: 'es2020',
+        target: side === 'server' ? 'es2023' : 'es2020',
         format: side === 'server' ? 'cjs' : 'iife',
         external: [],
         minify: false,
