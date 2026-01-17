@@ -27,7 +27,7 @@ This may be outdated, the latest information is recommended at [opencorejs.dev](
 |---------|-------------|
 | **Parallel Compilation** | Multi-core builds with configurable worker pools for maximum performance |
 | **Full TypeScript Support** | Decorators, metadata reflection, and modern ES2020+ features |
-| **Zero Configuration** | Embedded build toolchain with sensible defaults, no setup required |
+| **Simple Configuration** | Embedded build toolchain with sensible defaults, no setup required, a single typed config file |
 | **Hot Reload** | File watching with incremental compilation for rapid development |
 | **Three-Tier Architecture** | Core, satellite resources, and standalone scripts with proper dependency management |
 | **FiveM Optimization** | Node.js module exclusion, FiveM-specific transforms, and native API support |
@@ -66,11 +66,14 @@ go build -o opencore .
 |---------|-------------|
 | `opencore init [name]` | Initialize a new project with interactive wizard |
 | `opencore build` | Build all resources for production |
-| `opencore dev` | Start development mode with file watching |
+| `opencore completion` | Completion files config  to set in your zsh, bash etc |
 | `opencore create <type>` | Create scaffolding (feature, resource, standalone) |
 | `opencore clone <template>` | Clone an official template |
+| `opencore dev` | Start development mode with file watching |
 | `opencore doctor` | Validate project configuration |
-| `opencore version` | Display CLI version |
+| `opencore update` | self-update CLI |
+| `opencore --v` | Display CLI version |
+| `opencore --h` | Help |
 
 ---
 

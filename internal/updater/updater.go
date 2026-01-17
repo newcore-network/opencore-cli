@@ -34,23 +34,8 @@ type UpdateInfo struct {
 }
 
 // CheckForUpdate checks if a new version is available on GitHub
-// If force is true, the cache will be ignored
 func CheckForUpdate(currentVersion string, force bool) (*UpdateInfo, error) {
-	// 1. Check cache first (unless force is true)
-	cachePath, _ := getCachePath()
-	if !force && cachePath != "" {
-		if data, err := os.ReadFile(cachePath); err == nil {
-			var info UpdateInfo
-			if err := json.Unmarshal(data, &info); err == nil {
-				// If last check was less than 24h ago, return cached info
-				if time.Since(info.LastCheck) < 24*time.Hour {
-					return &info, nil
-				}
-			}
-		}
-	}
-
-	// 2. Fetch from GitHub
+	// Fetch from GitHub
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -70,14 +55,6 @@ func CheckForUpdate(currentVersion string, force bool) (*UpdateInfo, error) {
 	info := &UpdateInfo{
 		LatestVersion: release.TagName,
 		LastCheck:     time.Now(),
-	}
-
-	// 3. Save to cache
-	if cachePath != "" {
-		if data, err := json.Marshal(info); err == nil {
-			_ = os.MkdirAll(filepath.Dir(cachePath), 0755)
-			_ = os.WriteFile(cachePath, data, 0644)
-		}
 	}
 
 	return info, nil
@@ -154,14 +131,6 @@ func getExt() string {
 		return ".exe"
 	}
 	return ""
-}
-
-func getCachePath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".opencore", "update.json"), nil
 }
 
 // IsNPMInstallation checks if the CLI was likely installed via NPM
