@@ -12,6 +12,7 @@ const (
 	ArchitectureLayerBased   Architecture = "layer-based"
 	ArchitectureFeatureBased Architecture = "feature-based"
 	ArchitectureHybrid       Architecture = "hybrid"
+	ArchitectureNo           Architecture = "no-architecture"
 	ArchitectureUnknown      Architecture = "unknown"
 )
 
@@ -61,6 +62,8 @@ func GetArchitectureDescription(arch Architecture) string {
 		return "Feature-Based: Simple feature organization (recommended for small/medium projects)"
 	case ArchitectureHybrid:
 		return "Hybrid: Mix of domain modules and simple features (recommended for evolving projects)"
+	case ArchitectureNo:
+		return "No-Architecture: Simple server.ts and client.ts files (recommended for tiny projects)"
 	default:
 		return "Unknown architecture"
 	}
@@ -79,6 +82,8 @@ func GetFeatureBasePath(projectPath string, arch Architecture) string {
 		return filepath.Join(coreSrc, "features")
 	case ArchitectureHybrid:
 		return filepath.Join(coreSrc, "features") // Default to features for hybrid
+	case ArchitectureNo:
+		return coreSrc
 	default:
 		return filepath.Join(coreSrc, "features") // Fallback
 	}

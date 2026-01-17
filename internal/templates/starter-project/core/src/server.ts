@@ -3,8 +3,7 @@ import { Server } from '@open-core/framework/server';
 {{if .InstallIdentity}}import '@open-core/identity';{{end}}
 
 // Register your controllers - OpenCore scans decorators automatically
-// Example imports:
-// import './modules/banking/server/banking.controller';
+// Example: import './my-feature.server';
 
 Server.init({
     mode: 'CORE',

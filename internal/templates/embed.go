@@ -93,6 +93,11 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 			filepath.Join(targetPath, "core", "src", "core-modules"),
 			filepath.Join(targetPath, "core", "src", "features"),
 		)
+	case "no-architecture":
+		// No architecture just uses core/src directly
+		dirs = append(dirs,
+			filepath.Join(targetPath, "core", "src"),
+		)
 	default:
 		// Fallback to feature-based
 		dirs = append(dirs,
@@ -427,6 +432,50 @@ func GenerateLayerBased(clientPath, serverPath, servicePath, featureName string)
 		// Ensure directory exists
 		if err := os.MkdirAll(filepath.Dir(targetFile), 0755); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", targetFile, err)
+		}
+
+		f, err := os.Create(targetFile)
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
+		}
+		defer f.Close()
+
+		if err := tmpl.Execute(f, config); err != nil {
+			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		}
+	}
+
+	return nil
+}
+
+func GenerateNoArchitecture(targetPath, featureName string) error {
+	pascalCase := toPascalCase(featureName)
+	config := FeatureConfig{
+		FeatureName:       featureName,
+		FeatureNamePascal: pascalCase,
+	}
+
+	// Create feature directory if it doesn't exist (though targetPath should be core/src)
+	if err := os.MkdirAll(targetPath, 0755); err != nil {
+		return err
+	}
+
+	// Generate files
+	files := map[string]string{
+		"server.ts": filepath.Join(targetPath, featureName+".server.ts"),
+		"client.ts": filepath.Join(targetPath, featureName+".client.ts"),
+	}
+
+	for tplFile, targetFile := range files {
+		embedPath := path.Join("architectures", "no-architecture", tplFile)
+		content, err := templatesFS.ReadFile(embedPath)
+		if err != nil {
+			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
+		}
+
+		tmpl, err := template.New(tplFile).Parse(string(content))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
 		}
 
 		f, err := os.Create(targetFile)

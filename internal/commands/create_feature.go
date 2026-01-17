@@ -117,6 +117,18 @@ func runCreateFeature(cmd *cobra.Command, args []string, resourceName string) er
 				"server/services/" + featureName + ".service.ts",
 			}
 
+		case config.ArchitectureNo:
+			// No-Architecture: simple server.ts and client.ts in core/src
+			featurePath = filepath.Join("core", "src")
+			if err := templates.GenerateNoArchitecture(featurePath, featureName); err != nil {
+				return fmt.Errorf("failed to generate no-architecture feature: %w", err)
+			}
+			filesCreated = []string{
+				featureName + ".server.ts",
+				featureName + ".client.ts",
+			}
+			fmt.Println(ui.Info("Note: Don't forget to import these files in your server.ts and client.ts bootstrap files."))
+
 		case config.ArchitectureFeatureBased, config.ArchitectureHybrid:
 			// Feature-Based or Hybrid: use features directory
 			featurePath = filepath.Join("core", "src", "features", featureName)

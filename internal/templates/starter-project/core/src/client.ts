@@ -2,6 +2,7 @@
 import { Client } from '@open-core/framework/client';
 
 // Register your client controllers - OpenCore scans decorators automatically
+// Example: import './my-feature.client';
 
 Client.init({
     mode: 'CORE'
