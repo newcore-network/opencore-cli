@@ -2,7 +2,7 @@ import { Infer, z } from '@open-core/framework';
 import { Server } from '@open-core/framework/server';
 import { {{.ModuleNamePascal}}Service } from './{{.ModuleName}}.service';
 
-const schema = z.object({
+export const schema = z.object({
   some: z.string().min(2).max(20)
 })
 
@@ -11,8 +11,8 @@ export class {{.ModuleNamePascal}}Controller {
   constructor(private readonly {{.ModuleName}}Service: {{.ModuleNamePascal}}Service) {}
 
   @Server.Command('{{.ModuleName}}')
-  async handleCommand(player: Server.Player, args: string[]) {
-    const result = await this.{{.ModuleName}}Service.execute(player, args);
+  async handleCommand(player: Server.Player, arg1: string) {
+    const result = await this.{{.ModuleName}}Service.execute(player, [arg1]);
     console.log('Command result:', result);
   }
 

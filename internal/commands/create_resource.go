@@ -80,7 +80,8 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 			featuresMessage(withClient, withNUI) + "\n\n" +
 			"Next steps:\n" +
 			fmt.Sprintf("  cd %s\n", resourcePath) +
-			"  pnpm install\n\n" +
+			"  pnpm install\n" +
+			"// or use workspace node_modules package\n\n" +
 			"Remember to add your resource to opencore.config.ts:\n" +
 			"  resources: {\n" +
 			"    include: ['./resources/*'],\n" +

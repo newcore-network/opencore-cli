@@ -24,7 +24,7 @@ Types:
 
 Examples:
   opencore create feature banking
-  opencore create feature chat -r myserver
+  opencore create feature chat -r myresource
   opencore create resource admin --with-client
   opencore create standalone utils`,
 	}

@@ -899,7 +899,6 @@ func (b *Builder) showSummary(results []BuildResult) {
 		}
 
 		boxContent.WriteString(fmt.Sprintf("Time: %s\n", totalDuration.Round(time.Millisecond)))
-		boxContent.WriteString(fmt.Sprintf("Output: %s\n", b.config.OutDir))
 
 		if b.deployer.HasDestination() {
 			boxContent.WriteString(fmt.Sprintf("Deployed: %s\n", b.config.Destination))

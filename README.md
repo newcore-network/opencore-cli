@@ -97,7 +97,7 @@ Generate scaffolding for different project components:
 opencore create feature banking
 
 # Create a feature inside a specific resource
-opencore create feature chat -r myserver
+opencore create feature chat -r myresource
 
 # Create a satellite resource (depends on core)
 opencore create resource admin --with-client --with-nui

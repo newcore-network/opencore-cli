@@ -11,7 +11,7 @@ import (
 )
 
 //go:embed all:starter-project
-//go:embed all:resources
+//go:embed all:resource
 //go:embed all:standalone
 //go:embed all:feature
 //go:embed all:architectures

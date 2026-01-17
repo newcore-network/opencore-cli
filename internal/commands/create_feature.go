@@ -25,7 +25,7 @@ Use -r to create the feature inside a specific resource instead.
 
 Examples:
   opencore create feature banking           # Creates in core
-  opencore create feature chat -r myserver  # Creates in resources/myserver/`,
+  opencore create feature chat -r myresource  # Creates in resources/myserver/`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCreateFeature(cmd, args, resourceName)

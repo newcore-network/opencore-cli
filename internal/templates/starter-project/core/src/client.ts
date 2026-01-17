@@ -6,7 +6,7 @@ import { Client } from '@open-core/framework/client';
 
 Client.init({
     mode: 'CORE'
-}).catch( error => {
+}).catch( (error: unknown) => {
     console.error(error)
 }).then(()=> {
     console.log('{{.ProjectName}} client initialized!')

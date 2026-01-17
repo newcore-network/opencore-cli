@@ -58,7 +58,7 @@ Generate scaffolding for project components.
 opencore create feature banking
 
 # Create feature in specific resource
-opencore create feature chat -r myserver
+opencore create feature chat -r myresource
 ```
 
 ### resource

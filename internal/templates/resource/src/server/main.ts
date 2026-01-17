@@ -4,7 +4,7 @@ import { Server } from '@open-core/framework/server';
 Server.init({
   mode: 'RESOURCE',
   coreResourceName: 'core',
-}).catch( error => {
+}).catch( (error: unknown) => {
     console.error(error)
 }).then(()=> {
     console.log('{{.ResourceName}} server initialized!')

@@ -7,7 +7,7 @@ import { Server } from '@open-core/framework/server';
 
 Server.init({
     mode: 'CORE',
-}).catch( error => {
+}).catch( (error: unknown) => {
     console.error(error)
 }).then(()=> {
     console.log('{{.ProjectName}} server initialized!')
