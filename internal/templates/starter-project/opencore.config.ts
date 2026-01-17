@@ -30,6 +30,7 @@ export default defineConfig({
   modules: ['@open-core/identity'],
 {{ end }}
   build: {
+    logLevel: 'INFO',
     minify: {{.UseMinify}},
     sourceMaps: false,
     parallel: true,

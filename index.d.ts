@@ -603,6 +603,12 @@ export interface SideBuildConfig {
  */
 export interface BuildConfig {
   /**
+   * Default log level for the project.
+   * @default 'INFO'
+   */
+  logLevel?: LogLevel;
+
+  /**
    * Whether to minify the output code.
    * Reduces file size but makes debugging harder.
    * Applies to both server and client unless overridden in their configs.

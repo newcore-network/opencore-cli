@@ -186,6 +186,9 @@ const path = require('path');
 	if config.Build.Target == "" {
 		config.Build.Target = "ES2020"
 	}
+	if config.Build.LogLevel == "" {
+		config.Build.LogLevel = "INFO"
+	}
 	if config.Dev.Port == 0 {
 		config.Dev.Port = 3847
 	}
