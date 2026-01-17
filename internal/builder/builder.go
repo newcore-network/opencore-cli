@@ -214,6 +214,15 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	coreServerCfg := mergeBuildSideConfig(b.config.Build.Server, coreBuildCfg.Server)
 	coreClientCfg := mergeBuildSideConfig(b.config.Build.Client, coreBuildCfg.Client)
 
+	// Determine log level
+	logLevel := b.config.Build.LogLevel
+	if coreBuildCfg.LogLevel != "" {
+		logLevel = coreBuildCfg.LogLevel
+	}
+	if logLevel == "" {
+		logLevel = "INFO"
+	}
+
 	coreTask := BuildTask{
 		Path:           b.config.Core.Path,
 		ResourceName:   b.config.Core.ResourceName,
@@ -225,6 +234,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			Client:     buildSideValue(true, coreClientCfg),
 			Minify:     b.config.Build.Minify,
 			SourceMaps: b.config.Build.SourceMaps,
+			LogLevel:   logLevel,
 			Target:     b.config.Build.Target,
 			Compile:    true,
 		},
@@ -277,6 +287,15 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			// Check for explicit override
 			explicit := b.config.GetExplicitResource(match)
 
+			// Determine log level
+			resourceLogLevel := b.config.Build.LogLevel
+			if explicit != nil && explicit.Build != nil && explicit.Build.LogLevel != "" {
+				resourceLogLevel = explicit.Build.LogLevel
+			}
+			if resourceLogLevel == "" {
+				resourceLogLevel = "INFO"
+			}
+
 			task := BuildTask{
 				Path:         match,
 				ResourceName: resourceName,
@@ -287,6 +306,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Client:     buildSideValue(b.hasClientCode(match), b.config.Build.Client),
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
+					LogLevel:   resourceLogLevel,
 					Target:     b.config.Build.Target,
 					Compile:    true,
 				},
@@ -366,6 +386,15 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			resourceName = filepath.Base(res.Path)
 		}
 
+		// Determine log level
+		resourceLogLevel := b.config.Build.LogLevel
+		if res.Build != nil && res.Build.LogLevel != "" {
+			resourceLogLevel = res.Build.LogLevel
+		}
+		if resourceLogLevel == "" {
+			resourceLogLevel = "INFO"
+		}
+
 		task := BuildTask{
 			Path:           res.Path,
 			ResourceName:   resourceName,
@@ -377,6 +406,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Client:     buildSideValue(true, b.config.Build.Client),
 				Minify:     b.config.Build.Minify,
 				SourceMaps: b.config.Build.SourceMaps,
+				LogLevel:   resourceLogLevel,
 				Target:     b.config.Build.Target,
 				Compile:    true,
 			},
@@ -424,9 +454,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	}
 
 	// Standalone resources
-	if b.config.Standalone != nil {
+	if b.config.Standalones != nil {
 		// From glob patterns
-		for _, pattern := range b.config.Standalone.Include {
+		for _, pattern := range b.config.Standalones.Include {
 			matches, _ := filepath.Glob(pattern)
 			for _, match := range matches {
 				info, err := os.Stat(match)
@@ -456,6 +486,15 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					taskType = TypeCopy
 				}
 
+				// Determine log level
+				standaloneLogLevel := b.config.Build.LogLevel
+				if explicit != nil && explicit.Build != nil && explicit.Build.LogLevel != "" {
+					standaloneLogLevel = explicit.Build.LogLevel
+				}
+				if standaloneLogLevel == "" {
+					standaloneLogLevel = "INFO"
+				}
+
 				tasks = append(tasks, BuildTask{
 					Path:           match,
 					ResourceName:   resourceName,
@@ -467,6 +506,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Client:      buildSideValue(b.hasClientCode(match), b.config.Build.Client),
 						Minify:      b.config.Build.Minify,
 						SourceMaps:  b.config.Build.SourceMaps,
+						LogLevel:    standaloneLogLevel,
 						Target:      b.config.Build.Target,
 						Compile:     shouldCompile,
 						EntryPoints: entryPoints,
@@ -476,7 +516,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 
 		// Explicit standalone
-		for _, res := range b.config.Standalone.Explicit {
+		for _, res := range b.config.Standalones.Explicit {
 			resourceName := res.ResourceName
 			if resourceName == "" {
 				resourceName = filepath.Base(res.Path)
@@ -492,6 +532,15 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				taskType = TypeCopy
 			}
 
+			// Determine log level
+			standaloneLogLevel := b.config.Build.LogLevel
+			if res.Build != nil && res.Build.LogLevel != "" {
+				standaloneLogLevel = res.Build.LogLevel
+			}
+			if standaloneLogLevel == "" {
+				standaloneLogLevel = "INFO"
+			}
+
 			task := BuildTask{
 				Path:           res.Path,
 				ResourceName:   resourceName,
@@ -503,6 +552,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Client:     buildSideValue(b.hasClientCode(res.Path), b.config.Build.Client),
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
+					LogLevel:   standaloneLogLevel,
 					Target:     b.config.Build.Target,
 					Compile:    shouldCompile,
 				},

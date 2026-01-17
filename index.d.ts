@@ -59,6 +59,11 @@
  */
 
 /**
+ * Log levels supported by the OpenCore Framework.
+ */
+export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL' | 'OFF';
+
+/**
  * Entry points for server and client scripts.
  * Allows overriding the default entry file locations.
  * 
@@ -419,11 +424,11 @@ export interface ResourcesConfig {
  * 
  * @example
  * ```typescript
- * standalone: {
- *   include: ['./standalone/*'],
+ * standalones: {
+ *   include: ['./standalones/*'],
  *   explicit: [
- *     { path: './standalone/utils', compile: true },
- *     { path: './standalone/legacy', compile: false },  // Just copy
+ *     { path: './standalones/utils', compile: true },
+ *     { path: './standalones/legacy', compile: false },  // Just copy
  *   ],
  * }
  * ```
@@ -431,7 +436,7 @@ export interface ResourcesConfig {
 export interface StandaloneConfig {
   /**
    * Glob patterns to include standalone resources.
-   * @example ['./standalone/*']
+   * @example ['./standalones/*']
    */
   include?: string[];
 
@@ -776,7 +781,7 @@ export interface OpenCoreConfig {
    * Standalone resources configuration.
    * These resources are independent and don't use the core.
    */
-  standalone?: StandaloneConfig;
+  standalones?: StandaloneConfig;
 
   /**
    * OpenCore modules to use.

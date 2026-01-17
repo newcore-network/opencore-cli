@@ -1,10 +1,7 @@
 // OpenCore Framework - Client Entry Point
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 
 // Register your client controllers - OpenCore scans decorators automatically
-// Example imports based on your architecture:
-// import './modules/hud/client/hud.controller';
-// import './features/interface';
 
 Client.init({
     mode: 'CORE'

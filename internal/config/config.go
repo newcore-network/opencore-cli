@@ -14,7 +14,7 @@ type Config struct {
 	Destination string            `json:"destination,omitempty"`
 	Core        CoreConfig        `json:"core"`
 	Resources   ResourcesConfig   `json:"resources"`
-	Standalone  *StandaloneConfig `json:"standalone,omitempty"`
+	Standalones *StandaloneConfig `json:"standalones,omitempty"`
 	Modules     []string          `json:"modules"`
 	Build       BuildConfig       `json:"build"`
 	Dev         DevConfig         `json:"dev"`
@@ -63,11 +63,12 @@ type ExplicitResource struct {
 }
 
 type ResourceBuildConfig struct {
-	Server     *bool `json:"server,omitempty"`
-	Client     *bool `json:"client,omitempty"`
-	NUI        *bool `json:"nui,omitempty"`
-	Minify     *bool `json:"minify,omitempty"`
-	SourceMaps *bool `json:"sourceMaps,omitempty"`
+	Server     *bool  `json:"server,omitempty"`
+	Client     *bool  `json:"client,omitempty"`
+	NUI        *bool  `json:"nui,omitempty"`
+	Minify     *bool  `json:"minify,omitempty"`
+	SourceMaps *bool  `json:"sourceMaps,omitempty"`
+	LogLevel   string `json:"logLevel,omitempty"`
 }
 
 type StandaloneConfig struct {
@@ -83,20 +84,21 @@ type ViewsConfig struct {
 }
 
 type BuildSideConfig struct {
-	Platform  string   `json:"platform,omitempty"`
-	Format    string   `json:"format,omitempty"`
-	Target    string   `json:"target,omitempty"`
-	External  []string `json:"external,omitempty"`
-	Minify    *bool    `json:"minify,omitempty"`
-	SourceMaps *bool   `json:"sourceMaps,omitempty"`
+	Platform   string   `json:"platform,omitempty"`
+	Format     string   `json:"format,omitempty"`
+	Target     string   `json:"target,omitempty"`
+	External   []string `json:"external,omitempty"`
+	Minify     *bool    `json:"minify,omitempty"`
+	SourceMaps *bool    `json:"sourceMaps,omitempty"`
 }
 
 type BuildConfig struct {
-	Minify     bool   `json:"minify"`
-	SourceMaps bool   `json:"sourceMaps"`
-	Target     string `json:"target,omitempty"`
-	Parallel   bool   `json:"parallel"`
-	MaxWorkers int    `json:"maxWorkers,omitempty"`
+	Minify     bool             `json:"minify"`
+	SourceMaps bool             `json:"sourceMaps"`
+	LogLevel   string           `json:"logLevel,omitempty"`
+	Target     string           `json:"target,omitempty"`
+	Parallel   bool             `json:"parallel"`
+	MaxWorkers int              `json:"maxWorkers,omitempty"`
 	Server     *BuildSideConfig `json:"server,omitempty"`
 	Client     *BuildSideConfig `json:"client,omitempty"`
 }
@@ -242,19 +244,19 @@ func (c *Config) GetResourcePaths() []string {
 
 // GetStandalonePaths returns all standalone resource paths
 func (c *Config) GetStandalonePaths() []string {
-	if c.Standalone == nil {
+	if c.Standalones == nil {
 		return nil
 	}
 
 	var paths []string
 
 	// Add explicit standalone resources
-	for _, res := range c.Standalone.Explicit {
+	for _, res := range c.Standalones.Explicit {
 		paths = append(paths, res.Path)
 	}
 
 	// Add standalone matching include glob patterns
-	for _, pattern := range c.Standalone.Include {
+	for _, pattern := range c.Standalones.Include {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			continue
@@ -281,11 +283,11 @@ func (c *Config) GetStandalonePaths() []string {
 
 // ShouldCompile returns whether a standalone resource should be compiled
 func (c *Config) ShouldCompile(path string) bool {
-	if c.Standalone == nil {
+	if c.Standalones == nil {
 		return true
 	}
 
-	for _, res := range c.Standalone.Explicit {
+	for _, res := range c.Standalones.Explicit {
 		if res.Path == path {
 			if res.Compile != nil {
 				return *res.Compile
@@ -312,8 +314,8 @@ func (c *Config) GetResourceViews(path string) *ViewsConfig {
 	}
 
 	// Check standalone
-	if c.Standalone != nil {
-		for _, res := range c.Standalone.Explicit {
+	if c.Standalones != nil {
+		for _, res := range c.Standalones.Explicit {
 			if res.Path == path && res.Views != nil {
 				return res.Views
 			}
@@ -335,12 +337,12 @@ func (c *Config) GetExplicitResource(path string) *ExplicitResource {
 
 // GetExplicitStandalone returns the explicit standalone config for a path, if any
 func (c *Config) GetExplicitStandalone(path string) *ExplicitResource {
-	if c.Standalone == nil {
+	if c.Standalones == nil {
 		return nil
 	}
-	for i := range c.Standalone.Explicit {
-		if c.Standalone.Explicit[i].Path == path {
-			return &c.Standalone.Explicit[i]
+	for i := range c.Standalones.Explicit {
+		if c.Standalones.Explicit[i].Path == path {
+			return &c.Standalones.Explicit[i]
 		}
 	}
 	return nil
@@ -361,8 +363,8 @@ func (c *Config) GetCustomCompiler(resourcePath string) string {
 	}
 
 	// Check standalone
-	if c.Standalone != nil {
-		for _, res := range c.Standalone.Explicit {
+	if c.Standalones != nil {
+		for _, res := range c.Standalones.Explicit {
 			if res.Path == resourcePath {
 				return res.CustomCompiler
 			}

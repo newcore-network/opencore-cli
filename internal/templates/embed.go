@@ -11,7 +11,7 @@ import (
 )
 
 //go:embed all:starter-project
-//go:embed all:resource
+//go:embed all:resources
 //go:embed all:standalone
 //go:embed all:feature
 //go:embed all:architectures
@@ -64,6 +64,7 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		filepath.Join(targetPath, "core", "src"),
 		filepath.Join(targetPath, "views"),
 		filepath.Join(targetPath, "resources"),
+		filepath.Join(targetPath, "standalones"),
 	}
 
 	// Add architecture-specific directories
@@ -195,7 +196,7 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) e
 
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
-		embedPath := path.Join("resource", tplFile)
+		embedPath := path.Join("resources", tplFile)
 		content, err := templatesFS.ReadFile(embedPath)
 		if err != nil {
 			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
@@ -220,6 +221,7 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) e
 	return nil
 }
 
+// GenerateStandalone generates a new standalone resource from templates.
 func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI bool) error {
 	config := StandaloneConfig{
 		StandaloneName: standaloneName,

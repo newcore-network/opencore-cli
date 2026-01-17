@@ -1,4 +1,4 @@
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 import { {{.ModuleNamePascal}}UI } from './{{.ModuleName}}.ui';
 
 @Client.Controller()
@@ -11,7 +11,7 @@ export class {{.ModuleNamePascal}}Controller {
     this.ui.update(data);
   }
 
-  @Client.KeyMapping('F5', 'Open {{.ModuleNamePascal}}')
+  @Client.Key('F5', 'Open {{.ModuleNamePascal}}')
   openUI() {
     this.ui.show();
   }

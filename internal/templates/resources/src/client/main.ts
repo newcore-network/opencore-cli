@@ -1,7 +1,8 @@
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 
+// Bootstrap the resource client
 Client.init({
-    mode: 'RESOURCE'
+  mode: 'RESOURCE',
 }).catch( error => {
     console.error(error)
 }).then(()=> {

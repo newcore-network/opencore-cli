@@ -286,8 +286,8 @@ func (w *Watcher) registerPaths() {
 			}
 		}
 	}
-	if w.config.Standalone != nil {
-		for _, pattern := range w.config.Standalone.Include {
+	if w.config.Standalones != nil {
+		for _, pattern := range w.config.Standalones.Include {
 			parent := filepath.Dir(pattern)
 			if info, err := os.Stat(parent); err == nil && info.IsDir() {
 				if err := w.watcher.Add(parent); err == nil {

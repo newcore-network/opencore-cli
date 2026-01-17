@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	templatesRepo  = "newcore-network/opencore-templates"
-	templatesURL   = "https://github.com/" + templatesRepo
-	apiBaseURL     = "https://api.github.com/repos/" + templatesRepo + "/contents"
-	rawContentURL  = "https://raw.githubusercontent.com/" + templatesRepo + "/main"
+	templatesRepo = "newcore-software/opencore-templates"
+	templatesURL  = "https://github.com/" + templatesRepo
+	apiBaseURL    = "https://api.github.com/repos/" + templatesRepo + "/contents"
+	rawContentURL = "https://raw.githubusercontent.com/" + templatesRepo + "/main"
 )
 
 // GitHubContent represents a file/directory from GitHub API
@@ -209,24 +209,9 @@ func resolveTemplatePaths(templateName string) (sourcePath, targetPath string, e
 		}
 	}
 
-	// Check if template exists in standalones/ (try both spellings)
+	// Check if template exists in standalones/
 	for _, std := range standalones {
 		if std == templateName {
-			// Determine the actual folder name in the repo (could be "standalone" or "standalones")
-			// We'll need to check which one exists
-			resp, err := http.Get(apiBaseURL)
-			if err == nil {
-				defer resp.Body.Close()
-				var contents []GitHubContent
-				if json.NewDecoder(resp.Body).Decode(&contents) == nil {
-					for _, item := range contents {
-						if (item.Name == "standalones" || item.Name == "standalone") && item.Type == "dir" {
-							return item.Name + "/" + templateName, filepath.Join("standalones", templateName), nil
-						}
-					}
-				}
-			}
-			// Fallback to "standalones" if API call fails
 			return "standalones/" + templateName, filepath.Join("standalones", templateName), nil
 		}
 	}
@@ -264,14 +249,14 @@ func fetchTemplateList() ([]string, error) {
 }
 
 type cloneModel struct {
-	spinner      spinner.Model
-	template     string // Display name (e.g., "chat")
-	sourcePath   string // Full path in repo (e.g., "resources/chat")
-	targetPath   string // Local path (e.g., "resources/chat")
-	useAPI       bool
-	status       string
-	done         bool
-	err          error
+	spinner    spinner.Model
+	template   string // Display name (e.g., "chat")
+	sourcePath string // Full path in repo (e.g., "resources/chat")
+	targetPath string // Local path (e.g., "resources/chat")
+	useAPI     bool
+	status     string
+	done       bool
+	err        error
 }
 
 func (m cloneModel) Init() tea.Cmd {
@@ -308,7 +293,7 @@ func (m cloneModel) View() string {
 			return ui.Error(fmt.Sprintf("Failed to clone template: %v", m.err)) + "\n"
 		}
 		return ui.Success(fmt.Sprintf("Template '%s' cloned successfully!", m.template)) + "\n\n" +
-			ui.BoxStyle.Render(fmt.Sprintf("Location: %s\n\nNext steps:\n  cd %s\n  pnpm install\n\nRemember to add to opencore.config.ts:\n  resources: {\n    include: ['./resources/*'],\n  }", m.targetPath, m.targetPath))
+			ui.BoxStyle.Render(fmt.Sprintf("Location: %s\n\nNext steps:\n  cd %s\n  pnpm install\n\nRemember to add to opencore.config.ts:\n  resources: {\n    include: ['./resources/*'],\n  }\n  // Or if it is a standalone:\n  standalones: {\n    include: ['./standalones/*'],\n  }", m.targetPath, m.targetPath))
 	}
 
 	status := m.status

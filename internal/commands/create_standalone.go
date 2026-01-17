@@ -18,7 +18,7 @@ func newCreateStandaloneCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "standalone [name]",
 		Short: "Create a new standalone resource",
-		Long: `Generate a new standalone resource in standalone/ directory.
+		Long: `Generate a new standalone resource in standalones/ directory.
 
 Standalone resources are independent scripts that don't depend on the OpenCore Framework.
 They're useful for utilities, legacy scripts, or simple functionality.
@@ -68,7 +68,7 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 		}
 	}
 
-	standalonePath := filepath.Join("standalone", standaloneName)
+	standalonePath := filepath.Join("standalones", standaloneName)
 
 	fmt.Println(ui.Info(fmt.Sprintf("Creating standalone: %s", standaloneName)))
 	fmt.Println()
@@ -89,8 +89,8 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 			fmt.Sprintf("  cd %s\n", standalonePath) +
 			"  pnpm install\n\n" +
 			"Remember to add your standalone to opencore.config.ts:\n" +
-			"  standalone: {\n" +
-			"    include: ['./standalone/*'],\n" +
+			"  standalones: {\n" +
+			"    include: ['./standalones/*'],\n" +
 			"  }",
 	)
 

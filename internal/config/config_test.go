@@ -29,11 +29,11 @@ func TestConfigParsing(t *testing.T) {
 				}
 			]
 		},
-		"standalone": {
-			"include": ["./standalone/*"],
+		"standalones": {
+			"include": ["./standalones/*"],
 			"explicit": [
 				{
-					"path": "./standalone/legacy",
+					"path": "./standalones/legacy",
 					"compile": false,
 					"customCompiler": "./scripts/legacy-build.js"
 				}
@@ -60,7 +60,7 @@ func TestConfigParsing(t *testing.T) {
 	}
 
 	// OutDir should match Destination as we forced it in Load()
-	// But in this raw Unmarshal test it stays as is. 
+	// But in this raw Unmarshal test it stays as is.
 	// The logic for forcing OutDir = Destination is in Load() which we aren't testing here directly with json.Unmarshal.
 	if cfg.Destination != "C:/FXServer/resources" {
 		t.Errorf("Expected destination 'C:/FXServer/resources', got '%s'", cfg.Destination)
@@ -98,13 +98,13 @@ func TestConfigParsing(t *testing.T) {
 	}
 
 	// Test standalone config
-	if cfg.Standalone == nil {
-		t.Error("Expected standalone config to be set")
+	if cfg.Standalones == nil {
+		t.Error("Expected standalones config to be set")
 	} else {
-		if len(cfg.Standalone.Explicit) != 1 {
-			t.Errorf("Expected 1 explicit standalone, got %d", len(cfg.Standalone.Explicit))
+		if len(cfg.Standalones.Explicit) != 1 {
+			t.Errorf("Expected 1 explicit standalone, got %d", len(cfg.Standalones.Explicit))
 		} else {
-			standalone := cfg.Standalone.Explicit[0]
+			standalone := cfg.Standalones.Explicit[0]
 			if standalone.Compile == nil || *standalone.Compile != false {
 				t.Error("Expected standalone compile to be false")
 			}
@@ -144,10 +144,10 @@ func TestGetCustomCompiler(t *testing.T) {
 				},
 			},
 		},
-		Standalone: &StandaloneConfig{
+		Standalones: &StandaloneConfig{
 			Explicit: []ExplicitResource{
 				{
-					Path:           "./standalone/utils",
+					Path:           "./standalones/utils",
 					CustomCompiler: "./scripts/utils-build.js",
 				},
 			},
@@ -161,7 +161,7 @@ func TestGetCustomCompiler(t *testing.T) {
 		{"./core", "./scripts/core-build.js"},
 		{"./resources/admin", "./scripts/admin-build.js"},
 		{"./resources/inventory", ""},
-		{"./standalone/utils", "./scripts/utils-build.js"},
+		{"./standalones/utils", "./scripts/utils-build.js"},
 		{"./unknown/path", ""},
 	}
 
@@ -178,18 +178,18 @@ func TestShouldCompile(t *testing.T) {
 	falseVal := false
 
 	cfg := &Config{
-		Standalone: &StandaloneConfig{
+		Standalones: &StandaloneConfig{
 			Explicit: []ExplicitResource{
 				{
-					Path:    "./standalone/compiled",
+					Path:    "./standalones/compiled",
 					Compile: &trueVal,
 				},
 				{
-					Path:    "./standalone/copy-only",
+					Path:    "./standalones/copy-only",
 					Compile: &falseVal,
 				},
 				{
-					Path: "./standalone/default",
+					Path: "./standalones/default",
 					// Compile not set, should default to true
 				},
 			},
@@ -200,10 +200,10 @@ func TestShouldCompile(t *testing.T) {
 		path     string
 		expected bool
 	}{
-		{"./standalone/compiled", true},
-		{"./standalone/copy-only", false},
-		{"./standalone/default", true},
-		{"./standalone/glob-matched", true}, // Not in explicit, defaults to true
+		{"./standalones/compiled", true},
+		{"./standalones/copy-only", false},
+		{"./standalones/default", true},
+		{"./standalones/glob-matched", true}, // Not in explicit, defaults to true
 	}
 
 	for _, tt := range tests {
@@ -248,10 +248,10 @@ func TestGetExplicitStandalone(t *testing.T) {
 	falseVal := false
 
 	cfg := &Config{
-		Standalone: &StandaloneConfig{
+		Standalones: &StandaloneConfig{
 			Explicit: []ExplicitResource{
 				{
-					Path:    "./standalone/legacy",
+					Path:    "./standalones/legacy",
 					Compile: &falseVal,
 				},
 			},
@@ -259,22 +259,22 @@ func TestGetExplicitStandalone(t *testing.T) {
 	}
 
 	// Test existing standalone
-	res := cfg.GetExplicitStandalone("./standalone/legacy")
+	res := cfg.GetExplicitStandalone("./standalones/legacy")
 	if res == nil {
-		t.Error("Expected to find explicit standalone for ./standalone/legacy")
+		t.Error("Expected to find explicit standalone for ./standalones/legacy")
 	} else if res.Compile == nil || *res.Compile != false {
 		t.Error("Expected compile to be false")
 	}
 
 	// Test non-existing standalone
-	res = cfg.GetExplicitStandalone("./standalone/unknown")
+	res = cfg.GetExplicitStandalone("./standalones/unknown")
 	if res != nil {
 		t.Error("Expected nil for unknown standalone path")
 	}
 
 	// Test nil standalone config
 	cfgNoStandalone := &Config{}
-	res = cfgNoStandalone.GetExplicitStandalone("./standalone/any")
+	res = cfgNoStandalone.GetExplicitStandalone("./standalones/any")
 	if res != nil {
 		t.Error("Expected nil when standalone config is nil")
 	}

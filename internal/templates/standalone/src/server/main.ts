@@ -1,11 +1,14 @@
 // {{.StandaloneName}} - Server Side
-// This is a standalone resource (no OpenCore Framework dependency)
+import { Server } from '@open-core/framework/server';
 
-console.log('[{{.StandaloneName}}] Server started');
-
-// Register your commands
-RegisterCommand('{{.StandaloneName}}', (source: number, args: string[]) => {
-    console.log(`[{{.StandaloneName}}] Command executed by ${source}`);
-}, false);
+// Bootstrap the standalone server
+// Standalone mode enables guards and decorators without depending on a core resource
+Server.init({
+  mode: 'STANDALONE',
+}).catch( error => {
+    console.error(error)
+}).then(()=> {
+    console.log('[{{.StandaloneName}}] Server initialized in STANDALONE mode');
+});
 
 // Your server logic here

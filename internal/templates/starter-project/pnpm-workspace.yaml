@@ -1,4 +1,8 @@
 packages:
-  - 'core'
-  - 'resources/*'
-
+  - core
+  - core/*/nui
+  - resources/*
+  - resources/*/ui
+  - resources/*/nui
+  - standalone/*
+  - views/*

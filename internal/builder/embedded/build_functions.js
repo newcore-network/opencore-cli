@@ -97,6 +97,10 @@ async function buildCore(resourcePath, outDir, options = {}) {
             outfile: path.join(outDir, 'server.js'),
             plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
             external: serverExternals,
+            define: {
+                '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
+                '__OPENCORE_TARGET__': '"server"'
+            }
         }))
     }
 
@@ -113,6 +117,10 @@ async function buildCore(resourcePath, outDir, options = {}) {
             outfile: path.join(outDir, 'client.js'),
             plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
             external: clientExternals,
+            define: {
+                '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
+                '__OPENCORE_TARGET__': '"client"'
+            }
         }))
     }
 

@@ -1,14 +1,9 @@
-import { Server } from '@open-core/framework';
+import { Server } from '@open-core/framework/server';
 
 // Bootstrap the resource server
 Server.init({
   mode: 'RESOURCE',
   coreResourceName: 'core',
-  features: {
-    commands: { enabled: true,  provider: 'core'},
-    players: {enabled: true, provider: 'core'},
-    netEvents: {enabled: true}
-  }
 }).catch( error => {
     console.error(error)
 }).then(()=> {

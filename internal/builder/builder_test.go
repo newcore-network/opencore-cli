@@ -184,15 +184,15 @@ func TestCollectAllTasks_WithStandalone(t *testing.T) {
 			ResourceName: "[core]",
 		},
 		Resources: config.ResourcesConfig{},
-		Standalone: &config.StandaloneConfig{
+		Standalones: &config.StandaloneConfig{
 			Explicit: []config.ExplicitResource{
 				{
-					Path:           "./standalone/utils",
+					Path:           "./standalones/utils",
 					Compile:        &trueVal,
 					CustomCompiler: "./scripts/utils-build.js",
 				},
 				{
-					Path:    "./standalone/legacy",
+					Path:    "./standalones/legacy",
 					Compile: &falseVal, // Copy only
 				},
 			},
@@ -211,7 +211,7 @@ func TestCollectAllTasks_WithStandalone(t *testing.T) {
 	// Find utils task
 	var utilsTask *BuildTask
 	for i := range tasks {
-		if tasks[i].Path == "./standalone/utils" {
+		if tasks[i].Path == "./standalones/utils" {
 			utilsTask = &tasks[i]
 			break
 		}
@@ -232,7 +232,7 @@ func TestCollectAllTasks_WithStandalone(t *testing.T) {
 	// Find legacy task
 	var legacyTask *BuildTask
 	for i := range tasks {
-		if tasks[i].Path == "./standalone/legacy" {
+		if tasks[i].Path == "./standalones/legacy" {
 			legacyTask = &tasks[i]
 			break
 		}

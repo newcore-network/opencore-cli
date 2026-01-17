@@ -1,16 +1,16 @@
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 
 @Client.Controller()
 export class {{.ModuleNamePascal }}UI {
   constructor(private NUI: Client.NuiBridge) { }
 
-  @Client.KeyMapping("f5", "Open {{.ModuleNamePascal}} UI")
+  @Client.Key("f5", "Open {{.ModuleNamePascal}} UI")
   show() {
     // Show NUI or UI logic
     console.log('{{.ModuleNamePascal}} UI shown');
   }
 
-  @Client.NuiCallback('{{.ModuleNamePascal}}:close')
+  @Client.OnView('{{.ModuleNamePascal}}:close')
   hide() {
     // Hide NUI or UI logic
     console.log('{{.ModuleNamePascal}} UI hidden');
