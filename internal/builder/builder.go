@@ -377,6 +377,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 
 				// Add views task if configured or discovered
 				if viewsConfig != nil {
+					// Auto-detect framework if not explicitly set
+					framework := viewsConfig.Framework
+					if framework == "" {
+						framework = detectFramework(viewsConfig.Path)
+					}
+
 					tasks = append(tasks, BuildTask{
 						Path:           viewsConfig.Path,
 						ResourceName:   task.ResourceName + "/ui",
@@ -384,7 +390,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						OutDir:         filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
 						CustomCompiler: explicit.CustomCompiler, // Use same compiler for views
 						Options: BuildOptions{
-							Framework:  viewsConfig.Framework,
+							Framework:  framework,
 							Minify:     b.config.Build.Minify,
 							SourceMaps: b.config.Build.SourceMaps,
 							ViewEntry:  viewsConfig.EntryPoint,
@@ -498,6 +504,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 
 		// Add views task if configured or discovered
 		if viewsConfig != nil {
+			// Auto-detect framework if not explicitly set
+			framework := viewsConfig.Framework
+			if framework == "" {
+				framework = detectFramework(viewsConfig.Path)
+			}
+
 			tasks = append(tasks, BuildTask{
 				Path:           viewsConfig.Path,
 				ResourceName:   resourceName + "/ui",
@@ -505,7 +517,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
 				CustomCompiler: res.CustomCompiler,
 				Options: BuildOptions{
-					Framework:  viewsConfig.Framework,
+					Framework:  framework,
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
 					ViewEntry:  viewsConfig.EntryPoint,
@@ -773,7 +785,7 @@ func detectFramework(viewPath string) string {
 	hasVue := false
 	hasSvelte := false
 
-	filepath.WalkDir(viewPath, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(viewPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			if d != nil && d.Name() == "node_modules" {
 				return filepath.SkipDir
@@ -819,7 +831,7 @@ func formatSize(bytes int64) string {
 // getDirSize calculates total size of all files in a directory recursively
 func getDirSize(dirPath string) int64 {
 	var total int64
-	filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
