@@ -1,4 +1,4 @@
-import { Server, Player } from '@open-core/framework';
+import { Server, Player } from '@open-core/framework/server';
 import { {{.FeatureNamePascal}}Service } from '../services/{{.FeatureName}}.service';
 
 @Server.Controller()

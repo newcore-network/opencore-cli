@@ -1,4 +1,4 @@
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 
 @Client.Controller()
 export class {{.FeatureNamePascal}}Controller {
@@ -9,7 +9,7 @@ export class {{.FeatureNamePascal}}Controller {
     console.log('Received update:', data);
   }
 
-  @Client.KeyMapping('F5', 'Toggle {{.FeatureNamePascal}}')
+  @Client.Key('F5', 'Toggle {{.FeatureNamePascal}}')
   toggle() {
     console.log('{{.FeatureNamePascal}} toggled');
   }

@@ -1,5 +1,5 @@
 // OpenCore Framework - Server Entry Point (Layer-Based)
-import { Server } from '@open-core/framework';
+import { Server } from '@open-core/framework/server';
 {{if .InstallIdentity}}import '@open-core/identity';{{end}}
 
 // Register your controllers - OpenCore scans decorators automatically

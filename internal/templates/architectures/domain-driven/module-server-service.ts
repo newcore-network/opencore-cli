@@ -1,4 +1,4 @@
-import { Server, Player } from '@open-core/framework';
+import { Server, Player } from '@open-core/framework/server';
 import { {{.ModuleNamePascal}}Repository } from './{{.ModuleName}}.repository';
 import { schema } from './{{.ModuleName}}.controller';
 

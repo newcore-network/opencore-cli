@@ -2,7 +2,7 @@ import { Client } from '@open-core/framework/client';
 
 @Client.Controller()
 export class {{.ModuleNamePascal }}UI {
-  constructor(private NUI: Client.NuiBridge) { }
+  constructor(private readonly NUI: Client.NuiBridge) { }
 
   @Client.Key("f5", "Open {{.ModuleNamePascal}} UI")
   show() {

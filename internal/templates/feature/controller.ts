@@ -1,4 +1,4 @@
-import { Server } from '@open-core/framework';
+import { Server } from '@open-core/framework/server';
 import { {{.FeatureNamePascal}}Service } from './{{.FeatureName}}.service';
 
 @Server.Controller()

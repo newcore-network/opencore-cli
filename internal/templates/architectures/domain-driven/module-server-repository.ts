@@ -1,4 +1,4 @@
-import { Server } from '@open-core/framework';
+import { Server } from '@open-core/framework/server';
 
 @Server.Repo()
 export class {{.ModuleNamePascal}}Repository {

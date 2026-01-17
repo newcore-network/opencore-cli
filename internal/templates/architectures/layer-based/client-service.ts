@@ -1,4 +1,4 @@
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 
 @Client.Service()
 export class {{.FeatureNamePascal}}ClientService {

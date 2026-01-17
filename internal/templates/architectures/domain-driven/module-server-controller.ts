@@ -1,4 +1,5 @@
-import { Infer, Server, z } from '@open-core/framework';
+import { Infer, z } from '@open-core/framework';
+import { Server } from '@open-core/framework/server';
 import { {{.ModuleNamePascal}}Service } from './{{.ModuleName}}.service';
 
 const schema = z.object({

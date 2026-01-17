@@ -196,7 +196,7 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) e
 
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
-		embedPath := path.Join("resources", tplFile)
+		embedPath := path.Join("resource", tplFile)
 		content, err := templatesFS.ReadFile(embedPath)
 		if err != nil {
 			return fmt.Errorf("failed to read template %s: %w", tplFile, err)

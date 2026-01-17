@@ -1,5 +1,5 @@
 // OpenCore Framework - Client Entry Point (Layer-Based)
-import { Client } from '@open-core/framework';
+import { Client } from '@open-core/framework/client';
 
 // Register your client controllers - OpenCore scans decorators automatically
 // import './controllers/hud.controller';
