@@ -1,6 +1,15 @@
 ## OpenCore CLI v0.5.0
 
 ### Highlights
+- **Smart Views Auto-Discovery**: The builder now automatically discovers UI/Views directories (`ui`, `view`, `views`, `web`, `html`) within resources and standalones, detecting the framework and configuring build tasks without manual intervention.
+
+### Changes
+- **Views Discovery Logic**: Implemented `findViewsPath` to search for common UI directory conventions.
+- **Enhanced Task Generation**: Integrated auto-discovery into both glob-based and explicit resource/standalone collection.
+
+## OpenCore CLI v0.5.0
+
+### Highlights
 - **Smart Entry Point Auto-Discovery**: The builder now automatically detects `server.ts`/`client.ts` in `src/`, as well as `main.ts` or `index.ts` within `server/` and `client/` directories. No manual configuration required for most projects.
 - **New Architecture Support**: Added "No-Architecture" mode for minimal projects (simple `server.ts` and `client.ts` in `core/src`).
 - **Improved Scaffolding**: Refactored layer-based templates for better server/client separation and consistent dependency injection.

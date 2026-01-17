@@ -201,6 +201,18 @@ func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
 	return results, nil
 }
 
+// findViewsPath searches for a views directory in a resource path
+func findViewsPath(resourcePath string) string {
+	viewDirs := []string{"ui", "view", "views", "web", "html"}
+	for _, dir := range viewDirs {
+		path := filepath.Join(resourcePath, dir)
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
 // collectAllTasks gathers all build tasks from config
 func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
@@ -287,6 +299,25 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			// Check for explicit override
 			explicit := b.config.GetExplicitResource(match)
 
+			// Auto-discover views if not explicitly configured
+			var viewsConfig *config.ViewsConfig
+			if explicit != nil && explicit.Views != nil {
+				viewsConfig = explicit.Views
+			} else {
+				viewsPath := findViewsPath(match)
+				if viewsPath != "" {
+					// Convert to relative path if possible for consistency
+					relPath, err := filepath.Rel(".", viewsPath)
+					if err == nil {
+						viewsPath = "./" + filepath.ToSlash(relPath)
+					}
+					viewsConfig = &config.ViewsConfig{
+						Path:      viewsPath,
+						Framework: detectFramework(viewsPath),
+					}
+				}
+			}
+
 			// Determine log level
 			resourceLogLevel := b.config.Build.LogLevel
 			if explicit != nil && explicit.Build != nil && explicit.Build.LogLevel != "" {
@@ -344,23 +375,36 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					}
 				}
 
-				// Add views task if configured
-				if explicit.Views != nil {
+				// Add views task if configured or discovered
+				if viewsConfig != nil {
 					tasks = append(tasks, BuildTask{
-						Path:           explicit.Views.Path,
+						Path:           viewsConfig.Path,
 						ResourceName:   task.ResourceName + "/ui",
 						Type:           TypeViews,
 						OutDir:         filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
 						CustomCompiler: explicit.CustomCompiler, // Use same compiler for views
 						Options: BuildOptions{
-							Framework:  explicit.Views.Framework,
+							Framework:  viewsConfig.Framework,
 							Minify:     b.config.Build.Minify,
 							SourceMaps: b.config.Build.SourceMaps,
-							ViewEntry:  explicit.Views.EntryPoint,
-							Ignore:     explicit.Views.Ignore,
+							ViewEntry:  viewsConfig.EntryPoint,
+							Ignore:     viewsConfig.Ignore,
 						},
 					})
 				}
+			} else if viewsConfig != nil {
+				// Discovery for non-explicit resources
+				tasks = append(tasks, BuildTask{
+					Path:         viewsConfig.Path,
+					ResourceName: task.ResourceName + "/ui",
+					Type:         TypeViews,
+					OutDir:       filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
+					Options: BuildOptions{
+						Framework:  viewsConfig.Framework,
+						Minify:     b.config.Build.Minify,
+						SourceMaps: b.config.Build.SourceMaps,
+					},
+				})
 			}
 
 			tasks = append(tasks, task)
@@ -432,22 +476,40 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			}
 		}
 
+		// Resources are always compiled, so we can always check for views
+		var viewsConfig *config.ViewsConfig
+		if res.Views != nil {
+			viewsConfig = res.Views
+		} else {
+			viewsPath := findViewsPath(res.Path)
+			if viewsPath != "" {
+				relPath, err := filepath.Rel(".", viewsPath)
+				if err == nil {
+					viewsPath = "./" + filepath.ToSlash(relPath)
+				}
+				viewsConfig = &config.ViewsConfig{
+					Path:      viewsPath,
+					Framework: detectFramework(viewsPath),
+				}
+			}
+		}
+
 		tasks = append(tasks, task)
 
-		// Add views task if configured
-		if res.Views != nil {
+		// Add views task if configured or discovered
+		if viewsConfig != nil {
 			tasks = append(tasks, BuildTask{
-				Path:           res.Views.Path,
+				Path:           viewsConfig.Path,
 				ResourceName:   resourceName + "/ui",
 				Type:           TypeViews,
 				OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
 				CustomCompiler: res.CustomCompiler,
 				Options: BuildOptions{
-					Framework:  res.Views.Framework,
+					Framework:  viewsConfig.Framework,
 					Minify:     b.config.Build.Minify,
 					SourceMaps: b.config.Build.SourceMaps,
-					ViewEntry:  res.Views.EntryPoint,
-					Ignore:     res.Views.Ignore,
+					ViewEntry:  viewsConfig.EntryPoint,
+					Ignore:     viewsConfig.Ignore,
 				},
 			})
 		}
