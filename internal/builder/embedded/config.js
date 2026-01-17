@@ -21,7 +21,7 @@ function getSharedConfig(options = {}) {
         supported: {
             'class-static-blocks': false,
         },
-        alias: {}
+        alias: {},
     }
 
     return config

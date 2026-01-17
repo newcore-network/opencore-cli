@@ -329,6 +329,9 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     await esbuild.build({
         ...shared,
+        banner: {
+            js: "", // No reflect-metadata for views
+        },
         entryPoints: [entryPoint],
         outdir: outDir,
         platform: 'browser',

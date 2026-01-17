@@ -17,6 +17,7 @@
   "dependencies": {
     "@citizenfx/client": "2.0.22443-1",
     "@citizenfx/server": "2.0.22443-1",
+    "reflect-metadata": "^0.2.2",
     "@open-core/framework": "latest"{{if .InstallIdentity}},
     "@open-core/identity": "latest"{{end}}
   }

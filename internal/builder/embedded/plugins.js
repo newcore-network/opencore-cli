@@ -321,6 +321,51 @@ function createTsconfigPathsPlugin(resourcePath) {
     }
 }
 
+function createReflectMetadataPlugin() {
+    return {
+        name: 'reflect-metadata-injector',
+        setup(build) {
+            // Force reflect-metadata to be bundled even if marked as external
+            build.onResolve({ filter: /^reflect-metadata$/ }, () => {
+                try {
+                    return { path: require.resolve('reflect-metadata'), external: false }
+                } catch (e) {
+                    return { errors: [{ text: 'reflect-metadata not found. Please install it with: pnpm add reflect-metadata' }] }
+                }
+            })
+
+            // Inject import at the top of the entry point
+            build.onLoad({ filter: /\.(ts|tsx|js|jsx)$/ }, async (args) => {
+                // Skip node_modules
+                if (args.path.includes('node_modules')) return null
+
+                // Only inject into the main entry points (client/server main files)
+                const isEntry = build.initialOptions.entryPoints.some(e => 
+                    path.resolve(e) === path.resolve(args.path)
+                )
+
+                if (!isEntry) return null
+
+                try {
+                    const contents = await fs.promises.readFile(args.path, 'utf8')
+                    if (contents.includes('reflect-metadata')) return null
+
+                    const ext = path.extname(args.path).slice(1)
+                    // If it's TS, use 'ts' or 'tsx' loader, otherwise esbuild will fail
+                    const loader = ext === 'ts' || ext === 'tsx' ? ext : 'js'
+
+                    return {
+                        contents: `import 'reflect-metadata';\n${contents}`,
+                        loader: loader,
+                    }
+                } catch (e) {
+                    return null
+                }
+            })
+        },
+    }
+}
+
 module.exports = {
     getEsbuild,
     createSwcPlugin,
@@ -328,5 +373,6 @@ module.exports = {
     createExternalPackagesPlugin,
     preserveFiveMExportsPlugin,
     createNodeGlobalsShimPlugin,
-    createTsconfigPathsPlugin
+    createTsconfigPathsPlugin,
+    createReflectMetadataPlugin
 }

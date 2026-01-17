@@ -1,11 +1,13 @@
-## OpenCore CLI v0.5.0
+## OpenCore CLI v0.5.1
 
 ### Highlights
 - **Smart Views Auto-Discovery**: The builder now automatically discovers UI/Views directories (`ui`, `view`, `views`, `web`, `html`) within resources and standalones, detecting the framework and configuring build tasks without manual intervention.
+- **Reflect-Metadata Injection**: Added automatic injection of `import 'reflect-metadata';` at the top of all client and server bundles.
 
 ### Changes
 - **Views Discovery Logic**: Implemented `findViewsPath` to search for common UI directory conventions.
 - **Enhanced Task Generation**: Integrated auto-discovery into both glob-based and explicit resource/standalone collection.
+- **Global Decorator Support**: Injected `reflect-metadata` via esbuild banners for server/client builds.
 
 ## OpenCore CLI v0.5.0
 
