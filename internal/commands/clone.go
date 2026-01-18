@@ -21,10 +21,9 @@ import (
 )
 
 const (
-	templatesRepo = "newcore-software/opencore-templates"
+	templatesRepo = "newcore-network/opencore-templates"
 	templatesURL  = "https://github.com/" + templatesRepo
 	apiBaseURL    = "https://api.github.com/repos/" + templatesRepo + "/contents"
-	rawContentURL = "https://raw.githubusercontent.com/" + templatesRepo + "/main"
 )
 
 // GitHubContent represents a file/directory from GitHub API
@@ -143,13 +142,14 @@ func fetchGroupedTemplates() (resources []string, standalones []string, err erro
 		}
 
 		// Check if this is a container folder
-		if item.Name == "resources" {
+		switch item.Name {
+		case "resources":
 			// Fetch contents of resources/
 			resourceList, err := fetchFolderContents("resources")
 			if err == nil {
 				resources = resourceList
 			}
-		} else if item.Name == "standalones" || item.Name == "standalone" {
+		case "standalones", "standalone":
 			// Fetch contents of standalones/ or standalone/
 			standaloneList, err := fetchFolderContents(item.Name)
 			if err == nil {
