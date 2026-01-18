@@ -8,3 +8,4 @@
 
 ### Fixes
 - Fixed `ReferenceError: __OPENCORE_LOG_LEVEL__ is not defined` in satellite resources.
+- Repository url fixed for `opencore clone --list`
