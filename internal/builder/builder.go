@@ -395,6 +395,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 							SourceMaps: b.config.Build.SourceMaps,
 							ViewEntry:  viewsConfig.EntryPoint,
 							Ignore:     viewsConfig.Ignore,
+							LogLevel:   resourceLogLevel,
 						},
 					})
 				}
@@ -409,6 +410,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Framework:  viewsConfig.Framework,
 						Minify:     b.config.Build.Minify,
 						SourceMaps: b.config.Build.SourceMaps,
+						LogLevel:   resourceLogLevel,
 					},
 				})
 			}
@@ -522,6 +524,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					SourceMaps: b.config.Build.SourceMaps,
 					ViewEntry:  viewsConfig.EntryPoint,
 					Ignore:     viewsConfig.Ignore,
+					LogLevel:   resourceLogLevel,
 				},
 			})
 		}

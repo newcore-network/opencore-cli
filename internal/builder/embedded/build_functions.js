@@ -181,12 +181,18 @@ async function buildResource(resourcePath, outDir, options = {}) {
         const serverTarget = (serverBuildOptions.target || 'es2020').toLowerCase()
         const serverFormat = serverBuildOptions.format || 'cjs'
         builds.push(esbuild.build({
-            ...shared, ...serverBuildOptions,
+            ...shared,
+            ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
             plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
             external: serverExternals,
+            define: {
+                ...shared.define,
+                '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
+                '__OPENCORE_TARGET__': '"server"'
+            }
         }))
     }
 
@@ -203,6 +209,11 @@ async function buildResource(resourcePath, outDir, options = {}) {
             outfile: path.join(outDir, 'client.js'),
             plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
             external: clientExternals,
+            define: {
+                ...shared.define,
+                '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
+                '__OPENCORE_TARGET__': '"client"'
+            }
         }))
     }
 
@@ -240,6 +251,11 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             outfile: path.join(outDir, 'server.js'),
             plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
             external: serverExternals,
+            define: {
+                ...shared.define,
+                '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
+                '__OPENCORE_TARGET__': '"server"'
+            }
         }))
     }
 
@@ -256,6 +272,11 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             outfile: path.join(outDir, 'client.js'),
             plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
             external: clientExternals,
+            define: {
+                ...shared.define,
+                '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
+                '__OPENCORE_TARGET__': '"client"'
+            }
         }))
     }
 
