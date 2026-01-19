@@ -99,6 +99,71 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 	}
 }
 
+func TestCollectAllTasks_WithViewsForceInclude(t *testing.T) {
+	cfg := &config.Config{
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "[core]",
+			Views: &config.ViewsConfig{
+				Path:         "./core/views",
+				Framework:    "react",
+				ForceInclude: []string{"favicon.ico", "*.mp3"},
+			},
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path:         "./resources/admin",
+					ResourceName: "admin-panel",
+					Views: &config.ViewsConfig{
+						Path:         "./resources/admin/ui",
+						Framework:    "vue",
+						ForceInclude: []string{"robots.txt"},
+					},
+				},
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	if len(tasks) != 4 {
+		t.Fatalf("Expected 4 tasks (core + core views + admin + admin views), got %d", len(tasks))
+	}
+
+	var coreViewsTask *BuildTask
+	var adminViewsTask *BuildTask
+	for i := range tasks {
+		switch tasks[i].ResourceName {
+		case "[core]/ui":
+			coreViewsTask = &tasks[i]
+		case "admin-panel/ui":
+			adminViewsTask = &tasks[i]
+		}
+	}
+
+	if coreViewsTask == nil {
+		t.Fatal("Expected core views task")
+	}
+
+	if adminViewsTask == nil {
+		t.Fatal("Expected admin views task")
+	}
+
+	if len(coreViewsTask.Options.ForceInclude) != 2 {
+		t.Errorf("Expected 2 core forceInclude entries, got %d", len(coreViewsTask.Options.ForceInclude))
+	}
+
+	if len(adminViewsTask.Options.ForceInclude) != 1 {
+		t.Errorf("Expected 1 admin forceInclude entry, got %d", len(adminViewsTask.Options.ForceInclude))
+	}
+}
+
 func TestCollectAllTasks_WithExplicitResources(t *testing.T) {
 	cfg := &config.Config{
 		Name:        "test-project",

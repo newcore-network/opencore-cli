@@ -48,6 +48,20 @@ func TestEmbeddedBuildScript(t *testing.T) {
 			t.Errorf("build_functions.js missing required function: %s", fn)
 		}
 	}
+
+	// 4. Check views.js
+	viewsScript, _ := BuildFS.ReadFile("views.js")
+	viewsContent := string(viewsScript)
+	requiredViewsSymbols := []string{
+		"createTailwindPlugin",
+		"getTailwindInfo",
+		"forceInclude",
+	}
+	for _, symbol := range requiredViewsSymbols {
+		if !strings.Contains(viewsContent, symbol) {
+			t.Errorf("views.js missing required symbol: %s", symbol)
+		}
+	}
 }
 
 func TestBuildScriptNotEmpty(t *testing.T) {

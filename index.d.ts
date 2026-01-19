@@ -138,10 +138,20 @@ export interface ViewsConfig {
    *
    * **Note:** `node_modules`, `.git`, and `.ocignore` are always ignored.
    *
-   * @example ['*.config.ts', '*.config.js', 'test/**', '**\/*.spec.ts']
+   * @example ['*.config.ts', '*.config.js', 'test/**', '**/*.spec.ts']
    */
   ignore?: string[];
+
+  /**
+   * Force include static files by name when they are not being copied.
+   * Useful when assets are not imported in JS/CSS and are skipped by default.
+   * Matching is done by filename only (not full paths).
+   *
+   * @example ['favicon.ico', 'robots.txt', '*.mp3']
+   */
+  forceInclude?: string[];
 }
+
 
 /**
  * Configuration for the core resource.

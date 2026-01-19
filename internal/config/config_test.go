@@ -17,6 +17,11 @@ func TestConfigParsing(t *testing.T) {
 			"entryPoints": {
 				"server": "./core/src/server.ts",
 				"client": "./core/src/client.ts"
+			},
+			"views": {
+				"path": "./core/views",
+				"framework": "react",
+				"forceInclude": ["favicon.ico"]
 			}
 		},
 		"resources": {
@@ -80,6 +85,14 @@ func TestConfigParsing(t *testing.T) {
 	} else {
 		if cfg.Core.EntryPoints.Server != "./core/src/server.ts" {
 			t.Errorf("Expected server entry './core/src/server.ts', got '%s'", cfg.Core.EntryPoints.Server)
+		}
+	}
+
+	if cfg.Core.Views == nil {
+		t.Error("Expected core views to be set")
+	} else {
+		if len(cfg.Core.Views.ForceInclude) != 1 || cfg.Core.Views.ForceInclude[0] != "favicon.ico" {
+			t.Errorf("Expected forceInclude to contain 'favicon.ico'")
 		}
 	}
 

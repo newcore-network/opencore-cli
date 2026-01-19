@@ -42,7 +42,181 @@ function checkDependency(name) {
     }
 }
 
+function resolveDependency(viewPath, name) {
+    try {
+        return require.resolve(name, { paths: [viewPath, process.cwd()] })
+    } catch (e) {
+        return null
+    }
+}
+
+function findTailwindConfig(viewPath) {
+    const configFiles = [
+        'tailwind.config.js',
+        'tailwind.config.cjs',
+        'tailwind.config.mjs',
+        'tailwind.config.ts',
+    ]
+
+    let currentDir = path.resolve(viewPath)
+    const rootDir = path.parse(currentDir).root
+    const stopDir = path.resolve(process.cwd())
+
+    while (true) {
+        for (const fileName of configFiles) {
+            const candidate = path.join(currentDir, fileName)
+            if (fs.existsSync(candidate)) {
+                return candidate
+            }
+        }
+
+        if (currentDir === stopDir || currentDir === rootDir) {
+            break
+        }
+
+        currentDir = path.dirname(currentDir)
+    }
+
+    return null
+}
+
+function getTailwindInfo(viewPath) {
+    const configPath = findTailwindConfig(viewPath)
+    const packagePath = resolveDependency(viewPath, 'tailwindcss/package.json')
+
+    if (!configPath && !packagePath) {
+        return null
+    }
+
+    if (!packagePath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing Tailwind dependency\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  Tailwind config was detected but the package is not installed.\n` +
+            `\n` +
+            `  Missing: tailwindcss\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    pnpm add -D tailwindcss\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    if (!configPath) {
+        console.log(`[views] Tailwind package detected, but no tailwind.config.* found.`)
+    }
+
+    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
+    const major = parseInt((pkg.version || '0').split('.')[0], 10)
+    const majorVersion = Number.isNaN(major) ? 3 : major
+
+    return {
+        configPath,
+        version: pkg.version || '0.0.0',
+        major: majorVersion,
+    }
+}
+
+function ensureTailwindDependencies(viewPath, tailwindInfo) {
+    const missing = []
+
+    if (!resolveDependency(viewPath, 'postcss')) {
+        missing.push('postcss')
+    }
+
+    if (tailwindInfo.major >= 4) {
+        if (!resolveDependency(viewPath, '@tailwindcss/postcss')) {
+            missing.push('@tailwindcss/postcss')
+        }
+    } else {
+        if (!resolveDependency(viewPath, 'autoprefixer')) {
+            missing.push('autoprefixer')
+        }
+    }
+
+    if (missing.length > 0) {
+        const installCmd = missing.join(' ')
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing Tailwind dependencies\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  Tailwind CSS was detected but required dependencies are not installed.\n` +
+            `\n` +
+            `  Missing: ${missing.join(', ')}\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    pnpm add -D ${installCmd}\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+}
+
+function createTailwindPlugin(viewPath) {
+    const tailwindInfo = getTailwindInfo(viewPath)
+    if (!tailwindInfo) {
+        return null
+    }
+
+    ensureTailwindDependencies(viewPath, tailwindInfo)
+
+    const postcssPath = resolveDependency(viewPath, 'postcss')
+    const postcss = require(postcssPath)
+    const plugins = []
+
+    if (tailwindInfo.major >= 4) {
+        const pluginPath = resolveDependency(viewPath, '@tailwindcss/postcss')
+        const tailwindPlugin = require(pluginPath)
+        const pluginOptions = tailwindInfo.configPath ? { config: tailwindInfo.configPath } : {}
+        plugins.push(tailwindPlugin(pluginOptions))
+        const autoprefixerPath = resolveDependency(viewPath, 'autoprefixer')
+        const autoprefixer = autoprefixerPath ? require(autoprefixerPath) : null
+        if (autoprefixer) {
+            plugins.push(autoprefixer())
+        }
+    } else {
+        const pluginPath = resolveDependency(viewPath, 'tailwindcss')
+        const tailwindPlugin = require(pluginPath)
+        const pluginOptions = tailwindInfo.configPath ? { config: tailwindInfo.configPath } : {}
+        plugins.push(tailwindPlugin(pluginOptions))
+        const autoprefixerPath = resolveDependency(viewPath, 'autoprefixer')
+        const autoprefixer = autoprefixerPath ? require(autoprefixerPath) : null
+        if (autoprefixer) {
+            plugins.push(autoprefixer())
+        }
+    }
+
+    console.log(`[views] Tailwind detected (v${tailwindInfo.version})`)
+
+    return {
+        name: 'tailwindcss',
+        setup(build) {
+            build.onLoad({ filter: /\.css$/ }, async (args) => {
+                const source = await fs.promises.readFile(args.path, 'utf8')
+                const result = await postcss(plugins).process(source, {
+                    from: args.path,
+                    map: false,
+                })
+
+                return {
+                    contents: result.css,
+                    loader: 'css',
+                }
+            })
+        },
+    }
+}
+
 function getSveltePlugin() {
+
     const missing = []
     if (!checkDependency('esbuild-svelte')) missing.push('esbuild-svelte')
     if (!checkDependency('svelte')) missing.push('svelte')
@@ -190,7 +364,22 @@ function shouldIgnore(filePath, ignorePatterns) {
     return false
 }
 
-async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
+function isForceIncluded(filePath, forceInclude) {
+    if (!forceInclude || forceInclude.length === 0) {
+        return false
+    }
+    const fileName = path.basename(filePath)
+    for (const pattern of forceInclude) {
+        if (pattern === fileName) return true
+        if (pattern.startsWith('*.')) {
+            const ext = pattern.slice(1)
+            if (fileName.endsWith(ext)) return true
+        }
+    }
+    return false
+}
+
+async function copyStaticAssets(viewPath, outDir, ignorePatterns = [], forceInclude = []) {
     const defaultIgnore = [
         'node_modules',
         '.git',
@@ -219,7 +408,7 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
             const srcPath = path.join(srcDir, entry.name)
             const relPath = path.join(relativePath, entry.name)
 
-            if (shouldIgnore(relPath, allIgnore)) continue
+            if (shouldIgnore(relPath, allIgnore) && !isForceIncluded(relPath, forceInclude)) continue
 
             if (entry.isDirectory()) {
                 const subFiles = await getFilesToCopy(srcPath, relPath)
@@ -228,7 +417,7 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
                 // Skip files that esbuild already handles via imports
                 const ext = path.extname(entry.name).toLowerCase()
                 const esbuildExtensions = ['.js', '.ts', '.tsx', '.jsx', '.svelte', '.vue', '.scss', '.sass']
-                if (esbuildExtensions.includes(ext)) continue
+                if (esbuildExtensions.includes(ext) && !isForceIncluded(relPath, forceInclude)) continue
 
                 files.push({ src: srcPath, rel: relPath })
             }
@@ -243,6 +432,7 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = []) {
         await fs.promises.copyFile(file.src, dstPath)
     }
 }
+
 
 async function buildViews(viewPath, outDir, options = {}) {
     await fs.promises.mkdir(outDir, { recursive: true })
@@ -327,7 +517,13 @@ async function buildViews(viewPath, outDir, options = {}) {
         plugins.push(getSassPlugin())
     }
 
+    const tailwindPlugin = createTailwindPlugin(viewPath)
+    if (tailwindPlugin) {
+        plugins.push(tailwindPlugin)
+    }
+
     await esbuild.build({
+
         ...shared,
         banner: {
             js: "", // No reflect-metadata for views
@@ -387,7 +583,8 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     // Copy static assets (CSS, images, fonts, etc.) that aren't imported in JS
     const ignorePatterns = readOcIgnore(viewPath)
-    await copyStaticAssets(viewPath, outDir, ignorePatterns)
+    await copyStaticAssets(viewPath, outDir, ignorePatterns, options.forceInclude || [])
+
 
     const htmlSrc = path.join(viewPath, 'index.html')
     const htmlDst = path.join(outDir, 'index.html')

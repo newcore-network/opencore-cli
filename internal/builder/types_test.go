@@ -65,12 +65,13 @@ func TestBuildTaskStructure(t *testing.T) {
 
 func TestBuildOptionsJSON(t *testing.T) {
 	options := BuildOptions{
-		Server:     SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
-		Client:     SideConfigValue{Enabled: false},
-		NUI:        true,
-		Minify:     true,
-		SourceMaps: false,
-		Target:     "ES2020",
+		Server:       SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
+		Client:       SideConfigValue{Enabled: false},
+		NUI:          true,
+		Minify:       true,
+		SourceMaps:   false,
+		Target:       "ES2020",
+		ForceInclude: []string{"favicon.ico"},
 		EntryPoints: &EntryPoints{
 			Server: "./src/server.ts",
 			Client: "./src/client.ts",
@@ -101,6 +102,10 @@ func TestBuildOptionsJSON(t *testing.T) {
 
 	if parsed.Target != options.Target {
 		t.Errorf("Target mismatch: got '%s', expected '%s'", parsed.Target, options.Target)
+	}
+
+	if len(parsed.ForceInclude) != len(options.ForceInclude) {
+		t.Errorf("ForceInclude mismatch: got %d, expected %d", len(parsed.ForceInclude), len(options.ForceInclude))
 	}
 
 	if parsed.EntryPoints == nil {

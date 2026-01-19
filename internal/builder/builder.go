@@ -271,11 +271,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			OutDir:         filepath.Join(b.config.OutDir, b.config.Core.ResourceName, "ui"),
 			CustomCompiler: b.config.Core.CustomCompiler, // Use core's custom compiler for views too
 			Options: BuildOptions{
-				Framework:  b.config.Core.Views.Framework,
-				Minify:     b.config.Build.Minify,
-				SourceMaps: b.config.Build.SourceMaps,
-				ViewEntry:  b.config.Core.Views.EntryPoint,
-				Ignore:     b.config.Core.Views.Ignore,
+				Framework:    b.config.Core.Views.Framework,
+				Minify:       b.config.Build.Minify,
+				SourceMaps:   b.config.Build.SourceMaps,
+				ViewEntry:    b.config.Core.Views.EntryPoint,
+				Ignore:       b.config.Core.Views.Ignore,
+				ForceInclude: b.config.Core.Views.ForceInclude,
 			},
 		})
 	}
@@ -390,12 +391,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						OutDir:         filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
 						CustomCompiler: explicit.CustomCompiler, // Use same compiler for views
 						Options: BuildOptions{
-							Framework:  framework,
-							Minify:     b.config.Build.Minify,
-							SourceMaps: b.config.Build.SourceMaps,
-							ViewEntry:  viewsConfig.EntryPoint,
-							Ignore:     viewsConfig.Ignore,
-							LogLevel:   resourceLogLevel,
+							Framework:    framework,
+							Minify:       b.config.Build.Minify,
+							SourceMaps:   b.config.Build.SourceMaps,
+							ViewEntry:    viewsConfig.EntryPoint,
+							Ignore:       viewsConfig.Ignore,
+							ForceInclude: viewsConfig.ForceInclude,
+							LogLevel:     resourceLogLevel,
 						},
 					})
 				}
@@ -407,10 +409,11 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Type:         TypeViews,
 					OutDir:       filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
 					Options: BuildOptions{
-						Framework:  viewsConfig.Framework,
-						Minify:     b.config.Build.Minify,
-						SourceMaps: b.config.Build.SourceMaps,
-						LogLevel:   resourceLogLevel,
+						Framework:    viewsConfig.Framework,
+						Minify:       b.config.Build.Minify,
+						SourceMaps:   b.config.Build.SourceMaps,
+						ForceInclude: viewsConfig.ForceInclude,
+						LogLevel:     resourceLogLevel,
 					},
 				})
 			}
@@ -519,12 +522,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
 				CustomCompiler: res.CustomCompiler,
 				Options: BuildOptions{
-					Framework:  framework,
-					Minify:     b.config.Build.Minify,
-					SourceMaps: b.config.Build.SourceMaps,
-					ViewEntry:  viewsConfig.EntryPoint,
-					Ignore:     viewsConfig.Ignore,
-					LogLevel:   resourceLogLevel,
+					Framework:    framework,
+					Minify:       b.config.Build.Minify,
+					SourceMaps:   b.config.Build.SourceMaps,
+					ViewEntry:    viewsConfig.EntryPoint,
+					Ignore:       viewsConfig.Ignore,
+					ForceInclude: viewsConfig.ForceInclude,
+					LogLevel:     resourceLogLevel,
 				},
 			})
 		}
@@ -654,11 +658,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
 					CustomCompiler: res.CustomCompiler,
 					Options: BuildOptions{
-						Framework:  res.Views.Framework,
-						Minify:     b.config.Build.Minify,
-						SourceMaps: b.config.Build.SourceMaps,
-						ViewEntry:  res.Views.EntryPoint,
-						Ignore:     res.Views.Ignore,
+						Framework:    res.Views.Framework,
+						Minify:       b.config.Build.Minify,
+						SourceMaps:   b.config.Build.SourceMaps,
+						ViewEntry:    res.Views.EntryPoint,
+						Ignore:       res.Views.Ignore,
+						ForceInclude: res.Views.ForceInclude,
 					},
 				})
 			}
