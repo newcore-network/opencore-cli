@@ -4,6 +4,68 @@ const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExte
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
 const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
 
+function resolveServerBinaries(resourcePath, options = {}) {
+    if (options.serverBinaries === undefined) {
+        const defaultDir = path.join(resourcePath, 'bin')
+        if (fs.existsSync(defaultDir)) {
+            return ['bin']
+        }
+        return []
+    }
+
+    if (Array.isArray(options.serverBinaries)) {
+        return options.serverBinaries
+    }
+
+    return []
+}
+
+function shouldCopyServerBinaries(options = {}, serverBuildOptions, serverEntry) {
+    return !!serverBuildOptions && !!serverEntry
+}
+
+async function copyServerBinaries(resourcePath, outDir, options = {}, serverBuildOptions, serverEntry) {
+    if (!shouldCopyServerBinaries(options, serverBuildOptions, serverEntry)) {
+        return
+    }
+
+    const patterns = resolveServerBinaries(resourcePath, options)
+    if (patterns.length === 0) {
+        return
+    }
+
+    for (const pattern of patterns) {
+        const srcPath = path.join(resourcePath, pattern)
+        if (!fs.existsSync(srcPath)) {
+            console.warn(`[server] serverBinaries path not found: ${pattern}`)
+            continue
+        }
+
+        const stats = await fs.promises.stat(srcPath)
+        if (stats.isDirectory()) {
+            await copyDirContents(srcPath, outDir)
+        } else {
+            await fs.promises.copyFile(srcPath, path.join(outDir, path.basename(srcPath)))
+        }
+    }
+}
+
+async function copyDirContents(srcDir, destDir) {
+    await fs.promises.mkdir(destDir, { recursive: true })
+    const entries = await fs.promises.readdir(srcDir, { withFileTypes: true })
+
+    for (const entry of entries) {
+        const srcPath = path.join(srcDir, entry.name)
+        const dstPath = path.join(destDir, entry.name)
+        if (entry.isDirectory()) {
+            await copyDirContents(srcPath, dstPath)
+        } else {
+            await fs.promises.copyFile(srcPath, dstPath)
+        }
+    }
+}
+
+
 function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
     const plugins = [
         createReflectMetadataPlugin(),
@@ -164,8 +226,10 @@ async function buildCore(resourcePath, outDir, options = {}) {
     }
 
     await Promise.all(builds)
+    await copyServerBinaries(resourcePath, outDir, options, serverBuildOptions, serverEntry)
     console.log(`[core] Built ${path.basename(outDir)}`)
 }
+
 
 async function buildResource(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
@@ -228,8 +292,10 @@ async function buildResource(resourcePath, outDir, options = {}) {
     }
 
     if (builds.length > 0) await Promise.all(builds)
+    await copyServerBinaries(resourcePath, outDir, options, serverBuildOptions, serverEntry)
     console.log(`[resource] Built ${path.basename(outDir)}`)
 }
+
 
 async function buildStandalone(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
@@ -291,8 +357,10 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     }
 
     if (builds.length > 0) await Promise.all(builds)
+    await copyServerBinaries(resourcePath, outDir, options, serverBuildOptions, serverEntry)
     console.log(`[standalone] Built ${path.basename(outDir)}`)
 }
+
 
 async function copyResource(resourcePath, outDir, options = {}) {
     const absSrcPath = path.resolve(resourcePath)
@@ -331,8 +399,12 @@ async function copyResource(resourcePath, outDir, options = {}) {
     if (shouldHandleDependencies(options)) {
         await handleDependencies(resourcePath, outDir)
     }
+
+    const copyServerEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
+    await copyServerBinaries(resourcePath, outDir, options, { platform: 'node' }, copyServerEntry)
     console.log(`[copy] Copied ${path.basename(outDir)}`)
 }
+
 
 async function copyDirRecursive(src, dst) {
     await fs.promises.mkdir(dst, { recursive: true })

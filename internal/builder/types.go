@@ -78,21 +78,22 @@ func (s *SideConfigValue) UnmarshalJSON(data []byte) error {
 
 // BuildOptions contains build configuration for a resource
 type BuildOptions struct {
-	Server       SideConfigValue `json:"server"`
-	Client       SideConfigValue `json:"client"`
-	NUI          bool            `json:"nui"`
-	Minify       bool            `json:"minify"`
-	SourceMaps   bool            `json:"sourceMaps"`
-	LogLevel     string          `json:"logLevel"`
-	Target       string          `json:"target"`
-	EntryPoints  *EntryPoints    `json:"entryPoints,omitempty"`
-	Framework    string          `json:"framework,omitempty"`    // react, vue, svelte
-	Compile      bool            `json:"compile"`                // for standalone resources
-	ViewEntry    string          `json:"viewEntry,omitempty"`    // explicit entry point for views (e.g., "main.ng.ts")
-	Ignore       []string        `json:"ignore,omitempty"`       // ignore patterns for views (e.g., ["*.config.ts"])
-	ForceInclude []string        `json:"forceInclude,omitempty"` // force include static files by name
-	BuildCommand string          `json:"buildCommand,omitempty"` // custom build command for static frameworks (e.g. Astro)
-	OutputDir    string          `json:"outputDir,omitempty"`    // output directory for static frameworks (e.g. Astro)
+	Server         SideConfigValue `json:"server"`
+	Client         SideConfigValue `json:"client"`
+	NUI            bool            `json:"nui"`
+	Minify         bool            `json:"minify"`
+	SourceMaps     bool            `json:"sourceMaps"`
+	LogLevel       string          `json:"logLevel"`
+	Target         string          `json:"target"`
+	EntryPoints    *EntryPoints    `json:"entryPoints,omitempty"`
+	Framework      string          `json:"framework,omitempty"`      // react, vue, svelte
+	Compile        bool            `json:"compile"`                  // for standalone resources
+	ViewEntry      string          `json:"viewEntry,omitempty"`      // explicit entry point for views (e.g., "main.ng.ts")
+	Ignore         []string        `json:"ignore,omitempty"`         // ignore patterns for views (e.g., ["*.config.ts"])
+	ForceInclude   []string        `json:"forceInclude,omitempty"`   // force include static files by name
+	BuildCommand   string          `json:"buildCommand,omitempty"`   // custom build command for static frameworks (e.g. Astro)
+	OutputDir      string          `json:"outputDir,omitempty"`      // output directory for static frameworks (e.g. Astro)
+	ServerBinaries []string        `json:"serverBinaries,omitempty"` // server binary files to copy alongside server.js
 }
 
 // EntryPoints defines entry points for core builds

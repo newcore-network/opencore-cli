@@ -51,7 +51,8 @@ func TestConfigParsing(t *testing.T) {
 			"sourceMaps": true,
 			"target": "ES2020",
 			"parallel": true,
-			"maxWorkers": 4
+			"maxWorkers": 4,
+			"serverBinaries": ["bin"]
 		}
 	}`
 
@@ -144,6 +145,9 @@ func TestConfigParsing(t *testing.T) {
 	}
 	if cfg.Build.MaxWorkers != 4 {
 		t.Errorf("Expected maxWorkers 4, got %d", cfg.Build.MaxWorkers)
+	}
+	if len(cfg.Build.ServerBinaries) != 1 || cfg.Build.ServerBinaries[0] != "bin" {
+		t.Errorf("Expected serverBinaries to include 'bin'")
 	}
 }
 

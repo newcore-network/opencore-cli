@@ -260,6 +260,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 	}
 
+	if coreBuildCfg.ServerBinaries != nil {
+		coreTask.Options.ServerBinaries = coreBuildCfg.ServerBinaries
+	}
+
 	tasks = append(tasks, coreTask)
 
 	// Core views if configured
@@ -336,13 +340,14 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Type:         TypeResource,
 				OutDir:       filepath.Join(b.config.OutDir, resourceName),
 				Options: BuildOptions{
-					Server:     buildSideValue(true, b.config.Build.Server),
-					Client:     buildSideValue(b.hasClientCode(match), b.config.Build.Client),
-					Minify:     b.config.Build.Minify,
-					SourceMaps: b.config.Build.SourceMaps,
-					LogLevel:   resourceLogLevel,
-					Target:     b.config.Build.Target,
-					Compile:    true,
+					Server:         buildSideValue(true, b.config.Build.Server),
+					Client:         buildSideValue(b.hasClientCode(match), b.config.Build.Client),
+					Minify:         b.config.Build.Minify,
+					SourceMaps:     b.config.Build.SourceMaps,
+					LogLevel:       resourceLogLevel,
+					Target:         b.config.Build.Target,
+					Compile:        true,
+					ServerBinaries: nil,
 				},
 			}
 
@@ -375,6 +380,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					}
 					if explicit.Build.SourceMaps != nil {
 						task.Options.SourceMaps = *explicit.Build.SourceMaps
+					}
+					if explicit.Build.ServerBinaries != nil {
+						task.Options.ServerBinaries = explicit.Build.ServerBinaries
 					}
 				}
 
@@ -490,6 +498,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			}
 			if res.Build.NUI != nil {
 				task.Options.NUI = *res.Build.NUI
+			}
+			if res.Build.ServerBinaries != nil {
+				task.Options.ServerBinaries = res.Build.ServerBinaries
 			}
 		}
 
@@ -653,6 +664,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Server: res.EntryPoints.Server,
 					Client: res.EntryPoints.Client,
 				}
+			}
+
+			if res.Build != nil && res.Build.ServerBinaries != nil {
+				task.Options.ServerBinaries = res.Build.ServerBinaries
 			}
 
 			tasks = append(tasks, task)

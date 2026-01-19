@@ -66,6 +66,9 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 				BuildCommand: "pnpm astro build",
 				OutputDir:    "dist",
 			},
+			Build: &config.BuildConfig{
+				ServerBinaries: []string{"bin"},
+			},
 		},
 		Resources: config.ResourcesConfig{},
 		Build:     config.BuildConfig{},
@@ -101,6 +104,10 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 
 	if viewsTask.Options.OutputDir != "dist" {
 		t.Errorf("Expected outputDir 'dist', got '%s'", viewsTask.Options.OutputDir)
+	}
+
+	if len(tasks[0].Options.ServerBinaries) != 1 {
+		t.Errorf("Expected core serverBinaries to be set")
 	}
 
 	// Views should inherit core's custom compiler

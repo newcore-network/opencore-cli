@@ -319,7 +319,17 @@ export interface ResourceBuildConfig {
    * @example { platform: 'browser', external: ['three'] }
    */
   client?: boolean | SideBuildConfig;
+
+  /**
+   * Server-only binaries to copy next to server.js.
+   * If omitted and a `bin/` folder exists, it is copied automatically.
+   * Paths are relative to the resource path.
+   *
+   * @example ['bin', 'tools/mytool.exe']
+   */
+  serverBinaries?: string[];
 }
+
 
 /**
  * Configuration for an explicitly defined resource.

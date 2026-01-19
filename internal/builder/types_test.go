@@ -65,15 +65,16 @@ func TestBuildTaskStructure(t *testing.T) {
 
 func TestBuildOptionsJSON(t *testing.T) {
 	options := BuildOptions{
-		Server:       SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
-		Client:       SideConfigValue{Enabled: false},
-		NUI:          true,
-		Minify:       true,
-		SourceMaps:   false,
-		Target:       "ES2020",
-		ForceInclude: []string{"favicon.ico"},
-		BuildCommand: "pnpm astro build",
-		OutputDir:    "dist",
+		Server:         SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
+		Client:         SideConfigValue{Enabled: false},
+		NUI:            true,
+		Minify:         true,
+		SourceMaps:     false,
+		Target:         "ES2020",
+		ForceInclude:   []string{"favicon.ico"},
+		BuildCommand:   "pnpm astro build",
+		OutputDir:      "dist",
+		ServerBinaries: []string{"bin"},
 		EntryPoints: &EntryPoints{
 			Server: "./src/server.ts",
 			Client: "./src/client.ts",
@@ -116,6 +117,10 @@ func TestBuildOptionsJSON(t *testing.T) {
 
 	if parsed.OutputDir != options.OutputDir {
 		t.Errorf("OutputDir mismatch: got '%s', expected '%s'", parsed.OutputDir, options.OutputDir)
+	}
+
+	if len(parsed.ServerBinaries) != len(options.ServerBinaries) {
+		t.Errorf("ServerBinaries mismatch: got %d, expected %d", len(parsed.ServerBinaries), len(options.ServerBinaries))
 	}
 
 	if parsed.EntryPoints == nil {
