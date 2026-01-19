@@ -140,7 +140,6 @@ export interface ViewsConfig {
    *
    * **Note:** `node_modules`, `.git`, and `.ocignore` are always ignored.
    *
-   * @example ['*.config.ts', '*.config.js', 'test/**', '**/*.spec.ts']
    */
   ignore?: string[];
 
@@ -149,7 +148,6 @@ export interface ViewsConfig {
    * Useful when assets are not imported in JS/CSS and are skipped by default.
    * Matching is done by filename only (not full paths).
    *
-   * @example ['favicon.ico', 'robots.txt', '*.mp3']
    */
   forceInclude?: string[];
 
@@ -184,6 +182,8 @@ export interface ViewsConfig {
  *   build: {
  *     platform: 'node',
  *     external: [],
+ *     serverBinaries: ['bin'],
+ *     serverBinaryPlatform: 'win32',
  *   },
  * }
  * ```
@@ -323,12 +323,21 @@ export interface ResourceBuildConfig {
   /**
    * Server-only binaries to copy next to server.js.
    * If omitted and a `bin/` folder exists, it is copied automatically.
+   * Supports platform folders like `bin/win32` or `bin/linux`.
+   * Applies to core/resources/standalones.
    * Paths are relative to the resource path.
    *
    * @example ['bin', 'tools/mytool.exe']
    */
   serverBinaries?: string[];
+
+  /**
+   * Platform selector for server binaries when using `bin/<platform>`.
+   * Defaults to the current OS (win32/linux/darwin).
+   */
+  serverBinaryPlatform?: 'win32' | 'linux' | 'darwin' | string;
 }
+
 
 
 /**
@@ -461,7 +470,11 @@ export interface ResourcesConfig {
  * standalones: {
  *   include: ['./standalones/*'],
  *   explicit: [
- *     { path: './standalones/utils', compile: true },
+ *     {
+ *       path: './standalones/utils',
+ *       compile: true,
+ *       build: { serverBinaries: ['bin'], serverBinaryPlatform: 'linux' },
+ *     },
  *     { path: './standalones/legacy', compile: false },  // Just copy
  *   ],
  * }

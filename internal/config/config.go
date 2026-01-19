@@ -63,13 +63,14 @@ type ExplicitResource struct {
 }
 
 type ResourceBuildConfig struct {
-	Server         *bool    `json:"server,omitempty"`
-	Client         *bool    `json:"client,omitempty"`
-	NUI            *bool    `json:"nui,omitempty"`
-	Minify         *bool    `json:"minify,omitempty"`
-	SourceMaps     *bool    `json:"sourceMaps,omitempty"`
-	ServerBinaries []string `json:"serverBinaries,omitempty"`
-	LogLevel       string   `json:"logLevel,omitempty"`
+	Server               *bool    `json:"server,omitempty"`
+	Client               *bool    `json:"client,omitempty"`
+	NUI                  *bool    `json:"nui,omitempty"`
+	Minify               *bool    `json:"minify,omitempty"`
+	SourceMaps           *bool    `json:"sourceMaps,omitempty"`
+	ServerBinaries       []string `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string   `json:"serverBinaryPlatform,omitempty"`
+	LogLevel             string   `json:"logLevel,omitempty"`
 }
 
 type StandaloneConfig struct {
@@ -97,15 +98,16 @@ type BuildSideConfig struct {
 }
 
 type BuildConfig struct {
-	Minify         bool             `json:"minify"`
-	SourceMaps     bool             `json:"sourceMaps"`
-	LogLevel       string           `json:"logLevel,omitempty"`
-	Target         string           `json:"target,omitempty"`
-	Parallel       bool             `json:"parallel"`
-	MaxWorkers     int              `json:"maxWorkers,omitempty"`
-	ServerBinaries []string         `json:"serverBinaries,omitempty"`
-	Server         *BuildSideConfig `json:"server,omitempty"`
-	Client         *BuildSideConfig `json:"client,omitempty"`
+	Minify               bool             `json:"minify"`
+	SourceMaps           bool             `json:"sourceMaps"`
+	LogLevel             string           `json:"logLevel,omitempty"`
+	Target               string           `json:"target,omitempty"`
+	Parallel             bool             `json:"parallel"`
+	MaxWorkers           int              `json:"maxWorkers,omitempty"`
+	ServerBinaries       []string         `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string           `json:"serverBinaryPlatform,omitempty"`
+	Server               *BuildSideConfig `json:"server,omitempty"`
+	Client               *BuildSideConfig `json:"client,omitempty"`
 }
 
 // Load reads and transpiles opencore.config.ts to Config

@@ -52,7 +52,8 @@ func TestConfigParsing(t *testing.T) {
 			"target": "ES2020",
 			"parallel": true,
 			"maxWorkers": 4,
-			"serverBinaries": ["bin"]
+			"serverBinaries": ["bin"],
+			"serverBinaryPlatform": "linux"
 		}
 	}`
 
@@ -148,6 +149,9 @@ func TestConfigParsing(t *testing.T) {
 	}
 	if len(cfg.Build.ServerBinaries) != 1 || cfg.Build.ServerBinaries[0] != "bin" {
 		t.Errorf("Expected serverBinaries to include 'bin'")
+	}
+	if cfg.Build.ServerBinaryPlatform != "linux" {
+		t.Errorf("Expected serverBinaryPlatform 'linux'")
 	}
 }
 

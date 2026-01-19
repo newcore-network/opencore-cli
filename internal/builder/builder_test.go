@@ -67,7 +67,8 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 				OutputDir:    "dist",
 			},
 			Build: &config.BuildConfig{
-				ServerBinaries: []string{"bin"},
+				ServerBinaries:       []string{"bin"},
+				ServerBinaryPlatform: "win32",
 			},
 		},
 		Resources: config.ResourcesConfig{},
@@ -108,6 +109,10 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 
 	if len(tasks[0].Options.ServerBinaries) != 1 {
 		t.Errorf("Expected core serverBinaries to be set")
+	}
+
+	if tasks[0].Options.ServerBinaryPlatform != "win32" {
+		t.Errorf("Expected serverBinaryPlatform 'win32'")
 	}
 
 	// Views should inherit core's custom compiler

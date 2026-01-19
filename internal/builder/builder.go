@@ -263,6 +263,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	if coreBuildCfg.ServerBinaries != nil {
 		coreTask.Options.ServerBinaries = coreBuildCfg.ServerBinaries
 	}
+	if coreBuildCfg.ServerBinaryPlatform != "" {
+		coreTask.Options.ServerBinaryPlatform = coreBuildCfg.ServerBinaryPlatform
+	}
 
 	tasks = append(tasks, coreTask)
 
@@ -384,6 +387,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					if explicit.Build.ServerBinaries != nil {
 						task.Options.ServerBinaries = explicit.Build.ServerBinaries
 					}
+					if explicit.Build.ServerBinaryPlatform != "" {
+						task.Options.ServerBinaryPlatform = explicit.Build.ServerBinaryPlatform
+					}
 				}
 
 				// Add views task if configured or discovered
@@ -501,6 +507,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			}
 			if res.Build.ServerBinaries != nil {
 				task.Options.ServerBinaries = res.Build.ServerBinaries
+			}
+			if res.Build.ServerBinaryPlatform != "" {
+				task.Options.ServerBinaryPlatform = res.Build.ServerBinaryPlatform
 			}
 		}
 
@@ -666,8 +675,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				}
 			}
 
-			if res.Build != nil && res.Build.ServerBinaries != nil {
-				task.Options.ServerBinaries = res.Build.ServerBinaries
+			if res.Build != nil {
+				if res.Build.ServerBinaries != nil {
+					task.Options.ServerBinaries = res.Build.ServerBinaries
+				}
+				if res.Build.ServerBinaryPlatform != "" {
+					task.Options.ServerBinaryPlatform = res.Build.ServerBinaryPlatform
+				}
 			}
 
 			tasks = append(tasks, task)

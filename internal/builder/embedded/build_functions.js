@@ -4,8 +4,30 @@ const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExte
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
 const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
 
+function normalizeServerBinaryPlatform(platform) {
+    if (!platform) return null
+    const value = platform.toLowerCase()
+    if (['windows', 'win32', 'win'].includes(value)) return 'win32'
+    if (['linux', 'linux64'].includes(value)) return 'linux'
+    if (['darwin', 'mac', 'macos', 'osx'].includes(value)) return 'darwin'
+    return value
+}
+
+function getServerBinaryPlatform(options = {}) {
+    if (options.serverBinaryPlatform) {
+        return normalizeServerBinaryPlatform(options.serverBinaryPlatform)
+    }
+    return process.platform
+}
+
 function resolveServerBinaries(resourcePath, options = {}) {
+    const platform = getServerBinaryPlatform(options)
+    const platformBin = platform ? path.join('bin', platform) : null
+
     if (options.serverBinaries === undefined) {
+        if (platformBin && fs.existsSync(path.join(resourcePath, platformBin))) {
+            return [platformBin]
+        }
         const defaultDir = path.join(resourcePath, 'bin')
         if (fs.existsSync(defaultDir)) {
             return ['bin']
@@ -14,6 +36,12 @@ function resolveServerBinaries(resourcePath, options = {}) {
     }
 
     if (Array.isArray(options.serverBinaries)) {
+        if (platformBin && options.serverBinaries.includes('bin')) {
+            const platformPath = path.join(resourcePath, platformBin)
+            if (fs.existsSync(platformPath)) {
+                return options.serverBinaries.map(p => (p === 'bin' ? platformBin : p))
+            }
+        }
         return options.serverBinaries
     }
 
