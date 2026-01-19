@@ -56,6 +56,8 @@ func TestEmbeddedBuildScript(t *testing.T) {
 		"createTailwindPlugin",
 		"getTailwindInfo",
 		"forceInclude",
+		"buildAstroViews",
+		"astro.config",
 	}
 	for _, symbol := range requiredViewsSymbols {
 		if !strings.Contains(viewsContent, symbol) {

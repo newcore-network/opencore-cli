@@ -277,6 +277,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				ViewEntry:    b.config.Core.Views.EntryPoint,
 				Ignore:       b.config.Core.Views.Ignore,
 				ForceInclude: b.config.Core.Views.ForceInclude,
+				BuildCommand: b.config.Core.Views.BuildCommand,
+				OutputDir:    b.config.Core.Views.OutputDir,
 			},
 		})
 	}
@@ -397,6 +399,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 							ViewEntry:    viewsConfig.EntryPoint,
 							Ignore:       viewsConfig.Ignore,
 							ForceInclude: viewsConfig.ForceInclude,
+							BuildCommand: viewsConfig.BuildCommand,
+							OutputDir:    viewsConfig.OutputDir,
 							LogLevel:     resourceLogLevel,
 						},
 					})
@@ -413,6 +417,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Minify:       b.config.Build.Minify,
 						SourceMaps:   b.config.Build.SourceMaps,
 						ForceInclude: viewsConfig.ForceInclude,
+						BuildCommand: viewsConfig.BuildCommand,
+						OutputDir:    viewsConfig.OutputDir,
 						LogLevel:     resourceLogLevel,
 					},
 				})
@@ -528,6 +534,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					ViewEntry:    viewsConfig.EntryPoint,
 					Ignore:       viewsConfig.Ignore,
 					ForceInclude: viewsConfig.ForceInclude,
+					BuildCommand: viewsConfig.BuildCommand,
+					OutputDir:    viewsConfig.OutputDir,
 					LogLevel:     resourceLogLevel,
 				},
 			})
@@ -664,6 +672,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						ViewEntry:    res.Views.EntryPoint,
 						Ignore:       res.Views.Ignore,
 						ForceInclude: res.Views.ForceInclude,
+						BuildCommand: res.Views.BuildCommand,
+						OutputDir:    res.Views.OutputDir,
 					},
 				})
 			}
@@ -792,6 +802,7 @@ func detectFramework(viewPath string) string {
 	hasReact := false
 	hasVue := false
 	hasSvelte := false
+	hasAstro := false
 
 	_ = filepath.WalkDir(viewPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -802,6 +813,8 @@ func detectFramework(viewPath string) string {
 		}
 		ext := filepath.Ext(d.Name())
 		switch ext {
+		case ".astro":
+			hasAstro = true
 		case ".tsx", ".jsx":
 			hasReact = true
 		case ".vue":
@@ -813,6 +826,9 @@ func detectFramework(viewPath string) string {
 	})
 
 	// Return detected framework (prioritize by specificity)
+	if hasAstro {
+		return "astro"
+	}
 	if hasSvelte {
 		return "svelte"
 	}

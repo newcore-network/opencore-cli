@@ -33,7 +33,12 @@ function hasReactFiles(dir) {
     return hasFilesWithExtension(dir, '.tsx') || hasFilesWithExtension(dir, '.jsx')
 }
 
+function hasAstroFiles(dir) {
+    return hasFilesWithExtension(dir, '.astro')
+}
+
 function checkDependency(name) {
+
     try {
         require.resolve(name)
         return true
@@ -48,6 +53,149 @@ function resolveDependency(viewPath, name) {
     } catch (e) {
         return null
     }
+}
+
+function detectAstroFramework(viewPath) {
+    if (hasAstroFiles(viewPath)) {
+        return true
+    }
+
+    const pkgPath = path.join(viewPath, 'package.json')
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+            const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+            return typeof deps.astro === 'string'
+        } catch (e) {
+            return false
+        }
+    }
+
+    return false
+}
+
+function readAstroConfig(viewPath) {
+    const configFiles = [
+        'astro.config.mjs',
+        'astro.config.cjs',
+        'astro.config.js',
+        'astro.config.ts',
+    ]
+
+    for (const fileName of configFiles) {
+        const filePath = path.join(viewPath, fileName)
+        if (fs.existsSync(filePath)) {
+            return filePath
+        }
+    }
+
+    return null
+}
+
+function validateAstroOutput(viewPath) {
+    const configPath = readAstroConfig(viewPath)
+    if (!configPath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Astro output must be static\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  Astro config not found. Please add astro.config.* with:\n` +
+            `    export default defineConfig({ output: 'static' })\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    try {
+        const content = fs.readFileSync(configPath, 'utf8')
+        if (!content.includes('output') || !content.includes('static')) {
+            throw new Error(
+                `\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                `  [views] Astro output must be static\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                `\n` +
+                `  Astro detected but config does not specify output: 'static'.\n` +
+                `\n` +
+                `  Update ${path.basename(configPath)} to include:\n` +
+                `    export default defineConfig({ output: 'static' })\n` +
+                `\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+            )
+        }
+    } catch (error) {
+        if (error instanceof Error) {
+            throw error
+        }
+        throw new Error(String(error))
+    }
+}
+
+async function copyDirContents(srcDir, destDir) {
+    await fs.promises.mkdir(destDir, { recursive: true })
+    const entries = await fs.promises.readdir(srcDir, { withFileTypes: true })
+
+    for (const entry of entries) {
+        const srcPath = path.join(srcDir, entry.name)
+        const dstPath = path.join(destDir, entry.name)
+        if (entry.isDirectory()) {
+            await copyDirContents(srcPath, dstPath)
+        } else {
+            await fs.promises.copyFile(srcPath, dstPath)
+        }
+    }
+}
+
+async function buildAstroViews(viewPath, outDir, options = {}) {
+    const astroPath = resolveDependency(viewPath, 'astro')
+    if (!astroPath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing Astro dependency\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  Astro framework was detected but the package is not installed.\n` +
+            `\n` +
+            `  Missing: astro\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    pnpm add -D astro\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    validateAstroOutput(viewPath)
+
+    const buildCommand = options.buildCommand || 'pnpm astro build'
+    const outputDir = options.outputDir || 'dist'
+
+    console.log(`[views] Astro detected, running: ${buildCommand}`)
+
+    const spawn = require('child_process').spawn
+
+    await new Promise((resolve, reject) => {
+        const proc = spawn(buildCommand, { cwd: viewPath, stdio: 'inherit', shell: true })
+        proc.on('close', code => {
+            if (code === 0) {
+                resolve()
+            } else {
+                reject(new Error(`[views] Astro build failed with exit code ${code}`))
+            }
+        })
+    })
+
+    const outputPath = path.join(viewPath, outputDir)
+    if (!fs.existsSync(outputPath)) {
+        throw new Error(`[views] Astro output directory not found: ${outputPath}`)
+    }
+
+    await copyDirContents(outputPath, outDir)
+    console.log(`[views] Astro build copied to ${outDir}`)
 }
 
 function findTailwindConfig(viewPath) {
@@ -437,6 +585,12 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = [], forceIncl
 async function buildViews(viewPath, outDir, options = {}) {
     await fs.promises.mkdir(outDir, { recursive: true })
 
+    const isAstro = (options.framework || '').toLowerCase() === 'astro' || detectAstroFramework(viewPath)
+    if (isAstro) {
+        await buildAstroViews(viewPath, outDir, options)
+        return
+    }
+
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
 
@@ -504,6 +658,9 @@ async function buildViews(viewPath, outDir, options = {}) {
         console.log(`[views] React files detected, checking dependencies...`)
         checkReactDependencies(viewPath)
     }
+    if (hasAstroFiles(viewPath)) {
+        console.log(`[views] Astro files detected, running static build...`)
+    }
     if (hasSvelteFiles(viewPath)) {
         console.log(`[views] Svelte files detected, loading svelte plugin...`)
         plugins.push(getSveltePlugin())
@@ -523,7 +680,6 @@ async function buildViews(viewPath, outDir, options = {}) {
     }
 
     await esbuild.build({
-
         ...shared,
         banner: {
             js: "", // No reflect-metadata for views
@@ -585,7 +741,6 @@ async function buildViews(viewPath, outDir, options = {}) {
     const ignorePatterns = readOcIgnore(viewPath)
     await copyStaticAssets(viewPath, outDir, ignorePatterns, options.forceInclude || [])
 
-
     const htmlSrc = path.join(viewPath, 'index.html')
     const htmlDst = path.join(outDir, 'index.html')
     if (fs.existsSync(htmlSrc)) {
@@ -608,6 +763,7 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     console.log(`[views] Built ${path.basename(viewPath)}`)
 }
+
 
 module.exports = {
     buildViews

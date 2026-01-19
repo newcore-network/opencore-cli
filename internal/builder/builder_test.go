@@ -61,8 +61,10 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 			ResourceName:   "[core]",
 			CustomCompiler: "./scripts/core-build.js",
 			Views: &config.ViewsConfig{
-				Path:      "./core/views",
-				Framework: "react",
+				Path:         "./core/views",
+				Framework:    "react",
+				BuildCommand: "pnpm astro build",
+				OutputDir:    "dist",
 			},
 		},
 		Resources: config.ResourcesConfig{},
@@ -91,6 +93,14 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 
 	if viewsTask.Options.Framework != "react" {
 		t.Errorf("Expected framework 'react', got '%s'", viewsTask.Options.Framework)
+	}
+
+	if viewsTask.Options.BuildCommand != "pnpm astro build" {
+		t.Errorf("Expected buildCommand 'pnpm astro build', got '%s'", viewsTask.Options.BuildCommand)
+	}
+
+	if viewsTask.Options.OutputDir != "dist" {
+		t.Errorf("Expected outputDir 'dist', got '%s'", viewsTask.Options.OutputDir)
 	}
 
 	// Views should inherit core's custom compiler

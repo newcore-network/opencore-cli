@@ -91,6 +91,8 @@ type BuildOptions struct {
 	ViewEntry    string          `json:"viewEntry,omitempty"`    // explicit entry point for views (e.g., "main.ng.ts")
 	Ignore       []string        `json:"ignore,omitempty"`       // ignore patterns for views (e.g., ["*.config.ts"])
 	ForceInclude []string        `json:"forceInclude,omitempty"` // force include static files by name
+	BuildCommand string          `json:"buildCommand,omitempty"` // custom build command for static frameworks (e.g. Astro)
+	OutputDir    string          `json:"outputDir,omitempty"`    // output directory for static frameworks (e.g. Astro)
 }
 
 // EntryPoints defines entry points for core builds

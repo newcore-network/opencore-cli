@@ -21,7 +21,9 @@ func TestConfigParsing(t *testing.T) {
 			"views": {
 				"path": "./core/views",
 				"framework": "react",
-				"forceInclude": ["favicon.ico"]
+				"forceInclude": ["favicon.ico"],
+				"buildCommand": "pnpm astro build",
+				"outputDir": "dist"
 			}
 		},
 		"resources": {
@@ -93,6 +95,12 @@ func TestConfigParsing(t *testing.T) {
 	} else {
 		if len(cfg.Core.Views.ForceInclude) != 1 || cfg.Core.Views.ForceInclude[0] != "favicon.ico" {
 			t.Errorf("Expected forceInclude to contain 'favicon.ico'")
+		}
+		if cfg.Core.Views.BuildCommand != "pnpm astro build" {
+			t.Errorf("Expected buildCommand 'pnpm astro build', got '%s'", cfg.Core.Views.BuildCommand)
+		}
+		if cfg.Core.Views.OutputDir != "dist" {
+			t.Errorf("Expected outputDir 'dist', got '%s'", cfg.Core.Views.OutputDir)
 		}
 	}
 

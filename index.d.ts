@@ -116,9 +116,11 @@ export interface ViewsConfig {
   /**
    * Frontend framework used for the views.
    * The CLI will use the appropriate build configuration for each framework.
+   * Astro is supported only with static output.
    * @default 'vanilla'
    */
-  framework?: 'react' | 'vue' | 'svelte' | 'vanilla';
+  framework?: 'react' | 'vue' | 'svelte' | 'vanilla' | 'astro';
+
 
   /**
    * Explicit entry point file for the views build.
@@ -150,6 +152,18 @@ export interface ViewsConfig {
    * @example ['favicon.ico', 'robots.txt', '*.mp3']
    */
   forceInclude?: string[];
+
+  /**
+   * Custom build command for static frameworks like Astro.
+   * Defaults to `pnpm astro build` when framework is `astro`.
+   */
+  buildCommand?: string;
+
+  /**
+   * Output directory for static frameworks like Astro.
+   * Defaults to `dist` when framework is `astro`.
+   */
+  outputDir?: string;
 }
 
 

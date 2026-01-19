@@ -82,6 +82,8 @@ type ViewsConfig struct {
 	EntryPoint   string   `json:"entryPoint,omitempty"`   // Optional: explicit entry point (e.g., "main.ng.ts")
 	Ignore       []string `json:"ignore,omitempty"`       // Optional: ignore patterns (e.g., ["*.config.ts", "test/**"])
 	ForceInclude []string `json:"forceInclude,omitempty"` // Optional: force include static files by name
+	BuildCommand string   `json:"buildCommand,omitempty"` // Optional: custom build command for static frameworks (e.g. Astro)
+	OutputDir    string   `json:"outputDir,omitempty"`    // Optional: output directory for static frameworks (e.g. Astro)
 }
 
 type BuildSideConfig struct {

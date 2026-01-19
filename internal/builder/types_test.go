@@ -72,6 +72,8 @@ func TestBuildOptionsJSON(t *testing.T) {
 		SourceMaps:   false,
 		Target:       "ES2020",
 		ForceInclude: []string{"favicon.ico"},
+		BuildCommand: "pnpm astro build",
+		OutputDir:    "dist",
 		EntryPoints: &EntryPoints{
 			Server: "./src/server.ts",
 			Client: "./src/client.ts",
@@ -106,6 +108,14 @@ func TestBuildOptionsJSON(t *testing.T) {
 
 	if len(parsed.ForceInclude) != len(options.ForceInclude) {
 		t.Errorf("ForceInclude mismatch: got %d, expected %d", len(parsed.ForceInclude), len(options.ForceInclude))
+	}
+
+	if parsed.BuildCommand != options.BuildCommand {
+		t.Errorf("BuildCommand mismatch: got '%s', expected '%s'", parsed.BuildCommand, options.BuildCommand)
+	}
+
+	if parsed.OutputDir != options.OutputDir {
+		t.Errorf("OutputDir mismatch: got '%s', expected '%s'", parsed.OutputDir, options.OutputDir)
 	}
 
 	if parsed.EntryPoints == nil {
