@@ -42,6 +42,7 @@ func TestEmbeddedBuildScript(t *testing.T) {
 		"buildCore",
 		"buildResource",
 		"buildStandalone",
+		"serverBinaryPlatform",
 	}
 	for _, fn := range requiredFunctions {
 		if !strings.Contains(buildFuncsContent, fn) {

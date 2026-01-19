@@ -24,6 +24,10 @@ func TestConfigParsing(t *testing.T) {
 				"forceInclude": ["favicon.ico"],
 				"buildCommand": "pnpm astro build",
 				"outputDir": "dist"
+			},
+			"build": {
+				"serverBinaries": ["bin"],
+				"serverBinaryPlatform": "win32"
 			}
 		},
 		"resources": {
@@ -103,6 +107,16 @@ func TestConfigParsing(t *testing.T) {
 		}
 		if cfg.Core.Views.OutputDir != "dist" {
 			t.Errorf("Expected outputDir 'dist', got '%s'", cfg.Core.Views.OutputDir)
+		}
+	}
+	if cfg.Core.Build == nil {
+		t.Error("Expected core build to be set")
+	} else {
+		if len(cfg.Core.Build.ServerBinaries) != 1 || cfg.Core.Build.ServerBinaries[0] != "bin" {
+			t.Errorf("Expected core build serverBinaries to include 'bin'")
+		}
+		if cfg.Core.Build.ServerBinaryPlatform != "win32" {
+			t.Errorf("Expected core build serverBinaryPlatform 'win32'")
 		}
 	}
 
