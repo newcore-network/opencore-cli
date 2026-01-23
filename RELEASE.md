@@ -3,6 +3,7 @@
 ### Highlights
 - **Platform-Specific Binary Support**: Introduced `serverBinaryPlatform` and `serverBinaries` configuration for automated, platform-aware management of server-side binaries (Windows, Linux, Darwin).
 - **Astro Framework Support**: Added support for Astro in views with static-only output mode, including custom build commands and automatic framework detection.
+- **Tailwind support (v3, v4)**: added support for tailwind, Tailwind is automatically detected and managed. **(Testing)**
 
 ### Changes
 - **Server Binaries Management**: 
