@@ -176,18 +176,6 @@ export default defineConfig({
   build: {
     minify: true,
     parallel: true,
-
-    // Server: Node.js runtime
-    server: {
-      platform: 'node',
-      format: 'cjs',
-    },
-
-    // Client: Neutral runtime (no Node/Web APIs)
-    client: {
-      platform: 'neutral',
-      format: 'iife',
-    },
   },
 })
 ```

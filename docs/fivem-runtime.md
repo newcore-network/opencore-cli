@@ -129,7 +129,7 @@ views: {
 │  - External APIs                                             │
 └──────────────────────┬──────────────────────────────────────┘
                        │
-            TriggerClientEvent / TriggerServerEvent
+                    emitNet
                        │
 ┌──────────────────────▼──────────────────────────────────────┐
 │                        CLIENT                                │
@@ -167,14 +167,14 @@ These packages use C++ bindings and will NOT work on the client:
 | `sqlite3` | `sql.js` |
 | `better-sqlite3` | `sql.js` |
 
-The CLI will warn you if it detects incompatible packages.
+The CLI will warn you if it detects incompatible packages. (nothing is promised)
 
 ---
 
 ## Best Practices
 
-1. **Server**: Use for heavy computation, database access, external APIs
+1. **Server**: Use for heavy computation, database access, external APIs, source of truth
 2. **Client**: Keep minimal - only game interaction and natives
 3. **Views**: Standard web development, but test on FiveM
-4. **Bundle client deps**: Never use `external` for client
+4. **Bundle client deps**: NEVER use `external` for client
 5. **Test on actual FiveM**: Some packages may have hidden dependencies
