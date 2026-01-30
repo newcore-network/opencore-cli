@@ -366,6 +366,32 @@ function createReflectMetadataPlugin() {
     }
 }
 
+function createAutoloadControllersRedirectPlugin(resourcePath) {
+    return {
+        name: 'opencore-autoload-controllers-redirect',
+        setup(build) {
+            if (!resourcePath) return
+
+            const target = path.resolve(resourcePath, 'src', '.opencore', 'autoload.server.controllers.ts')
+
+            build.onResolve({ filter: /autoload\.server\.controllers(\.(ts|js))?$/ }, (args) => {
+                // Only redirect when the framework runtime is trying to load its own stub
+                // Example bundled path:
+                // @open-core/framework/dist/runtime/server/.opencore/autoload.server.controllers.js
+                if (!args.resolveDir.includes(`${path.sep}@open-core${path.sep}framework${path.sep}dist${path.sep}runtime${path.sep}server`)) {
+                    return null
+                }
+
+                if (!fs.existsSync(target)) {
+                    return null
+                }
+
+                return { path: target }
+            })
+        },
+    }
+}
+
 module.exports = {
     getEsbuild,
     createSwcPlugin,
@@ -374,5 +400,6 @@ module.exports = {
     preserveFiveMExportsPlugin,
     createNodeGlobalsShimPlugin,
     createTsconfigPathsPlugin,
-    createReflectMetadataPlugin
+    createReflectMetadataPlugin,
+    createAutoloadControllersRedirectPlugin
 }

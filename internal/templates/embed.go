@@ -119,6 +119,7 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		"core/package.json":   filepath.Join(targetPath, "core", "package.json"),
 		"core/fxmanifest.lua": filepath.Join(targetPath, "core", "fxmanifest.lua"),
 		"tsconfig.json":       filepath.Join(targetPath, "tsconfig.json"),
+		".gitignore":          filepath.Join(targetPath, ".gitignore"),
 	}
 
 	// Add bootstrap files based on architecture

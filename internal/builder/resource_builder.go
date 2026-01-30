@@ -111,6 +111,19 @@ func (rb *ResourceBuilder) Build(task BuildTask) BuildResult {
 	var err error
 	var output string
 
+	if task.Type != TypeViews {
+		if autoloadErr := rb.generateAutoloadServerControllers(task.Path); autoloadErr != nil {
+			duration := time.Since(start)
+			return BuildResult{
+				Task:     task,
+				Success:  false,
+				Duration: duration,
+				Error:    fmt.Errorf("failed to generate controller autoload: %w", autoloadErr),
+				Output:   "",
+			}
+		}
+	}
+
 	switch task.Type {
 	case TypeCore:
 		output, err = rb.buildCore(task)
