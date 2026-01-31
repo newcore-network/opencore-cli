@@ -319,9 +319,23 @@ function createTsconfigPathsPlugin(resourcePath) {
             })
         }
     }
+
 }
 
-function createReflectMetadataPlugin() {
+function getPackageManagerValue(packageManager) {
+    const pm = String(packageManager || '').toLowerCase()
+    if (pm === 'pnpm' || pm === 'yarn' || pm === 'npm') return pm
+    return 'pnpm'
+}
+
+function installCmd(pm, pkg, isDev) {
+    const mgr = getPackageManagerValue(pm)
+    if (mgr === 'yarn') return isDev ? `yarn add -D ${pkg}` : `yarn add ${pkg}`
+    if (mgr === 'npm') return isDev ? `npm install -D ${pkg}` : `npm install ${pkg}`
+    return isDev ? `pnpm add -D ${pkg}` : `pnpm add ${pkg}`
+}
+
+function createReflectMetadataPlugin(packageManager) {
     return {
         name: 'reflect-metadata-injector',
         setup(build) {
@@ -330,7 +344,8 @@ function createReflectMetadataPlugin() {
                 try {
                     return { path: require.resolve('reflect-metadata'), external: false }
                 } catch (e) {
-                    return { errors: [{ text: 'reflect-metadata not found. Please install it with: pnpm add reflect-metadata' }] }
+                    const cmd = installCmd(packageManager, 'reflect-metadata', false)
+                    return { errors: [{ text: `reflect-metadata not found. Please install it with: ${cmd}` }] }
                 }
             })
 

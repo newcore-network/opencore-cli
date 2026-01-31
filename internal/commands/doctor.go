@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/newcore-network/opencore-cli/internal/config"
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
@@ -41,9 +42,21 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	nodeCheck := checkCommand("node", "--version", "Node.js")
 	checks = append(checks, nodeCheck)
 
-	// Check pnpm
+	// Package manager checks
 	pnpmCheck := checkCommand("pnpm", "--version", "pnpm")
 	checks = append(checks, pnpmCheck)
+	yarnCheck := checkCommand("yarn", "--version", "yarn")
+	checks = append(checks, yarnCheck)
+	npmCheck := checkCommand("npm", "--version", "npm")
+	checks = append(checks, npmCheck)
+
+	preference := pkgmgr.EffectivePreference(".")
+	resolved, err := pkgmgr.Resolve(preference)
+	if err != nil {
+		checks = append(checks, CheckResult{Name: "Package Manager", Passed: false, Message: err.Error()})
+	} else {
+		checks = append(checks, CheckResult{Name: "Package Manager", Passed: true, Message: fmt.Sprintf("%s (%s)", resolved.Choice, resolved.Version)})
+	}
 
 	// Check if in OpenCore project
 	projectCheck := checkOpenCoreProject()
@@ -57,7 +70,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Check if dependencies are installed
 	if projectCheck.Passed {
-		depsCheck := checkDependencies()
+		depsCheck := checkDependencies(resolved)
 		checks = append(checks, depsCheck)
 	}
 
@@ -168,13 +181,17 @@ func checkConfig() CheckResult {
 	}
 }
 
-func checkDependencies() CheckResult {
+func checkDependencies(pm pkgmgr.Resolved) CheckResult {
 	// Check if node_modules exists
 	if _, err := os.Stat("node_modules"); os.IsNotExist(err) {
+		install := "pnpm install"
+		if pm.Choice != "" {
+			install = pm.InstallCmd()
+		}
 		return CheckResult{
 			Name:    "Dependencies",
 			Passed:  false,
-			Message: "Run 'pnpm install' to install dependencies",
+			Message: fmt.Sprintf("Run '%s' to install dependencies", install),
 		}
 	}
 

@@ -4,5 +4,5 @@ packages:
   - resources/*
   - resources/*/ui
   - resources/*/nui
-  - standalone/*
+  - standalones/*
   - views/*

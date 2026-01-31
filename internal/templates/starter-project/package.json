@@ -3,6 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "description": "OpenCore server project",
+  "packageManager": "{{.PackageManager}}",
+  "workspaces": [
+    "core",
+    "core/*/nui",
+    "resources/*",
+    "resources/*/ui",
+    "resources/*/nui",
+    "standalones/*",
+    "views/*"
+  ],
   "scripts": {
     "dev": "opencore dev",
     "build": "opencore build"

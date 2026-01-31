@@ -78,6 +78,7 @@ func (s *SideConfigValue) UnmarshalJSON(data []byte) error {
 
 // BuildOptions contains build configuration for a resource
 type BuildOptions struct {
+	PackageManager        string          `json:"packageManager,omitempty"`
 	Server               SideConfigValue `json:"server"`
 	Client               SideConfigValue `json:"client"`
 	NUI                  bool            `json:"nui"`

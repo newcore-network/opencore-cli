@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -12,7 +13,7 @@ import (
 )
 
 var (
-	version = "0.5.2"
+	version = "1.0.0"
 )
 
 func main() {
@@ -30,7 +31,17 @@ func main() {
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			pm, _ := cmd.Flags().GetString("usePackageManager")
+			pm = strings.TrimSpace(pm)
+			if pm != "" {
+				os.Setenv("OPENCORE_PACKAGE_MANAGER", pm)
+			}
+			return nil
+		},
 	}
+
+	rootCmd.PersistentFlags().String("usePackageManager", "", "Package manager to use (pnpm|yarn|npm|auto)")
 
 	// Set version template
 	rootCmd.SetVersionTemplate("{{.Version}}\n")

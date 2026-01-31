@@ -15,9 +15,29 @@ function checkDependency(name) {
 }
 
 /**
+ * Get package manager from options
+ */
+function getPackageManager(options = {}) {
+    const pm = (options.packageManager || '').toLowerCase()
+    if (pm === 'pnpm' || pm === 'yarn' || pm === 'npm') return pm
+    return 'pnpm'
+}
+
+/**
+ * Get dev install command based on package manager
+ */
+function devInstallCmd(options = {}, pkgs = []) {
+    const pm = getPackageManager(options)
+    const args = pkgs.join(' ')
+    if (pm === 'yarn') return `yarn add -D ${args}`
+    if (pm === 'npm') return `npm install -D ${args}`
+    return `pnpm add -D ${args}`
+}
+
+/**
  * Verify required base dependencies are installed
  */
-function checkBaseDependencies() {
+function checkBaseDependencies(options = {}) {
     const required = [
         { name: 'esbuild', install: 'esbuild' },
         { name: '@swc/core', install: '@swc/core' },
@@ -27,7 +47,7 @@ function checkBaseDependencies() {
 
     if (missing.length > 0) {
         const names = missing.map(d => d.name).join(', ')
-        const installCmd = missing.map(d => d.install).join(' ')
+        const installCmd = devInstallCmd(options, missing.map(d => d.install))
         throw new Error(
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -40,7 +60,7 @@ function checkBaseDependencies() {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D ${installCmd}\n` +
+            `    ${installCmd}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -84,7 +104,7 @@ async function main() {
 
         try {
             // Check base dependencies before building
-            checkBaseDependencies()
+            checkBaseDependencies(options)
 
             await buildSingle(type, resourcePath, outDir, options)
             console.log(JSON.stringify({ success: true }))

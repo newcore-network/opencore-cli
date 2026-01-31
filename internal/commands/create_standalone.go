@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/templates"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
@@ -69,6 +70,7 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 	}
 
 	standalonePath := filepath.Join("standalones", standaloneName)
+	resolved, _ := pkgmgr.Resolve(pkgmgr.EffectivePreference("."))
 
 	fmt.Println(ui.Info(fmt.Sprintf("Creating standalone: %s", standaloneName)))
 	fmt.Println()
@@ -87,7 +89,7 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 			featuresMessage(withClient, withNUI) + "\n\n" +
 			"Next steps:\n" +
 			fmt.Sprintf("  cd %s\n", standalonePath) +
-			"  pnpm install\n\n" +
+			fmt.Sprintf("  %s\n\n", resolved.InstallCmd()) +
 			"Remember to add your standalone to opencore.config.ts:\n" +
 			"  standalones: {\n" +
 			"    include: ['./standalones/*'],\n" +

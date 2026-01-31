@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/newcore-network/opencore-cli/internal/config"
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
@@ -216,6 +217,10 @@ func findViewsPath(resourcePath string) string {
 // collectAllTasks gathers all build tasks from config
 func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
+	pm := ""
+	if resolved, err := pkgmgr.Resolve(pkgmgr.EffectivePreference(".")); err == nil {
+		pm = string(resolved.Choice)
+	}
 
 	// Core task
 	coreBuildCfg := &b.config.Build
@@ -709,6 +714,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 	}
 
+	for i := range tasks {
+		tasks[i].Options.PackageManager = pm
+	}
 	return tasks
 }
 

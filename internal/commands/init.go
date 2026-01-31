@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/templates"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
@@ -39,6 +40,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	modulesFlag, _ := cmd.Flags().GetStringArray("module")
 	destinationFlag, _ := cmd.Flags().GetString("destination")
 	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
+
+	preference := pkgmgr.PreferenceFromEnv()
+	usePmFlag, _ := cmd.Flags().GetString("usePackageManager")
+	usePmFlag = strings.TrimSpace(usePmFlag)
+	if usePmFlag != "" {
+		choice, err := pkgmgr.ParseChoice(usePmFlag)
+		if err != nil {
+			return err
+		}
+		preference = choice
+	}
 
 	// Define wizard steps
 	steps := []ui.WizardStep{
@@ -117,6 +129,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		},
 	}
 	steps = append(steps, ui.WizardStep{
+		Title:       "Package Manager",
+		Description: "Choose the package manager for this project",
+		Type:        ui.StepTypeSelect,
+		Options: []ui.WizardOption{
+			{Label: "Auto", Value: string(pkgmgr.ChoiceAuto), Desc: "Prefer pnpm, then yarn (v2+), then npm"},
+			{Label: "pnpm", Value: string(pkgmgr.ChoicePnpm), Desc: "Fast, disk-efficient"},
+			{Label: "yarn (berry)", Value: string(pkgmgr.ChoiceYarn), Desc: "Modern yarn (v2+)"},
+			{Label: "npm", Value: string(pkgmgr.ChoiceNpm), Desc: "Default Node.js package manager"},
+		},
+	})
+	steps = append(steps, ui.WizardStep{
 		Title:       "Server Destination",
 		Description: "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)",
 		Type:        ui.StepTypeInput,
@@ -150,17 +173,43 @@ func runInit(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		resolved, err := pkgmgr.Resolve(preference)
+		if err != nil {
+			return err
+		}
+
 		projectPath := filepath.Join(baseDir, projectName)
 		fmt.Println()
 		fmt.Println(ui.Logo())
 		fmt.Println()
 		fmt.Println(ui.Info(fmt.Sprintf("Creating project: %s", projectName)))
 		fmt.Println()
-		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination); err != nil {
+		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 			return fmt.Errorf("failed to generate project: %w", err)
 		}
 		fmt.Println()
 		fmt.Println(ui.Success("Project created successfully!"))
+		fmt.Println()
+
+		summaryContent := fmt.Sprintf(
+			"Project: %s\n"+
+				"Architecture: %s\n"+
+				"Modules: %s\n"+
+				"Minify: %s\n"+
+				"Destination: %s\n\n"+
+				"Next steps:\n"+
+				"  cd %s\n"+
+				"  %s\n"+
+				"  opencore dev",
+			projectName,
+			architecture,
+			strings.Join(modules, ", "),
+			boolToYesNo(useMinify),
+			destination,
+			projectName,
+			resolved.InstallCmd(),
+		)
+		fmt.Println(ui.SuccessBoxStyle.Render(summaryContent))
 		fmt.Println()
 		return nil
 	}
@@ -177,6 +226,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		wizard.GetValues()["Modules"] = modulesFlag
 	}
 	wizard.GetValues()["Minification"] = minifyFlag
+	wizard.GetValues()["Package Manager"] = string(preference)
 	if destinationFlag != "" {
 		wizard.GetValues()["Server Destination"] = destinationFlag
 	}
@@ -201,7 +251,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	architecture := result.GetStringValue("Architecture")
 	modules := result.GetStringSliceValue("Modules")
 	useMinify := result.GetBoolValue("Minification")
+	packageManager := result.GetStringValue("Package Manager")
 	destination := strings.TrimSpace(result.GetStringValue("Server Destination"))
+
+	pmChoice, err := pkgmgr.ParseChoice(packageManager)
+	if err != nil {
+		return err
+	}
+	resolved, err := pkgmgr.Resolve(pmChoice)
+	if err != nil {
+		return err
+	}
 
 	// Check if identity module is selected
 	installIdentity := false
@@ -222,7 +282,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Generate project from template
-	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination); err != nil {
+	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 		return fmt.Errorf("failed to generate project: %w", err)
 	}
 
@@ -245,7 +305,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			"Destination: %s\n\n"+
 			"Next steps:\n"+
 			"  cd %s\n"+
-			"  pnpm install\n"+
+			"  %s\n"+
 			"  opencore dev",
 		projectName,
 		architecture,
@@ -253,6 +313,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		boolToYesNo(useMinify),
 		destination,
 		projectName,
+		resolved.InstallCmd(),
 	)
 
 	fmt.Println(ui.SuccessBoxStyle.Render(summaryContent))

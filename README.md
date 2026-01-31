@@ -86,6 +86,26 @@ pnpm install
 opencore dev
 ```
 
+If you don't have pnpm installed, you can use:
+
+```bash
+npm install
+```
+
+Or yarn (modern/berry):
+
+```bash
+yarn install
+```
+
+You can also force a package manager:
+
+```bash
+opencore init my-server --usePackageManager=pnpm
+opencore init my-server --usePackageManager=yarn
+opencore init my-server --usePackageManager=npm
+```
+
 ---
 
 ## Create Command

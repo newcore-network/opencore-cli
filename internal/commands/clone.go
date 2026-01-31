@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
@@ -292,8 +293,9 @@ func (m cloneModel) View() string {
 		if m.err != nil {
 			return ui.Error(fmt.Sprintf("Failed to clone template: %v", m.err)) + "\n"
 		}
+		resolved, _ := pkgmgr.Resolve(pkgmgr.EffectivePreference("."))
 		return ui.Success(fmt.Sprintf("Template '%s' cloned successfully!", m.template)) + "\n\n" +
-			ui.BoxStyle.Render(fmt.Sprintf("Location: %s\n\nNext steps:\n  cd %s\n  pnpm install\n\nRemember to add to opencore.config.ts:\n  resources: {\n    include: ['./resources/*'],\n  }\n  // Or if it is a standalone:\n  standalones: {\n    include: ['./standalones/*'],\n  }", m.targetPath, m.targetPath))
+			ui.BoxStyle.Render(fmt.Sprintf("Location: %s\n\nNext steps:\n  cd %s\n  %s\n\nRemember to add to opencore.config.ts:\n  resources: {\n    include: ['./resources/*'],\n  }\n  // Or if it is a standalone:\n  standalones: {\n    include: ['./standalones/*'],\n  }", m.targetPath, m.targetPath, resolved.InstallCmd()))
 	}
 
 	status := m.status
