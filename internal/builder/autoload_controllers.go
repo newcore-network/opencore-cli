@@ -8,17 +8,16 @@ import (
 	"strings"
 )
 
-func (rb *ResourceBuilder) generateAutoloadServerControllers(resourcePath string) error {
+func (rb *ResourceBuilder) generateAutoloadControllers(resourcePath string) error {
 	resourcePath = filepath.Clean(resourcePath)
 
-	primaryOutFile := filepath.Join(resourcePath, "src", ".opencore", "autoload.server.controllers.ts")
-	primaryOutDir := filepath.Dir(primaryOutFile)
-	baseDir := primaryOutDir
+	outDir := filepath.Join(resourcePath, ".opencore")
+	serverOutFile := filepath.Join(outDir, "autoload.server.controllers.ts")
+	clientOutFile := filepath.Join(outDir, "autoload.client.controllers.ts")
+	baseDir := outDir
 
-	mirrorOutFile := filepath.Join(resourcePath, ".opencore", "autoload.server.controllers.ts")
-	mirrorOutDir := filepath.Dir(mirrorOutFile)
-
-	var imports []string
+	var serverImports []string
+	var clientImports []string
 
 	err := filepath.WalkDir(resourcePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -33,7 +32,7 @@ func (rb *ResourceBuilder) generateAutoloadServerControllers(resourcePath string
 			return nil
 		}
 
-		if path == primaryOutFile || path == mirrorOutFile {
+		if path == serverOutFile || path == clientOutFile {
 			return nil
 		}
 
@@ -50,7 +49,9 @@ func (rb *ResourceBuilder) generateAutoloadServerControllers(resourcePath string
 			return readErr
 		}
 		text := string(content)
-		if !strings.Contains(text, "@Server.Controller") && !strings.Contains(text, "@Client.Controller") {
+		hasServer := strings.Contains(text, "@Server.Controller")
+		hasClient := strings.Contains(text, "@Client.Controller")
+		if !hasServer && !hasClient {
 			return nil
 		}
 
@@ -65,34 +66,45 @@ func (rb *ResourceBuilder) generateAutoloadServerControllers(resourcePath string
 		}
 
 		relImport = strings.TrimSuffix(relImport, ".ts")
+		relImport = strings.TrimSuffix(relImport, ".tsx")
 
-		imports = append(imports, fmt.Sprintf("import %q;\n", relImport))
+		if hasServer {
+			serverImports = append(serverImports, fmt.Sprintf("import %q;\n", relImport))
+		}
+		if hasClient {
+			clientImports = append(clientImports, fmt.Sprintf("import %q;\n", relImport))
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(primaryOutDir, 0755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(mirrorOutDir, 0755); err != nil {
+	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return err
 	}
 
-	sort.Strings(imports)
+	sort.Strings(serverImports)
+	sort.Strings(clientImports)
 
-	content := ""
-	if len(imports) == 0 {
-		content = "export {};\n"
+	serverContent := ""
+	if len(serverImports) == 0 {
+		serverContent = "export {};\n"
 	} else {
-		content = strings.Join(imports, "")
+		serverContent = strings.Join(serverImports, "")
 	}
 
-	if err := os.WriteFile(primaryOutFile, []byte(content), 0644); err != nil {
+	clientContent := ""
+	if len(clientImports) == 0 {
+		clientContent = "export {};\n"
+	} else {
+		clientContent = strings.Join(clientImports, "")
+	}
+
+	if err := os.WriteFile(serverOutFile, []byte(serverContent), 0644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(mirrorOutFile, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(clientOutFile, []byte(clientContent), 0644); err != nil {
 		return err
 	}
 

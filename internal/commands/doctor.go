@@ -137,8 +137,15 @@ func checkOpenCoreProject() CheckResult {
 }
 
 func checkConfig() CheckResult {
-	cfg, err := config.Load()
+	cfg, root, err := config.LoadWithProjectRoot()
 	if err != nil {
+		return CheckResult{
+			Name:    "Configuration",
+			Passed:  false,
+			Message: err.Error(),
+		}
+	}
+	if err := os.Chdir(root); err != nil {
 		return CheckResult{
 			Name:    "Configuration",
 			Passed:  false,

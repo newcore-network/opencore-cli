@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -26,9 +27,12 @@ func runDev(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Load config
-	cfg, err := config.Load()
+	cfg, root, err := config.LoadWithProjectRoot()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		return fmt.Errorf("failed to switch to project root: %w", err)
 	}
 
 	// Create watcher

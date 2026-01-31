@@ -1,6 +1,6 @@
 const path = require('path')
 const fs = require('fs')
-const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadControllersRedirectPlugin } = require('./plugins')
+const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
 const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
 
@@ -96,6 +96,7 @@ async function copyDirContents(srcDir, destDir) {
 function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
     const plugins = [
         createReflectMetadataPlugin(),
+        createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
@@ -118,6 +119,7 @@ function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020'
 function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
     const plugins = [
         createReflectMetadataPlugin(),
+        createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
@@ -139,6 +141,7 @@ function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2
 function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
     const plugins = [
         createReflectMetadataPlugin(),
+        createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),

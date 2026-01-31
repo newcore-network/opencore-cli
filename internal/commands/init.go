@@ -26,8 +26,7 @@ func NewInitCommand() *cobra.Command {
 	cmd.Flags().String("architecture", "", "Project architecture (domain-driven|layer-based|feature-based|hybrid)")
 	cmd.Flags().Bool("minify", false, "Enable code minification in production builds")
 	cmd.Flags().StringArray("module", nil, "Add a module to install (repeatable)")
-	cmd.Flags().String("destination", "", "Build output directory (usually your FiveM resources folder)")
-	cmd.Flags().Bool("skip-destination", false, "Do not set destination during init (you can edit opencore.config.ts later)")
+	cmd.Flags().String("destination", "", "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)")
 	cmd.Flags().Bool("non-interactive", false, "Do not run the interactive wizard; use flags/defaults")
 
 	return cmd
@@ -39,7 +38,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	minifyFlag, _ := cmd.Flags().GetBool("minify")
 	modulesFlag, _ := cmd.Flags().GetStringArray("module")
 	destinationFlag, _ := cmd.Flags().GetString("destination")
-	skipDestination, _ := cmd.Flags().GetBool("skip-destination")
 	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
 
 	// Define wizard steps
@@ -118,16 +116,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Type:        ui.StepTypeConfirm,
 		},
 	}
-	if !skipDestination {
-		steps = append(steps, ui.WizardStep{
-			Title:       "Server Destination",
-			Description: "Build output directory (optional; usually your FiveM resources folder)",
-			Type:        ui.StepTypeInput,
-			Validate: func(s string) error {
-				return nil
-			},
-		})
-	}
+	steps = append(steps, ui.WizardStep{
+		Title:       "Server Destination",
+		Description: "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)",
+		Type:        ui.StepTypeInput,
+		Validate: func(s string) error {
+			return nil
+		},
+	})
 
 	// Non-interactive mode: rely on flags/defaults
 	if nonInteractive {
@@ -144,10 +140,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		useMinify := minifyFlag
 		modules := modulesFlag
-		destination := ""
-		if !skipDestination {
-			destination = destinationFlag
-		}
+		destination := strings.TrimSpace(destinationFlag)
 
 		installIdentity := false
 		for _, mod := range modules {
@@ -208,10 +201,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	architecture := result.GetStringValue("Architecture")
 	modules := result.GetStringSliceValue("Modules")
 	useMinify := result.GetBoolValue("Minification")
-	destination := ""
-	if !skipDestination {
-		destination = result.GetStringValue("Server Destination")
-	}
+	destination := strings.TrimSpace(result.GetStringValue("Server Destination"))
 
 	// Check if identity module is selected
 	installIdentity := false
