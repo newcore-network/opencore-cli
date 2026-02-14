@@ -114,6 +114,10 @@ func (b *Builder) Build() error {
 		return fmt.Errorf("no resources to build")
 	}
 
+	if err := b.validateTaskSources(tasks); err != nil {
+		return err
+	}
+
 	// Clean only the resources we are about to build
 	uniqueResources := make(map[string]struct{})
 	for _, task := range tasks {
@@ -173,6 +177,10 @@ func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
 
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
+
+	if err := b.validateTaskSources(tasks); err != nil {
+		return nil, err
+	}
 
 	uniqueResources := make(map[string]struct{})
 	for _, task := range tasks {

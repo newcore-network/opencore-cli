@@ -4,20 +4,34 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
 
-func (rb *ResourceBuilder) generateAutoloadControllers(resourcePath string) error {
-	resourcePath = filepath.Clean(resourcePath)
+var (
+	clientDecoratorPattern                = regexp.MustCompile(`@Client\.[A-Za-z_][A-Za-z0-9_]*`)
+	serverDecoratorPattern                = regexp.MustCompile(`@Server\.[A-Za-z_][A-Za-z0-9_]*`)
+	invalidFrameworkNodeModulesImportExpr = regexp.MustCompile(`(?:from\s+['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|import\s+['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|require\(\s*['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]\s*\))`)
+)
 
-	outDir := filepath.Join(resourcePath, ".opencore")
-	serverOutFile := filepath.Join(outDir, "autoload.server.controllers.ts")
-	clientOutFile := filepath.Join(outDir, "autoload.client.controllers.ts")
-	baseDir := outDir
+type SourceValidationIssue struct {
+	File    string
+	Line    int
+	Message string
+}
 
+func (i SourceValidationIssue) String() string {
+	if i.Line > 0 {
+		return fmt.Sprintf("%s:%d %s", i.File, i.Line, i.Message)
+	}
+	return fmt.Sprintf("%s %s", i.File, i.Message)
+}
+
+func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutFile string, clientOutFile string) ([]string, []string, []SourceValidationIssue, error) {
 	var serverImports []string
 	var clientImports []string
+	var issues []SourceValidationIssue
 
 	err := filepath.WalkDir(resourcePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -40,7 +54,7 @@ func (rb *ResourceBuilder) generateAutoloadControllers(resourcePath string) erro
 		if strings.HasSuffix(name, ".d.ts") {
 			return nil
 		}
-		if !(strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".tsx")) {
+		if !strings.HasSuffix(name, ".ts") {
 			return nil
 		}
 
@@ -49,15 +63,55 @@ func (rb *ResourceBuilder) generateAutoloadControllers(resourcePath string) erro
 			return readErr
 		}
 		text := string(content)
-		hasServer := strings.Contains(text, "@Server.Controller")
-		hasClient := strings.Contains(text, "@Client.Controller")
-		if !hasServer && !hasClient {
+
+		relPath, relErr := filepath.Rel(resourcePath, path)
+		if relErr != nil {
+			relPath = path
+		}
+		relPath = filepath.ToSlash(relPath)
+
+		lines := strings.Split(text, "\n")
+		clientDecoratorLine := 0
+		serverDecoratorLine := 0
+
+		for idx, line := range lines {
+			lineNumber := idx + 1
+			if clientDecoratorLine == 0 && clientDecoratorPattern.MatchString(line) {
+				clientDecoratorLine = lineNumber
+			}
+			if serverDecoratorLine == 0 && serverDecoratorPattern.MatchString(line) {
+				serverDecoratorLine = lineNumber
+			}
+			if invalidFrameworkNodeModulesImportExpr.MatchString(line) {
+				issues = append(issues, SourceValidationIssue{
+					File:    relPath,
+					Line:    lineNumber,
+					Message: "invalid framework import from node_modules path; use package import (e.g. @open-core/framework/server)",
+				})
+			}
+		}
+
+		if clientDecoratorLine > 0 && serverDecoratorLine > 0 {
+			lineNumber := clientDecoratorLine
+			if serverDecoratorLine < lineNumber {
+				lineNumber = serverDecoratorLine
+			}
+			issues = append(issues, SourceValidationIssue{
+				File:    relPath,
+				Line:    lineNumber,
+				Message: "mixed decorators detected: @Client.* and @Server.* cannot coexist in the same file",
+			})
+		}
+
+		hasServerController := strings.Contains(text, "@Server.Controller")
+		hasClientController := strings.Contains(text, "@Client.Controller")
+		if !hasServerController && !hasClientController {
 			return nil
 		}
 
-		relImport, err := filepath.Rel(baseDir, path)
-		if err != nil {
-			return err
+		relImport, relImportErr := filepath.Rel(baseDir, path)
+		if relImportErr != nil {
+			return relImportErr
 		}
 		relImport = filepath.ToSlash(relImport)
 
@@ -66,18 +120,61 @@ func (rb *ResourceBuilder) generateAutoloadControllers(resourcePath string) erro
 		}
 
 		relImport = strings.TrimSuffix(relImport, ".ts")
-		relImport = strings.TrimSuffix(relImport, ".tsx")
 
-		if hasServer {
+		if hasServerController {
 			serverImports = append(serverImports, fmt.Sprintf("import %q;\n", relImport))
 		}
-		if hasClient {
+		if hasClientController {
 			clientImports = append(clientImports, fmt.Sprintf("import %q;\n", relImport))
 		}
 		return nil
 	})
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	sort.Slice(issues, func(i, j int) bool {
+		if issues[i].File != issues[j].File {
+			return issues[i].File < issues[j].File
+		}
+		if issues[i].Line != issues[j].Line {
+			return issues[i].Line < issues[j].Line
+		}
+		return issues[i].Message < issues[j].Message
+	})
+
+	return serverImports, clientImports, issues, nil
+}
+
+func (rb *ResourceBuilder) validateSourceFiles(resourcePath string) ([]SourceValidationIssue, error) {
+	resourcePath = filepath.Clean(resourcePath)
+	outDir := filepath.Join(resourcePath, ".opencore")
+	serverOutFile := filepath.Join(outDir, "autoload.server.controllers.ts")
+	clientOutFile := filepath.Join(outDir, "autoload.client.controllers.ts")
+
+	_, _, issues, err := scanResourceTypeScriptFiles(resourcePath, outDir, serverOutFile, clientOutFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return issues, nil
+}
+
+func (rb *ResourceBuilder) generateAutoloadControllers(resourcePath string) error {
+	resourcePath = filepath.Clean(resourcePath)
+
+	outDir := filepath.Join(resourcePath, ".opencore")
+	serverOutFile := filepath.Join(outDir, "autoload.server.controllers.ts")
+	clientOutFile := filepath.Join(outDir, "autoload.client.controllers.ts")
+	baseDir := outDir
+
+	serverImports, clientImports, issues, err := scanResourceTypeScriptFiles(resourcePath, baseDir, serverOutFile, clientOutFile)
 	if err != nil {
 		return err
+	}
+	if len(issues) > 0 {
+		return fmt.Errorf("source validation failed with %d issue(s)", len(issues))
 	}
 
 	if err := os.MkdirAll(outDir, 0755); err != nil {
