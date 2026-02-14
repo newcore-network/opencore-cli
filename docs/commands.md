@@ -83,8 +83,14 @@ Download official templates from the repository.
 # List available templates
 opencore clone --list
 
+# List templates from a development branch
+opencore clone --list --branch develop
+
 # Clone a template
 opencore clone chat
+
+# Clone from a development branch
+opencore clone chat --branch develop
 
 # Force GitHub API (skip git sparse-checkout)
 opencore clone admin --api

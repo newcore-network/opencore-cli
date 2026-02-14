@@ -151,8 +151,14 @@ Download official templates from the [opencore-templates](https://github.com/new
 # List all available templates
 opencore clone --list
 
+# List templates from a development branch
+opencore clone --list --branch develop
+
 # Clone a template to resources/
 opencore clone chat
+
+# Clone a template from a development branch
+opencore clone chat --branch develop
 
 # Force using GitHub API instead of git sparse-checkout
 opencore clone admin --api
@@ -163,6 +169,7 @@ opencore clone admin --api
 | Flag | Description |
 |------|-------------|
 | `-l, --list` | List all available templates from the repository |
+| `-b, --branch <name>` | Repository branch to use when listing or cloning templates (default: `master`) |
 | `--api` | Force download via GitHub API (skips git sparse-checkout) |
 
 The clone command automatically selects the best download method:
