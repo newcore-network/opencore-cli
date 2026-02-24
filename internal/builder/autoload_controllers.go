@@ -12,6 +12,11 @@ import (
 var (
 	clientDecoratorPattern                = regexp.MustCompile(`@Client\.[A-Za-z_][A-Za-z0-9_]*`)
 	serverDecoratorPattern                = regexp.MustCompile(`@Server\.[A-Za-z_][A-Za-z0-9_]*`)
+	serverControllerDecoratorPattern      = regexp.MustCompile(`@Server\.Controller\s*\(`)
+	clientControllerDecoratorPattern      = regexp.MustCompile(`@Client\.Controller\s*\(`)
+	controllerDecoratorPattern            = regexp.MustCompile(`@Controller\s*\(`)
+	frameworkServerImportPattern          = regexp.MustCompile(`(?:from\s+['"]@open-core/framework/server['"]|import\s+['"]@open-core/framework/server['"]|require\(\s*['"]@open-core/framework/server['"]\s*\))`)
+	frameworkClientImportPattern          = regexp.MustCompile(`(?:from\s+['"]@open-core/framework/client['"]|import\s+['"]@open-core/framework/client['"]|require\(\s*['"]@open-core/framework/client['"]\s*\))`)
 	invalidFrameworkNodeModulesImportExpr = regexp.MustCompile(`(?:from\s+['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|import\s+['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|require\(\s*['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]\s*\))`)
 )
 
@@ -73,6 +78,9 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 		lines := strings.Split(text, "\n")
 		clientDecoratorLine := 0
 		serverDecoratorLine := 0
+		controllerDecoratorLine := 0
+		frameworkServerImportLine := 0
+		frameworkClientImportLine := 0
 
 		for idx, line := range lines {
 			lineNumber := idx + 1
@@ -81,6 +89,15 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 			}
 			if serverDecoratorLine == 0 && serverDecoratorPattern.MatchString(line) {
 				serverDecoratorLine = lineNumber
+			}
+			if controllerDecoratorLine == 0 && controllerDecoratorPattern.MatchString(line) {
+				controllerDecoratorLine = lineNumber
+			}
+			if frameworkServerImportLine == 0 && frameworkServerImportPattern.MatchString(line) {
+				frameworkServerImportLine = lineNumber
+			}
+			if frameworkClientImportLine == 0 && frameworkClientImportPattern.MatchString(line) {
+				frameworkClientImportLine = lineNumber
 			}
 			if invalidFrameworkNodeModulesImportExpr.MatchString(line) {
 				issues = append(issues, SourceValidationIssue{
@@ -103,8 +120,34 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 			})
 		}
 
-		hasServerController := strings.Contains(text, "@Server.Controller")
-		hasClientController := strings.Contains(text, "@Client.Controller")
+		if controllerDecoratorLine > 0 && frameworkServerImportLine > 0 && frameworkClientImportLine > 0 {
+			lineNumber := controllerDecoratorLine
+			if frameworkServerImportLine < lineNumber {
+				lineNumber = frameworkServerImportLine
+			}
+			if frameworkClientImportLine < lineNumber {
+				lineNumber = frameworkClientImportLine
+			}
+			issues = append(issues, SourceValidationIssue{
+				File:    relPath,
+				Line:    lineNumber,
+				Message: "ambiguous @Controller decorator detected: import either @open-core/framework/server or @open-core/framework/client, not both",
+			})
+		}
+
+		hasServerController := serverControllerDecoratorPattern.MatchString(text)
+		hasClientController := clientControllerDecoratorPattern.MatchString(text)
+
+		hasGenericController := controllerDecoratorPattern.MatchString(text)
+		if hasGenericController {
+			if frameworkServerImportLine > 0 && frameworkClientImportLine == 0 {
+				hasServerController = true
+			}
+			if frameworkClientImportLine > 0 && frameworkServerImportLine == 0 {
+				hasClientController = true
+			}
+		}
+
 		if !hasServerController && !hasClientController {
 			return nil
 		}
