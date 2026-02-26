@@ -11,6 +11,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/minio/selfupdate v0.6.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/term v0.40.0
 )
 
 require (

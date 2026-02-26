@@ -61,7 +61,7 @@ func main() {
 	}
 
 	// Check for updates in the background after command execution
-	if len(os.Args) > 1 && os.Args[1] != "update" && os.Args[1] != "--version" && os.Args[1] != "-v" {
+	if shouldCheckForUpdates(os.Args) {
 		if info, err := updater.CheckForUpdate(version, false); err == nil {
 			if updater.NeedsUpdate(version, info.LatestVersion) {
 				fmt.Println()
@@ -70,4 +70,20 @@ func main() {
 			}
 		}
 	}
+}
+
+func shouldCheckForUpdates(args []string) bool {
+	if len(args) <= 1 {
+		return false
+	}
+
+	if args[1] == "update" || args[1] == "--version" || args[1] == "-v" {
+		return false
+	}
+
+	if ui.IsUpdateCheckDisabled() || ui.IsNonInteractiveSession() {
+		return false
+	}
+
+	return true
 }

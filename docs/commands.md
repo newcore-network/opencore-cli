@@ -32,6 +32,13 @@ Options:
 - Uses configuration from `opencore.config.ts`
 - Outputs to `destination` path
 - Runs parallel if `build.parallel: true`
+- `--output auto|tui|plain` controls output mode (default: `auto`)
+
+CI usage:
+
+```bash
+opencore build --output=plain
+```
 
 ## dev
 

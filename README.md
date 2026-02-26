@@ -77,6 +77,22 @@ go build -o opencore .
 
 ---
 
+## CI / Non-TTY
+
+For CI runners (for example GitHub Actions) and non-interactive shells, use plain output:
+
+```bash
+opencore build --output=plain
+```
+
+You can also disable automatic update checks in CI logs:
+
+```bash
+OPENCORE_DISABLE_UPDATE_CHECK=1 opencore build --output=plain
+```
+
+---
+
 ## Quick Start
 
 ```bash
