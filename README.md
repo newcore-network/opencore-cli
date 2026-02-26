@@ -77,6 +77,22 @@ go build -o opencore .
 
 ---
 
+## CI / Non-TTY
+
+For CI runners (for example GitHub Actions) and non-interactive shells, use plain output:
+
+```bash
+opencore build --output=plain
+```
+
+You can also disable automatic update checks in CI logs:
+
+```bash
+OPENCORE_DISABLE_UPDATE_CHECK=1 opencore build --output=plain
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -84,6 +100,26 @@ opencore init my-server
 cd my-server
 pnpm install
 opencore dev
+```
+
+If you don't have pnpm installed, you can use:
+
+```bash
+npm install
+```
+
+Or yarn (modern/berry):
+
+```bash
+yarn install
+```
+
+You can also force a package manager:
+
+```bash
+opencore init my-server --usePackageManager=pnpm
+opencore init my-server --usePackageManager=yarn
+opencore init my-server --usePackageManager=npm
 ```
 
 ---
@@ -131,8 +167,14 @@ Download official templates from the [opencore-templates](https://github.com/new
 # List all available templates
 opencore clone --list
 
+# List templates from a development branch
+opencore clone --list --branch develop
+
 # Clone a template to resources/
 opencore clone chat
+
+# Clone a template from a development branch
+opencore clone chat --branch develop
 
 # Force using GitHub API instead of git sparse-checkout
 opencore clone admin --api
@@ -143,6 +185,7 @@ opencore clone admin --api
 | Flag | Description |
 |------|-------------|
 | `-l, --list` | List all available templates from the repository |
+| `-b, --branch <name>` | Repository branch to use when listing or cloning templates (default: `master`) |
 | `--api` | Force download via GitHub API (skips git sparse-checkout) |
 
 The clone command automatically selects the best download method:

@@ -23,6 +23,7 @@ type ProjectConfig struct {
 	InstallIdentity bool
 	UseMinify       bool
 	Destination     string
+	PackageManager  string
 }
 
 type ResourceConfig struct {
@@ -42,7 +43,7 @@ type FeatureConfig struct {
 	FeatureNamePascal string
 }
 
-func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool, destination string) error {
+func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool, destination string, packageManager string) error {
 	if destination != "" {
 		// Ensure the generated TypeScript config is safe on Windows.
 		// Backslashes can be interpreted as escape sequences in JS/TS strings.
@@ -55,6 +56,7 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		InstallIdentity: installIdentity,
 		UseMinify:       useMinify,
 		Destination:     destination,
+		PackageManager:  packageManager,
 	}
 
 	// Create base directories
@@ -119,6 +121,7 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		"core/package.json":   filepath.Join(targetPath, "core", "package.json"),
 		"core/fxmanifest.lua": filepath.Join(targetPath, "core", "fxmanifest.lua"),
 		"tsconfig.json":       filepath.Join(targetPath, "tsconfig.json"),
+		".gitignore":          filepath.Join(targetPath, ".gitignore"),
 	}
 
 	// Add bootstrap files based on architecture

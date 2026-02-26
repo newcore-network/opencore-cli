@@ -32,6 +32,13 @@ Options:
 - Uses configuration from `opencore.config.ts`
 - Outputs to `destination` path
 - Runs parallel if `build.parallel: true`
+- `--output auto|tui|plain` controls output mode (default: `auto`)
+
+CI usage:
+
+```bash
+opencore build --output=plain
+```
 
 ## dev
 
@@ -83,8 +90,14 @@ Download official templates from the repository.
 # List available templates
 opencore clone --list
 
+# List templates from a development branch
+opencore clone --list --branch develop
+
 # Clone a template
 opencore clone chat
+
+# Clone from a development branch
+opencore clone chat --branch develop
 
 # Force GitHub API (skip git sparse-checkout)
 opencore clone admin --api

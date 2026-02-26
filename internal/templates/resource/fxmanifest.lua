@@ -4,6 +4,7 @@ game 'gta5'
 name '{{.ResourceName}}'
 author 'Your Name'
 version '1.0.0'
+node_version '22'
 
 server_scripts {
     'server.js'

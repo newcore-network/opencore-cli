@@ -1,6 +1,6 @@
 const path = require('path')
 const fs = require('fs')
-const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin } = require('./plugins')
+const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
 const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
 
@@ -93,10 +93,11 @@ async function copyDirContents(srcDir, destDir) {
     }
 }
 
-
-function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
+function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(),
+        createReflectMetadataPlugin(packageManager),
+        createAutoloadDynamicImportShimPlugin(),
+        createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
@@ -115,9 +116,11 @@ function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020'
     return plugins
 }
 
-function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
+function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(),
+        createReflectMetadataPlugin(packageManager),
+        createAutoloadDynamicImportShimPlugin(),
+        createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
@@ -135,9 +138,11 @@ function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2
     return plugins
 }
 
-function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null) {
+function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(),
+        createReflectMetadataPlugin(packageManager),
+        createAutoloadDynamicImportShimPlugin(),
+        createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
@@ -214,7 +219,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
+            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager),
             external: serverExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -234,7 +239,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
+            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager),
             external: clientExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -278,7 +283,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
+            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager),
             external: serverExternals,
             define: {
                 ...shared.define,
@@ -299,7 +304,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
+            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager),
             external: clientExternals,
             define: {
                 ...shared.define,
@@ -343,7 +348,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(outDir, 'server.js'),
-            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath),
+            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager),
             external: serverExternals,
             define: {
                 ...shared.define,
@@ -364,7 +369,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(outDir, 'client.js'),
-            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath),
+            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager),
             external: clientExternals,
             define: {
                 ...shared.define,

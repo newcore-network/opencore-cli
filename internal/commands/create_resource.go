@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/templates"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
@@ -62,6 +63,7 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 	}
 
 	resourcePath := filepath.Join("resources", resourceName)
+	resolved, _ := pkgmgr.Resolve(pkgmgr.EffectivePreference("."))
 
 	fmt.Println(ui.Info(fmt.Sprintf("Creating resource: %s", resourceName)))
 	fmt.Println()
@@ -80,7 +82,7 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 			featuresMessage(withClient, withNUI) + "\n\n" +
 			"Next steps:\n" +
 			fmt.Sprintf("  cd %s\n", resourcePath) +
-			"  pnpm install\n" +
+			fmt.Sprintf("  %s\n", resolved.InstallCmd()) +
 			"// or use workspace node_modules package\n\n" +
 			"Remember to add your resource to opencore.config.ts:\n" +
 			"  resources: {\n" +

@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/newcore-network/opencore-cli/internal/config"
+	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
@@ -22,6 +23,28 @@ type Builder struct {
 	config          *config.Config
 	resourceBuilder *ResourceBuilder
 	deployer        *Deployer
+}
+
+type OutputMode string
+
+const (
+	OutputModeAuto  OutputMode = "auto"
+	OutputModeTUI   OutputMode = "tui"
+	OutputModePlain OutputMode = "plain"
+)
+
+func ParseOutputMode(v string) (OutputMode, error) {
+	mode := OutputMode(strings.ToLower(strings.TrimSpace(v)))
+	if mode == "" {
+		return OutputModeAuto, nil
+	}
+
+	switch mode {
+	case OutputModeAuto, OutputModeTUI, OutputModePlain:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid output mode %q (expected: auto, tui, plain)", v)
+	}
 }
 
 func buildSideOptionsFromConfig(cfg *config.BuildSideConfig) *BuildSideOptions {
@@ -101,8 +124,28 @@ func (b *Builder) CollectTasks() []BuildTask {
 	return b.collectAllTasks()
 }
 
+func (b *Builder) resolveOutputMode(requested OutputMode) OutputMode {
+	if requested == OutputModePlain || requested == OutputModeTUI {
+		return requested
+	}
+
+	if ui.IsNonInteractiveSession() {
+		return OutputModePlain
+	}
+
+	return OutputModeTUI
+}
+
 // Build executes the full build process
 func (b *Builder) Build() error {
+	return b.BuildWithOutput(OutputModeAuto)
+}
+
+// BuildWithOutput executes the full build process with explicit output mode
+func (b *Builder) BuildWithOutput(requestedMode OutputMode) error {
+	mode := b.resolveOutputMode(requestedMode)
+	plain := mode == OutputModePlain
+
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
 
@@ -111,6 +154,10 @@ func (b *Builder) Build() error {
 
 	if len(tasks) == 0 {
 		return fmt.Errorf("no resources to build")
+	}
+
+	if err := b.validateTaskSources(tasks); err != nil {
+		return err
 	}
 
 	// Clean only the resources we are about to build
@@ -141,9 +188,13 @@ func (b *Builder) Build() error {
 	var err error
 
 	if b.config.Build.Parallel && len(tasks) > 1 {
-		results, err = b.buildParallel(tasks, workers)
+		if mode == OutputModeTUI {
+			results, err = b.buildParallelTUI(tasks, workers)
+		} else {
+			results, err = b.buildParallelPlain(tasks, workers)
+		}
 	} else {
-		results, err = b.buildSequential(tasks)
+		results, err = b.buildSequential(tasks, plain)
 	}
 
 	if err != nil {
@@ -152,15 +203,23 @@ func (b *Builder) Build() error {
 
 	// Deploy to destination if configured and necessary
 	if b.deployer.ShouldDeploy() {
-		fmt.Printf("\n%s Deploying to %s...\n", ui.Info("→"), b.config.Destination)
+		if plain {
+			fmt.Printf("\nDeploying to %s...\n", b.config.Destination)
+		} else {
+			fmt.Printf("\n%s Deploying to %s...\n", ui.Info("→"), b.config.Destination)
+		}
 		if err := b.deployer.Deploy(); err != nil {
 			return fmt.Errorf("deployment failed: %w", err)
 		}
-		fmt.Println(ui.Success("Deployed successfully!"))
+		if plain {
+			fmt.Println("Deployed successfully")
+		} else {
+			fmt.Println(ui.Success("Deployed successfully!"))
+		}
 	}
 
 	// Show final summary
-	b.showSummary(results)
+	b.showSummary(results, plain)
 
 	return nil
 }
@@ -172,6 +231,10 @@ func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
 
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
+
+	if err := b.validateTaskSources(tasks); err != nil {
+		return nil, err
+	}
 
 	uniqueResources := make(map[string]struct{})
 	for _, task := range tasks {
@@ -185,7 +248,7 @@ func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
 		}
 	}
 
-	results, err := b.buildSequential(tasks)
+	results, err := b.buildSequential(tasks, false)
 	if err != nil {
 		return results, err
 	}
@@ -216,6 +279,10 @@ func findViewsPath(resourcePath string) string {
 // collectAllTasks gathers all build tasks from config
 func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
+	pm := ""
+	if resolved, err := pkgmgr.Resolve(pkgmgr.EffectivePreference(".")); err == nil {
+		pm = string(resolved.Choice)
+	}
 
 	// Core task
 	coreBuildCfg := &b.config.Build
@@ -709,11 +776,14 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 	}
 
+	for i := range tasks {
+		tasks[i].Options.PackageManager = pm
+	}
 	return tasks
 }
 
-// buildParallel executes builds in parallel using worker pool with TUI
-func (b *Builder) buildParallel(tasks []BuildTask, workers int) ([]BuildResult, error) {
+// buildParallelTUI executes builds in parallel using worker pool with TUI
+func (b *Builder) buildParallelTUI(tasks []BuildTask, workers int) ([]BuildResult, error) {
 	pool := NewWorkerPool(workers)
 	pool.Start(b.resourceBuilder.Build)
 
@@ -749,22 +819,80 @@ func (b *Builder) buildParallel(tasks []BuildTask, workers int) ([]BuildResult, 
 	return model.results, nil
 }
 
+// buildParallelPlain executes builds in parallel with plain logs (non-TTY/CI friendly)
+func (b *Builder) buildParallelPlain(tasks []BuildTask, workers int) ([]BuildResult, error) {
+	pool := NewWorkerPool(workers)
+	pool.Start(b.resourceBuilder.Build)
+
+	pool.SubmitAll(tasks)
+
+	fmt.Printf("Building %d task(s) with %d worker(s)\n", len(tasks), workers)
+
+	results := make([]BuildResult, 0, len(tasks))
+	for i := 0; i < len(tasks); i++ {
+		result := <-pool.Results()
+		results = append(results, result)
+
+		if result.Success {
+			fmt.Printf("OK    [%s] (%s)\n", result.Task.ResourceName, result.Duration.Round(time.Millisecond))
+			continue
+		}
+
+		fmt.Printf("FAIL  [%s] %v\n", result.Task.ResourceName, result.Error)
+		if result.Output != "" {
+			fmt.Println("Build output:")
+			fmt.Println(result.Output)
+		}
+	}
+
+	pool.Close()
+
+	failCount := 0
+	for _, r := range results {
+		if !r.Success {
+			failCount++
+		}
+	}
+
+	if failCount > 0 {
+		return results, fmt.Errorf("%d resource(s) failed to build", failCount)
+	}
+
+	return results, nil
+}
+
 // buildSequential executes builds one by one
-func (b *Builder) buildSequential(tasks []BuildTask) ([]BuildResult, error) {
+func (b *Builder) buildSequential(tasks []BuildTask, plain bool) ([]BuildResult, error) {
 	results := make([]BuildResult, 0, len(tasks))
 
 	for _, task := range tasks {
-		fmt.Printf("%s Building %s...\n", ui.Info("→"), task.ResourceName)
+		if plain {
+			fmt.Printf("Building %s...\n", task.ResourceName)
+		} else {
+			fmt.Printf("%s Building %s...\n", ui.Info("→"), task.ResourceName)
+		}
 
 		result := b.resourceBuilder.Build(task)
 		results = append(results, result)
 
 		if result.Success {
-			fmt.Println(ui.Success(fmt.Sprintf("[%s] compiled (%s)", task.ResourceName, result.Duration.Round(time.Millisecond))))
+			if plain {
+				fmt.Printf("OK    [%s] (%s)\n", task.ResourceName, result.Duration.Round(time.Millisecond))
+			} else {
+				fmt.Println(ui.Success(fmt.Sprintf("[%s] compiled (%s)", task.ResourceName, result.Duration.Round(time.Millisecond))))
+			}
 		} else {
-			fmt.Println(ui.Error(fmt.Sprintf("[%s] failed: %v", task.ResourceName, result.Error)))
+			if plain {
+				fmt.Printf("FAIL  [%s] %v\n", task.ResourceName, result.Error)
+			} else {
+				fmt.Println(ui.Error(fmt.Sprintf("[%s] failed: %v", task.ResourceName, result.Error)))
+			}
 			if result.Output != "" {
-				fmt.Println(ui.Muted("Build output:"))
+				if plain {
+					fmt.Println("Build output:")
+				} else {
+					fmt.Println(ui.Muted("Build output:"))
+				}
 				fmt.Println(result.Output)
 			}
 			return results, fmt.Errorf("build failed for %s", task.ResourceName)
@@ -975,7 +1103,7 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 }
 
 // showSummary displays the build summary
-func (b *Builder) showSummary(results []BuildResult) {
+func (b *Builder) showSummary(results []BuildResult, plain bool) {
 	// Count unique resources, standalones, and UIs separately
 	successResources := make(map[string]struct{})
 	successStandalones := make(map[string]struct{})
@@ -1012,6 +1140,11 @@ func (b *Builder) showSummary(results []BuildResult) {
 	failResourceCount := len(failedResources)
 	failStandaloneCount := len(failedStandalones)
 	failCount := failResourceCount + failStandaloneCount
+
+	if plain {
+		b.showSummaryPlain(successResourceCount, successUICount, successStandaloneCount, failResourceCount, failStandaloneCount, failCount, totalDuration, results)
+		return
+	}
 
 	fmt.Println()
 
@@ -1111,6 +1244,82 @@ func (b *Builder) showSummary(results []BuildResult) {
 
 		fmt.Println(ui.ErrorBoxStyle.Render(boxContent.String()))
 	}
+}
+
+func (b *Builder) showSummaryPlain(successResourceCount, successUICount, successStandaloneCount, failResourceCount, failStandaloneCount, failCount int, totalDuration time.Duration, results []BuildResult) {
+	fmt.Println()
+
+	if failCount == 0 {
+		fmt.Println("Build completed successfully")
+	} else {
+		fmt.Println("Build completed with errors")
+	}
+
+	parts := make([]string, 0, 3)
+	if successResourceCount > 0 {
+		parts = append(parts, fmt.Sprintf("Resources: %d", successResourceCount))
+	}
+	if successUICount > 0 {
+		parts = append(parts, fmt.Sprintf("UIs: %d", successUICount))
+	}
+	if successStandaloneCount > 0 {
+		parts = append(parts, fmt.Sprintf("Standalones: %d", successStandaloneCount))
+	}
+	if len(parts) > 0 {
+		fmt.Printf("Success: %s\n", strings.Join(parts, " | "))
+	}
+
+	if failCount > 0 {
+		failedParts := make([]string, 0, 2)
+		if failResourceCount > 0 {
+			failedParts = append(failedParts, fmt.Sprintf("Resources: %d", failResourceCount))
+		}
+		if failStandaloneCount > 0 {
+			failedParts = append(failedParts, fmt.Sprintf("Standalones: %d", failStandaloneCount))
+		}
+		fmt.Printf("Failed: %s\n", strings.Join(failedParts, " | "))
+	}
+
+	fmt.Printf("Time: %s\n", totalDuration.Round(time.Millisecond))
+
+	if b.deployer.HasDestination() {
+		fmt.Printf("Deployed: %s\n", b.config.Destination)
+	}
+
+	sizes := b.getResourceSizes(results)
+	if len(sizes) == 0 {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("Bundle sizes")
+
+	var grandTotal int64
+	for _, s := range sizes {
+		grandTotal += s.TotalSize
+		if s.IsViews {
+			if s.Framework != "" {
+				fmt.Printf("- %s: total=%s framework=%s\n", s.Name, formatSize(s.TotalSize), s.Framework)
+			} else {
+				fmt.Printf("- %s: total=%s\n", s.Name, formatSize(s.TotalSize))
+			}
+			continue
+		}
+
+		serverSize := "-"
+		if s.ServerSize > 0 {
+			serverSize = formatSize(s.ServerSize)
+		}
+
+		clientSize := "-"
+		if s.ClientSize > 0 {
+			clientSize = formatSize(s.ClientSize)
+		}
+
+		fmt.Printf("- %s: server=%s client=%s\n", s.Name, serverSize, clientSize)
+	}
+
+	fmt.Printf("Total: %s\n", formatSize(grandTotal))
 }
 
 // ============================================================================

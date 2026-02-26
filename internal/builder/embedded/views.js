@@ -3,6 +3,28 @@ const fs = require('fs')
 const { getEsbuild } = require('./plugins')
 const { getSharedConfig } = require('./config')
 
+function getPackageManager(options = {}) {
+    const pm = (options.packageManager || '').toLowerCase()
+    if (pm === 'pnpm' || pm === 'yarn' || pm === 'npm') return pm
+    return 'pnpm'
+}
+
+function addCmd(options = {}, pkgs = [], isDev = false) {
+    const pm = getPackageManager(options)
+    const args = pkgs.join(' ')
+    if (pm === 'yarn') return isDev ? `yarn add -D ${args}` : `yarn add ${args}`
+    if (pm === 'npm') return isDev ? `npm install -D ${args}` : `npm install ${args}`
+    return isDev ? `pnpm add -D ${args}` : `pnpm add ${args}`
+}
+
+function execCmd(options = {}, bin, args = []) {
+    const pm = getPackageManager(options)
+    const rest = args.length ? ` ${args.join(' ')}` : ''
+    if (pm === 'yarn') return `yarn ${bin}${rest}`
+    if (pm === 'npm') return `npm exec -- ${bin}${rest}`
+    return `pnpm ${bin}${rest}`
+}
+
 function hasFilesWithExtension(dir, extension) {
     try {
         const entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -163,7 +185,7 @@ async function buildAstroViews(viewPath, outDir, options = {}) {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D astro\n` +
+            `    ${addCmd(options, ['astro'], true)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -171,7 +193,7 @@ async function buildAstroViews(viewPath, outDir, options = {}) {
 
     validateAstroOutput(viewPath)
 
-    const buildCommand = options.buildCommand || 'pnpm astro build'
+    const buildCommand = options.buildCommand || execCmd(options, 'astro', ['build'])
     const outputDir = options.outputDir || 'dist'
 
     console.log(`[views] Astro detected, running: ${buildCommand}`)
@@ -228,7 +250,7 @@ function findTailwindConfig(viewPath) {
     return null
 }
 
-function getTailwindInfo(viewPath) {
+function getTailwindInfo(viewPath, options = {}) {
     const configPath = findTailwindConfig(viewPath)
     const packagePath = resolveDependency(viewPath, 'tailwindcss/package.json')
 
@@ -249,7 +271,7 @@ function getTailwindInfo(viewPath) {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D tailwindcss\n` +
+            `    ${addCmd(options, ['tailwindcss'], true)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -270,7 +292,7 @@ function getTailwindInfo(viewPath) {
     }
 }
 
-function ensureTailwindDependencies(viewPath, tailwindInfo) {
+function ensureTailwindDependencies(viewPath, tailwindInfo, options = {}) {
     const missing = []
 
     if (!resolveDependency(viewPath, 'postcss')) {
@@ -288,7 +310,6 @@ function ensureTailwindDependencies(viewPath, tailwindInfo) {
     }
 
     if (missing.length > 0) {
-        const installCmd = missing.join(' ')
         throw new Error(
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -301,20 +322,20 @@ function ensureTailwindDependencies(viewPath, tailwindInfo) {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D ${installCmd}\n` +
+            `    ${addCmd(options, missing, true)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
     }
 }
 
-function createTailwindPlugin(viewPath) {
-    const tailwindInfo = getTailwindInfo(viewPath)
+function createTailwindPlugin(viewPath, options = {}) {
+    const tailwindInfo = getTailwindInfo(viewPath, options)
     if (!tailwindInfo) {
         return null
     }
 
-    ensureTailwindDependencies(viewPath, tailwindInfo)
+    ensureTailwindDependencies(viewPath, tailwindInfo, options)
 
     const postcssPath = resolveDependency(viewPath, 'postcss')
     const postcss = require(postcssPath)
@@ -363,7 +384,7 @@ function createTailwindPlugin(viewPath) {
     }
 }
 
-function getSveltePlugin() {
+function getSveltePlugin(options = {}) {
 
     const missing = []
     if (!checkDependency('esbuild-svelte')) missing.push('esbuild-svelte')
@@ -383,7 +404,7 @@ function getSveltePlugin() {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D esbuild-svelte svelte\n` +
+            `    ${addCmd(options, ['esbuild-svelte', 'svelte'], true)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -397,7 +418,7 @@ function getSveltePlugin() {
     })
 }
 
-function getVuePlugin() {
+function getVuePlugin(options = {}) {
     const missing = []
     if (!checkDependency('esbuild-plugin-vue3')) missing.push('esbuild-plugin-vue3')
     if (!checkDependency('vue')) missing.push('vue')
@@ -416,7 +437,7 @@ function getVuePlugin() {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D esbuild-plugin-vue3 vue\n` +
+            `    ${addCmd(options, ['esbuild-plugin-vue3', 'vue'], true)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -426,7 +447,7 @@ function getVuePlugin() {
     return vuePlugin()
 }
 
-function checkReactDependencies(viewPath) {
+function checkReactDependencies(viewPath, options = {}) {
     const missing = []
     if (!checkDependency('react')) missing.push('react')
     if (!checkDependency('react-dom')) missing.push('react-dom')
@@ -445,7 +466,7 @@ function checkReactDependencies(viewPath) {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add react react-dom\n` +
+            `    ${addCmd(options, ['react', 'react-dom'], false)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -456,7 +477,7 @@ function hasSassFiles(dir) {
     return hasFilesWithExtension(dir, '.scss') || hasFilesWithExtension(dir, '.sass')
 }
 
-function getSassPlugin() {
+function getSassPlugin(options = {}) {
     if (!checkDependency('esbuild-sass-plugin')) {
         throw new Error(
             `\n` +
@@ -471,7 +492,7 @@ function getSassPlugin() {
             `\n` +
             `  Run this command to install:\n` +
             `\n` +
-            `    pnpm add -D esbuild-sass-plugin sass\n` +
+            `    ${addCmd(options, ['esbuild-sass-plugin', 'sass'], true)}\n` +
             `\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
         )
@@ -656,25 +677,25 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     if (hasReactFiles(viewPath)) {
         console.log(`[views] React files detected, checking dependencies...`)
-        checkReactDependencies(viewPath)
+        checkReactDependencies(viewPath, options)
     }
     if (hasAstroFiles(viewPath)) {
         console.log(`[views] Astro files detected, running static build...`)
     }
     if (hasSvelteFiles(viewPath)) {
         console.log(`[views] Svelte files detected, loading svelte plugin...`)
-        plugins.push(getSveltePlugin())
+        plugins.push(getSveltePlugin(options))
     }
     if (hasVueFiles(viewPath)) {
         console.log(`[views] Vue files detected, loading vue plugin...`)
-        plugins.push(getVuePlugin())
+        plugins.push(getVuePlugin(options))
     }
     if (hasSassFiles(viewPath)) {
         console.log(`[views] SASS/SCSS files detected, loading sass plugin...`)
-        plugins.push(getSassPlugin())
+        plugins.push(getSassPlugin(options))
     }
 
-    const tailwindPlugin = createTailwindPlugin(viewPath)
+    const tailwindPlugin = createTailwindPlugin(viewPath, options)
     if (tailwindPlugin) {
         plugins.push(tailwindPlugin)
     }

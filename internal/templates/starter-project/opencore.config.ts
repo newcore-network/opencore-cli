@@ -1,5 +1,5 @@
 import { defineConfig } from '@open-core/cli'
-// If you get a missing packages error, you should run `pnpm i` to install everything.
+// If you get a missing packages error, install dependencies in the project root.
 
 export default defineConfig({
   name: '{{.ProjectName}}',
@@ -10,11 +10,7 @@ export default defineConfig({
 
   core: {
     path: './core',
-    resourceName: 'core',
-    entryPoints: {
-      server: './core/src/server.ts',
-      client: './core/src/client.ts',
-    },
+    resourceName: 'core'
   },
 
   // Satellite resources (depend on core at runtime)
@@ -35,24 +31,13 @@ export default defineConfig({
     sourceMaps: false, // It's also useful for debugging, but it makes the build very large.
     parallel: true,
     maxWorkers: 8,
-
-    server: {
-      format: 'cjs',
-      platform: 'node',
-      target: 'es2023',
-    },
-
-    client: {
-      format: 'iife',
-      platform: 'neutral',
-      target: 'es2020',
-    },
   },
 
   dev: {
     port: 3847,
-    txAdminUser: '',
-    txAdminPassword: '',
-    txAdminUrl: ''
+    // you can also set your env system
+    // txAdminUser: '',
+    // txAdminPassword: '',
+    // txAdminUrl: ''
   }
 })

@@ -167,9 +167,13 @@ func (w *Watcher) Watch() error {
 					// Handle config file change
 					if filepath.Base(fileName) == "opencore.config.ts" {
 						fmt.Println(ui.Info("Configuration changed, reloading..."))
-						newCfg, err := config.Load()
+						newCfg, root, err := config.LoadWithProjectRoot()
 						if err != nil {
 							fmt.Println(ui.Error(fmt.Sprintf("Failed to reload config: %v", err)))
+							return
+						}
+						if err := os.Chdir(root); err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to switch to project root: %v", err)))
 							return
 						}
 						w.config = newCfg
@@ -254,12 +258,12 @@ func (w *Watcher) Watch() error {
 					w.watcher.Add(event.Name)
 
 					// Re-collect tasks to include new resource if it matches globs
-					newCfg, _ := config.Load()
+					newCfg, root, _ := config.LoadWithProjectRoot()
 					if newCfg != nil {
+						_ = os.Chdir(root)
 						w.config = newCfg
 						w.builder = builder.New(newCfg)
 						allTasks = w.builder.CollectTasks()
-						fmt.Println(ui.Info(fmt.Sprintf("New resource detected: %s", filepath.Base(event.Name))))
 					}
 				}
 			}

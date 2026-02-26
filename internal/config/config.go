@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -110,24 +111,56 @@ type BuildConfig struct {
 	Client               *BuildSideConfig `json:"client,omitempty"`
 }
 
-// Load reads and transpiles opencore.config.ts to Config
-func Load() (*Config, error) {
-	configPath := "opencore.config.ts"
+func isBracketFolderName(name string) bool {
+	name = strings.TrimSpace(name)
+	return strings.HasPrefix(name, "[") && strings.HasSuffix(name, "]") && len(name) > 2
+}
+
+// FindProjectRoot searches upwards from startDir to locate opencore.config.ts.
+func FindProjectRoot(startDir string) (string, error) {
+	dir := startDir
+	for {
+		candidate := filepath.Join(dir, "opencore.config.ts")
+		if _, err := os.Stat(candidate); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", fmt.Errorf("opencore.config.ts not found in current directory or any parent directory")
+}
+
+// LoadWithProjectRoot reads and transpiles opencore.config.ts to Config and returns the project root.
+func LoadWithProjectRoot() (*Config, string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	root, err := FindProjectRoot(wd)
+	if err != nil {
+		return nil, "", err
+	}
+
+	configPathAbs := filepath.Join(root, "opencore.config.ts")
 
 	// Check if Node.js is installed
 	if _, err := exec.LookPath("node"); err != nil {
-		return nil, fmt.Errorf("Node.js is not installed. Please install Node.js 18+ and try again")
-	}
-
-	// Check if config file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("opencore.config.ts not found in current directory")
+		return nil, "", fmt.Errorf("Node.js is not installed. Please install Node.js 18+ and try again")
 	}
 
 	// Create temporary transpiler script
 	transpilerScript := `
-const { pathToFileURL } = require('url');
 const path = require('path');
+const { createRequire } = require('module');
+
+// Make sure module resolution happens from the project root (cwd).
+const requireFromProject = createRequire(process.cwd() + path.sep);
 
 (async () => {
   try {
@@ -137,16 +170,16 @@ const path = require('path');
     // Try to require tsx or ts-node
     let result;
     try {
-      require('tsx/cjs');
-      result = require(configPath);
+      requireFromProject('tsx/cjs');
+      result = requireFromProject(configPath);
     } catch (e) {
       // Fallback: try to use esbuild-register
       try {
-        require('esbuild-register/dist/node').register();
-        result = require(configPath);
+        requireFromProject('esbuild-register/dist/node').register();
+        result = requireFromProject(configPath);
       } catch (e2) {
         // Last resort: assume it's already transpiled or use plain require
-        result = require(configPath);
+        result = requireFromProject(configPath);
       }
     }
 
@@ -162,32 +195,46 @@ const path = require('path');
 	// Write transpiler script to temp file
 	tmpFile := filepath.Join(os.TempDir(), "opencore-config-loader.js")
 	if err := os.WriteFile(tmpFile, []byte(transpilerScript), 0644); err != nil {
-		return nil, fmt.Errorf("failed to create transpiler script: %w", err)
+		return nil, "", fmt.Errorf("failed to create transpiler script: %w", err)
 	}
 	defer os.Remove(tmpFile)
 
 	// Execute transpiler script
-	cmd := exec.Command("node", tmpFile, configPath)
+	cmd := exec.Command("node", tmpFile, configPathAbs)
+	cmd.Dir = root
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to transpile config: %w\nOutput: %s", err, string(output))
+		return nil, "", fmt.Errorf("failed to transpile config: %w\nOutput: %s", err, string(output))
 	}
 
 	// Parse JSON output
 	var config Config
 	if err := json.Unmarshal(output, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config JSON: %w\nOutput: %s", err, string(output))
+		return nil, "", fmt.Errorf("failed to parse config JSON: %w\nOutput: %s", err, string(output))
 	}
 
-	// Destination is optional. If provided, we build directly into it.
-	// If not provided, we build into a local output directory and skip deploy.
-	if config.Destination != "" {
-		// OutDir is now always the same as Destination to skip intermediate build/
+	if strings.TrimSpace(config.Name) == "" {
+		return nil, "", fmt.Errorf("config.name is required")
+	}
+
+	category := config.Name
+	if !isBracketFolderName(category) {
+		category = fmt.Sprintf("[%s]", config.Name)
+	}
+
+	if strings.TrimSpace(config.Destination) != "" {
+		// Destination is optional; when provided it is the output base directory.
+		// The CLI always creates a FiveM category folder derived from config.name.
+		config.Destination = filepath.Join(strings.TrimSpace(config.Destination), category)
 		config.OutDir = config.Destination
 	} else {
-		if config.OutDir == "" {
-			config.OutDir = "build"
+		// When destination is not set, build locally.
+		outBase := strings.TrimSpace(config.OutDir)
+		if outBase == "" {
+			outBase = "build"
 		}
+		config.OutDir = filepath.Join(outBase, category)
+		config.Destination = ""
 	}
 
 	if config.Build.Target == "" {
@@ -211,7 +258,13 @@ const path = require('path');
 		config.Dev.TxAdminPassword = envPass
 	}
 
-	return &config, nil
+	return &config, root, nil
+}
+
+// Load reads and transpiles opencore.config.ts to Config.
+func Load() (*Config, error) {
+	cfg, _, err := LoadWithProjectRoot()
+	return cfg, err
 }
 
 // GetResourcePaths returns all resource paths (including core)

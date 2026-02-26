@@ -319,9 +319,23 @@ function createTsconfigPathsPlugin(resourcePath) {
             })
         }
     }
+
 }
 
-function createReflectMetadataPlugin() {
+function getPackageManagerValue(packageManager) {
+    const pm = String(packageManager || '').toLowerCase()
+    if (pm === 'pnpm' || pm === 'yarn' || pm === 'npm') return pm
+    return 'pnpm'
+}
+
+function installCmd(pm, pkg, isDev) {
+    const mgr = getPackageManagerValue(pm)
+    if (mgr === 'yarn') return isDev ? `yarn add -D ${pkg}` : `yarn add ${pkg}`
+    if (mgr === 'npm') return isDev ? `npm install -D ${pkg}` : `npm install ${pkg}`
+    return isDev ? `pnpm add -D ${pkg}` : `pnpm add ${pkg}`
+}
+
+function createReflectMetadataPlugin(packageManager) {
     return {
         name: 'reflect-metadata-injector',
         setup(build) {
@@ -330,7 +344,8 @@ function createReflectMetadataPlugin() {
                 try {
                     return { path: require.resolve('reflect-metadata'), external: false }
                 } catch (e) {
-                    return { errors: [{ text: 'reflect-metadata not found. Please install it with: pnpm add reflect-metadata' }] }
+                    const cmd = installCmd(packageManager, 'reflect-metadata', false)
+                    return { errors: [{ text: `reflect-metadata not found. Please install it with: ${cmd}` }] }
                 }
             })
 
@@ -366,6 +381,94 @@ function createReflectMetadataPlugin() {
     }
 }
 
+function createAutoloadDynamicImportShimPlugin() {
+    return {
+        name: 'opencore-autoload-dynamic-import-shim',
+        setup(build) {
+            build.onLoad({ filter: /\.js$/ }, async (args) => {
+                if (!args.path.includes('node_modules')) {
+                    return null
+                }
+                if (!args.path.includes(`${path.sep}@open-core${path.sep}framework${path.sep}dist${path.sep}runtime${path.sep}`)) {
+                    return null
+                }
+
+                let contents
+                try {
+                    contents = await fs.promises.readFile(args.path, 'utf8')
+                } catch (e) {
+                    return null
+                }
+
+                const original = contents
+                contents = contents.replace(
+                    /\bimport\s*\(\s*(['"`])([^'"`]*autoload\.(?:server|client)\.controllers?[^'"`]*)\1\s*\)/g,
+                    (m, q, spec) => `Promise.resolve().then(() => require(${q}${spec}${q}))`
+                )
+
+                if (contents === original) {
+                    return null
+                }
+
+                return { contents, loader: 'js' }
+            })
+        },
+    }
+}
+
+function createAutoloadControllersRedirectPlugin(resourcePath) {
+    return {
+        name: 'opencore-autoload-controllers-redirect',
+        setup(build) {
+            if (!resourcePath) return
+
+            const serverCandidates = [
+                path.resolve(resourcePath, '.opencore', 'autoload.server.controllers.ts'),
+                path.resolve(resourcePath, '.opencore', 'autoload.server.controller.ts'),
+                path.resolve(resourcePath, 'src', '.opencore', 'autoload.server.controllers.ts'),
+                path.resolve(resourcePath, 'src', '.opencore', 'autoload.server.controller.ts'),
+            ]
+
+            const clientCandidates = [
+                path.resolve(resourcePath, '.opencore', 'autoload.client.controllers.ts'),
+                path.resolve(resourcePath, '.opencore', 'autoload.client.controller.ts'),
+                path.resolve(resourcePath, 'src', '.opencore', 'autoload.client.controllers.ts'),
+                path.resolve(resourcePath, 'src', '.opencore', 'autoload.client.controller.ts'),
+            ]
+
+            const pickFirstExisting = (candidates) => {
+                for (const c of candidates) {
+                    if (fs.existsSync(c)) return c
+                }
+                return null
+            }
+
+            build.onResolve({ filter: /autoload\.server\.controllers?(\.(ts|js))?$/ }, (args) => {
+                // Only redirect when the framework runtime is trying to load its own stub
+                // Example bundled path:
+                // @open-core/framework/dist/runtime/server/.opencore/autoload.server.controllers.js
+                if (!args.resolveDir.includes(`${path.sep}@open-core${path.sep}framework${path.sep}dist${path.sep}runtime${path.sep}server`)) {
+                    return null
+                }
+
+                const target = pickFirstExisting(serverCandidates)
+                if (!target) return null
+                return { path: target }
+            })
+
+            build.onResolve({ filter: /autoload\.client\.controllers?(\.(ts|js))?$/ }, (args) => {
+                if (!args.resolveDir.includes(`${path.sep}@open-core${path.sep}framework${path.sep}dist${path.sep}runtime${path.sep}client`)) {
+                    return null
+                }
+
+                const target = pickFirstExisting(clientCandidates)
+                if (!target) return null
+                return { path: target }
+            })
+        },
+    }
+}
+
 module.exports = {
     getEsbuild,
     createSwcPlugin,
@@ -374,5 +477,7 @@ module.exports = {
     preserveFiveMExportsPlugin,
     createNodeGlobalsShimPlugin,
     createTsconfigPathsPlugin,
-    createReflectMetadataPlugin
+    createReflectMetadataPlugin,
+    createAutoloadDynamicImportShimPlugin,
+    createAutoloadControllersRedirectPlugin
 }

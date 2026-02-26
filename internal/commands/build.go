@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -17,17 +18,28 @@ func NewBuildCommand() *cobra.Command {
 		RunE:  runBuild,
 	}
 
+	cmd.Flags().String("output", "auto", "Output mode (auto|tui|plain)")
+
 	return cmd
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
 	// Load config
-	cfg, err := config.Load()
+	cfg, root, err := config.LoadWithProjectRoot()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		return fmt.Errorf("failed to switch to project root: %w", err)
+	}
+
+	outputModeValue, _ := cmd.Flags().GetString("output")
+	outputMode, err := builder.ParseOutputMode(outputModeValue)
+	if err != nil {
+		return err
 	}
 
 	// Create builder and build
 	b := builder.New(cfg)
-	return b.Build()
+	return b.BuildWithOutput(outputMode)
 }
