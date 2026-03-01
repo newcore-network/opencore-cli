@@ -59,10 +59,9 @@ function hasAstroFiles(dir) {
     return hasFilesWithExtension(dir, '.astro')
 }
 
-function checkDependency(name) {
-
+function checkDependency(name, viewPath) {
     try {
-        require.resolve(name)
+        require.resolve(name, { paths: [viewPath] })
         return true
     } catch (e) {
         return false
@@ -449,8 +448,8 @@ function getVuePlugin(options = {}) {
 
 function checkReactDependencies(viewPath, options = {}) {
     const missing = []
-    if (!checkDependency('react')) missing.push('react')
-    if (!checkDependency('react-dom')) missing.push('react-dom')
+    if (!checkDependency('react', viewPath)) missing.push('react')
+    if (!checkDependency('react-dom', viewPath)) missing.push('react-dom')
 
     if (missing.length > 0) {
         throw new Error(
