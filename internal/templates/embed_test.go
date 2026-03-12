@@ -78,8 +78,11 @@ func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
 	if !strings.Contains(configText, "RageMPServerAdapter") {
 		t.Fatal("expected generated config to import RageMPServerAdapter")
 	}
-	if !strings.Contains(configText, "target: 'node14'") {
-		t.Fatal("expected generated config to default build target to node14 for RageMP")
+	if !strings.Contains(configText, "server: {") || !strings.Contains(configText, "target: 'node14'") {
+		t.Fatal("expected generated config to default server target to node14 for RageMP")
+	}
+	if !strings.Contains(configText, "client: {") || !strings.Contains(configText, "target: 'es2020'") {
+		t.Fatal("expected generated config to default client target to es2020 for RageMP")
 	}
 
 	tsconfigContent, err := os.ReadFile(filepath.Join(targetPath, "tsconfig.json"))
@@ -96,6 +99,9 @@ func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
 	if strings.Contains(tsconfigText, "@citizenfx") {
 		t.Fatal("did not expect CitizenFX types in RageMP tsconfig")
 	}
+	if !strings.Contains(tsconfigText, "@ragempcommunity/types-server") || !strings.Contains(tsconfigText, "@ragempcommunity/types-client") {
+		t.Fatal("expected RageMP tsconfig to include RageMP type packages")
+	}
 
 	packageContent, err := os.ReadFile(filepath.Join(targetPath, "package.json"))
 	if err != nil {
@@ -110,5 +116,15 @@ func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
 	}
 	if !strings.Contains(packageText, "\"@types/node\": \"^14.18.63\"") {
 		t.Fatal("expected RageMP starter to include Node 14 type definitions")
+	}
+	if !strings.Contains(packageText, "\"@ragempcommunity/types-server\": \"latest\"") {
+		t.Fatal("expected RageMP starter to include RageMP server types")
+	}
+	if !strings.Contains(packageText, "\"@ragempcommunity/types-client\": \"latest\"") {
+		t.Fatal("expected RageMP starter to include RageMP client types")
+	}
+
+	if _, err := os.Stat(filepath.Join(targetPath, "core", "fxmanifest.lua")); !os.IsNotExist(err) {
+		t.Fatal("did not expect core/fxmanifest.lua in RageMP starter")
 	}
 }

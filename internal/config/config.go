@@ -106,6 +106,48 @@ func (c *Config) UsesSplitRuntimeLayout() bool {
 	return c.RuntimeKind() == "ragemp"
 }
 
+func (c *Config) ensureBuildSideConfigs() {
+	if c.Build.Server == nil {
+		c.Build.Server = &BuildSideConfig{}
+	}
+	if c.Build.Client == nil {
+		c.Build.Client = &BuildSideConfig{}
+	}
+}
+
+func (c *Config) adapterSideTarget(side string) string {
+	if c == nil || c.Adapter == nil {
+		return ""
+	}
+
+	var binding *AdapterBinding
+	switch side {
+	case "server":
+		binding = c.Adapter.Server
+	case "client":
+		binding = c.Adapter.Client
+	default:
+		return ""
+	}
+
+	if binding == nil || binding.Runtime == nil {
+		return ""
+	}
+
+	var hints *AdapterRuntimeSideHints
+	if side == "server" {
+		hints = binding.Runtime.Server
+	} else {
+		hints = binding.Runtime.Client
+	}
+
+	if hints == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(hints.Target)
+}
+
 type CoreConfig struct {
 	Path           string       `json:"path"`
 	ResourceName   string       `json:"resourceName"`
@@ -401,13 +443,26 @@ async function loadConfig(configPath) {
 		config.Destination = ""
 	}
 
-	if config.Build.Target == "" {
-		if config.Adapter != nil && config.Adapter.Server != nil && config.Adapter.Server.Runtime != nil && config.Adapter.Server.Runtime.Server != nil && strings.TrimSpace(config.Adapter.Server.Runtime.Server.Target) != "" {
-			config.Build.Target = strings.TrimSpace(config.Adapter.Server.Runtime.Server.Target)
+	config.ensureBuildSideConfigs()
+	legacyTarget := strings.TrimSpace(config.Build.Target)
+	if strings.TrimSpace(config.Build.Server.Target) == "" {
+		if adapterTarget := config.adapterSideTarget("server"); adapterTarget != "" {
+			config.Build.Server.Target = adapterTarget
+		} else if legacyTarget != "" {
+			config.Build.Server.Target = legacyTarget
 		} else if runtimeKind == "ragemp" {
-			config.Build.Target = "node14"
+			config.Build.Server.Target = "node14"
 		} else {
-			config.Build.Target = "ES2020"
+			config.Build.Server.Target = "ES2020"
+		}
+	}
+	if strings.TrimSpace(config.Build.Client.Target) == "" {
+		if adapterTarget := config.adapterSideTarget("client"); adapterTarget != "" {
+			config.Build.Client.Target = adapterTarget
+		} else if legacyTarget != "" {
+			config.Build.Client.Target = legacyTarget
+		} else {
+			config.Build.Client.Target = "ES2020"
 		}
 	}
 	if config.Build.LogLevel == "" {

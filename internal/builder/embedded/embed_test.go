@@ -20,6 +20,7 @@ func TestEmbeddedBuildScript(t *testing.T) {
 	pluginsContent := string(pluginsScript)
 	requiredPlugins := []string{
 		"createSwcPlugin",
+		"normalizeSwcTarget",
 		"createExcludeNodeAdaptersPlugin",
 		"preserveFiveMExportsPlugin",
 		"findProjectConfigPath",

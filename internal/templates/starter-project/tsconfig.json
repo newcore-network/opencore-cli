@@ -17,7 +17,7 @@
         "useDefineForClassFields": false,
         "outDir": "./dist",
         "noEmit": true,
-{{ if .InstallRageMPAdapter }}        "types": ["node"]
+{{ if .InstallRageMPAdapter }}        "types": ["node", "@ragempcommunity/types-server", "@ragempcommunity/types-client"]
 {{ else }}        "types": ["@citizenfx/client", "@citizenfx/server"]
 {{ end }}
     },

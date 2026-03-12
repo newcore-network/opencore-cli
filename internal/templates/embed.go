@@ -127,9 +127,11 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		"opencore.config.ts":  filepath.Join(targetPath, "opencore.config.ts"),
 		"pnpm-workspace.yaml": filepath.Join(targetPath, "pnpm-workspace.yaml"),
 		"core/package.json":   filepath.Join(targetPath, "core", "package.json"),
-		"core/fxmanifest.lua": filepath.Join(targetPath, "core", "fxmanifest.lua"),
 		"tsconfig.json":       filepath.Join(targetPath, "tsconfig.json"),
 		".gitignore":          filepath.Join(targetPath, ".gitignore"),
+	}
+	if adapter != "ragemp" {
+		files["core/fxmanifest.lua"] = filepath.Join(targetPath, "core", "fxmanifest.lua")
 	}
 
 	// Add bootstrap files based on architecture

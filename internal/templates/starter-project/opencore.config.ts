@@ -47,9 +47,13 @@ export default defineConfig({
     minify: {{.UseMinify}}, // If you want to debug the compiled JS, you can set it to 'false' but it makes the build heavier.
     sourceMaps: false, // It's also useful for debugging, but it makes the build very large.
     parallel: true,
-    maxWorkers: 8,
-{{ if .InstallRageMPAdapter }}    target: 'node14',
-{{ end }}
+    maxWorkers: 8{{ if .InstallRageMPAdapter }},
+    server: {
+      target: 'node14',
+    },
+    client: {
+      target: 'es2020',
+    }{{ end }}
   },
 
   dev: {

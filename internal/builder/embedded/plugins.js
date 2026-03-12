@@ -29,8 +29,32 @@ function getTsconfigPaths() {
     return _tsconfigPaths
 }
 
+function normalizeSwcTarget(target = 'es2020') {
+    const value = String(target).toLowerCase()
+
+    if (value.startsWith('node')) {
+        switch (value) {
+            case 'node14':
+                return 'es2020'
+            case 'node16':
+                return 'es2021'
+            case 'node18':
+                return 'es2022'
+            case 'node20':
+            case 'node22':
+            case 'node24':
+                return 'es2023'
+            default:
+                return 'es2020'
+        }
+    }
+
+    return value
+}
+
 function createSwcPlugin(target = 'es2020') {
     const swc = getSwc()
+    const swcTarget = normalizeSwcTarget(target)
     return {
         name: 'swc-custom',
         setup(build) {
@@ -55,7 +79,7 @@ function createSwcPlugin(target = 'es2020') {
                                 legacyDecorator: true,
                                 decoratorMetadata: true,
                             },
-                            target: target,
+                            target: swcTarget,
                             keepClassNames: true,
                         },
                         filename: args.path,
