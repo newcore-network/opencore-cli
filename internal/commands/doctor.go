@@ -27,9 +27,10 @@ func NewDoctorCommand() *cobra.Command {
 }
 
 type CheckResult struct {
-	Name    string
-	Passed  bool
-	Message string
+	Name     string
+	Passed   bool
+	Message  string
+	Required bool
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
@@ -40,37 +41,51 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Check Node.js
 	nodeCheck := checkCommand("node", "--version", "Node.js")
+	nodeCheck.Required = true
 	checks = append(checks, nodeCheck)
 
 	// Package manager checks
 	pnpmCheck := checkCommand("pnpm", "--version", "pnpm")
+	pnpmCheck.Required = false
 	checks = append(checks, pnpmCheck)
 	yarnCheck := checkCommand("yarn", "--version", "yarn")
+	yarnCheck.Required = false
 	checks = append(checks, yarnCheck)
 	npmCheck := checkCommand("npm", "--version", "npm")
+	npmCheck.Required = false
 	checks = append(checks, npmCheck)
 
 	preference := pkgmgr.EffectivePreference(".")
 	resolved, err := pkgmgr.Resolve(preference)
 	if err != nil {
-		checks = append(checks, CheckResult{Name: "Package Manager", Passed: false, Message: err.Error()})
+		checks = append(checks, CheckResult{Name: "Package Manager", Passed: false, Message: err.Error(), Required: true})
 	} else {
-		checks = append(checks, CheckResult{Name: "Package Manager", Passed: true, Message: fmt.Sprintf("%s (%s)", resolved.Choice, resolved.Version)})
+		checks = append(checks, CheckResult{Name: "Package Manager", Passed: true, Message: fmt.Sprintf("%s (%s)", resolved.Choice, resolved.Version), Required: true})
 	}
 
 	// Check if in OpenCore project
 	projectCheck := checkOpenCoreProject()
+	projectCheck.Required = true
 	checks = append(checks, projectCheck)
 
 	// Check configuration
+	var cfg *config.Config
 	if projectCheck.Passed {
-		configCheck := checkConfig()
+		var configCheck CheckResult
+		cfg, configCheck = checkConfig()
+		configCheck.Required = true
 		checks = append(checks, configCheck)
+		if configCheck.Passed {
+			adapterCheck := checkAdapter(cfg)
+			adapterCheck.Required = true
+			checks = append(checks, adapterCheck)
+		}
 	}
 
 	// Check if dependencies are installed
 	if projectCheck.Passed {
 		depsCheck := checkDependencies(resolved)
+		depsCheck.Required = true
 		checks = append(checks, depsCheck)
 	}
 
@@ -80,7 +95,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Determine overall status
 	allPassed := true
 	for _, check := range checks {
-		if !check.Passed {
+		if check.Required && !check.Passed {
 			allPassed = false
 			break
 		}
@@ -103,17 +118,19 @@ func checkCommand(command string, args string, name string) CheckResult {
 
 	if err != nil {
 		return CheckResult{
-			Name:    name,
-			Passed:  false,
-			Message: "Not found or not working",
+			Name:     name,
+			Passed:   false,
+			Message:  "Not found or not working",
+			Required: true,
 		}
 	}
 
 	version := strings.TrimSpace(string(output))
 	return CheckResult{
-		Name:    name,
-		Passed:  true,
-		Message: version,
+		Name:     name,
+		Passed:   true,
+		Message:  version,
+		Required: true,
 	}
 }
 
@@ -149,17 +166,17 @@ func checkOpenCoreProject() CheckResult {
 	}
 }
 
-func checkConfig() CheckResult {
+func checkConfig() (*config.Config, CheckResult) {
 	cfg, root, err := config.LoadWithProjectRoot()
 	if err != nil {
-		return CheckResult{
+		return nil, CheckResult{
 			Name:    "Configuration",
 			Passed:  false,
 			Message: err.Error(),
 		}
 	}
 	if err := os.Chdir(root); err != nil {
-		return CheckResult{
+		return nil, CheckResult{
 			Name:    "Configuration",
 			Passed:  false,
 			Message: err.Error(),
@@ -167,18 +184,74 @@ func checkConfig() CheckResult {
 	}
 
 	if cfg.Destination == "" {
-		return CheckResult{
+		return cfg, CheckResult{
 			Name:    "Configuration",
 			Passed:  true,
 			Message: fmt.Sprintf("Valid configuration (no destination; build output: %s)", cfg.OutDir),
 		}
 	}
 
-	return CheckResult{
+	return cfg, CheckResult{
 		Name:    "Configuration",
 		Passed:  true,
 		Message: fmt.Sprintf("Valid configuration (destination: %s)", cfg.Destination),
 	}
+}
+
+func checkAdapter(cfg *config.Config) CheckResult {
+	if cfg == nil || cfg.Adapter == nil || (cfg.Adapter.Server == nil && cfg.Adapter.Client == nil) {
+		return CheckResult{
+			Name:    "Adapter",
+			Passed:  true,
+			Message: "No adapter configured (framework default adapter resolution)",
+		}
+	}
+
+	parts := []string{}
+	passed := true
+
+	if cfg.Adapter.Server != nil {
+		parts = append(parts, formatAdapterBinding("server", cfg.Adapter.Server))
+		passed = passed && cfg.Adapter.Server.Valid
+	}
+	if cfg.Adapter.Client != nil {
+		parts = append(parts, formatAdapterBinding("client", cfg.Adapter.Client))
+		passed = passed && cfg.Adapter.Client.Valid
+	}
+
+	if len(parts) == 0 {
+		parts = append(parts, "Adapter block present but empty")
+		passed = false
+	}
+
+	return CheckResult{
+		Name:    "Adapter",
+		Passed:  passed,
+		Message: strings.Join(parts, "; "),
+	}
+}
+
+func formatAdapterBinding(side string, binding *config.AdapterBinding) string {
+	if binding == nil {
+		return fmt.Sprintf("%s: not configured", side)
+	}
+
+	name := strings.TrimSpace(binding.Name)
+	if name == "" {
+		name = "unknown"
+	}
+
+	status := "valid"
+	if !binding.Valid {
+		status = "invalid"
+	}
+
+	message := strings.TrimSpace(binding.Message)
+	if message != "" {
+		return fmt.Sprintf("%s: %s (%s: %s)", side, name, status, message)
+	}
+
+	return fmt.Sprintf("%s: %s (%s)", side, name, status)
 }
 
 func checkDependencies(pm pkgmgr.Resolved) CheckResult {
@@ -231,7 +304,10 @@ func renderCheckResults(checks []CheckResult) {
 	rows := [][]string{}
 	for _, check := range checks {
 		status := ui.Success("PASS")
-		if !check.Passed {
+		if !check.Passed && !check.Required {
+			status = ui.Warning("WARN")
+		}
+		if !check.Passed && check.Required {
 			status = ui.Error("FAIL")
 		}
 

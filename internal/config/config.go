@@ -13,12 +13,26 @@ type Config struct {
 	Name        string            `json:"name"`
 	OutDir      string            `json:"outDir"`
 	Destination string            `json:"destination,omitempty"`
+	Adapter     *AdapterConfig    `json:"adapter,omitempty"`
 	Core        CoreConfig        `json:"core"`
 	Resources   ResourcesConfig   `json:"resources"`
 	Standalones *StandaloneConfig `json:"standalones,omitempty"`
 	Modules     []string          `json:"modules"`
 	Build       BuildConfig       `json:"build"`
 	Dev         DevConfig         `json:"dev"`
+}
+
+type AdapterConfig struct {
+	Server *AdapterBinding `json:"server,omitempty"`
+	Client *AdapterBinding `json:"client,omitempty"`
+}
+
+type AdapterBinding struct {
+	Name      string `json:"name,omitempty"`
+	Valid     bool   `json:"valid"`
+	Message   string `json:"message,omitempty"`
+	Package   string `json:"package,omitempty"`
+	EntryPath string `json:"entryPath,omitempty"`
 }
 
 type DevConfig struct {
@@ -157,34 +171,88 @@ func LoadWithProjectRoot() (*Config, string, error) {
 	// Create temporary transpiler script
 	transpilerScript := `
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { createRequire } = require('module');
 
 // Make sure module resolution happens from the project root (cwd).
 const requireFromProject = createRequire(process.cwd() + path.sep);
 
+function inspectAdapterBinding(binding, pkgName, entryPath) {
+  if (!binding) {
+    return undefined;
+  }
+
+  const name = typeof binding.name === 'string' ? binding.name : '';
+  const hasRegister = typeof binding.register === 'function';
+  const issues = [];
+
+  if (!name) {
+    issues.push('missing adapter name');
+  }
+  if (!hasRegister) {
+    issues.push('missing register()');
+  }
+
+  return {
+    name,
+    valid: issues.length === 0,
+    message: issues.length > 0 ? issues.join(', ') : undefined,
+    package: pkgName,
+    entryPath,
+  };
+}
+
+async function loadConfig(configPath) {
+  const esbuild = requireFromProject('esbuild');
+  const outfile = path.join(
+    os.tmpdir(),
+    'opencore-config-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.cjs'
+  );
+
+  try {
+    try {
+      requireFromProject('reflect-metadata');
+    } catch (_) {}
+
+    await esbuild.build({
+      entryPoints: [configPath],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: ['node18'],
+      absWorkingDir: process.cwd(),
+      write: true,
+      logLevel: 'silent',
+    });
+
+    const result = require(outfile);
+    return result.default || result;
+  } finally {
+    try {
+      fs.unlinkSync(outfile);
+    } catch (_) {}
+  }
+}
+
 (async () => {
   try {
-    // Use tsx to run TypeScript directly
     const configPath = path.resolve(process.argv[2]);
+    const config = await loadConfig(configPath);
+    const serialized = {
+      ...config,
+      adapter: {
+        server: inspectAdapterBinding(config?.adapter?.server, '@open-core/fivem-adapter', '@open-core/fivem-adapter/server'),
+        client: inspectAdapterBinding(config?.adapter?.client, '@open-core/fivem-adapter', '@open-core/fivem-adapter/client'),
+      },
+    };
 
-    // Try to require tsx or ts-node
-    let result;
-    try {
-      requireFromProject('tsx/cjs');
-      result = requireFromProject(configPath);
-    } catch (e) {
-      // Fallback: try to use esbuild-register
-      try {
-        requireFromProject('esbuild-register/dist/node').register();
-        result = requireFromProject(configPath);
-      } catch (e2) {
-        // Last resort: assume it's already transpiled or use plain require
-        result = requireFromProject(configPath);
-      }
+    if (!serialized.adapter.server && !serialized.adapter.client) {
+      delete serialized.adapter;
     }
 
-    const config = result.default || result;
-    console.log(JSON.stringify(config, null, 2));
+    console.log(JSON.stringify(serialized, null, 2));
   } catch (error) {
     console.error('Failed to load config:', error.message);
     process.exit(1);

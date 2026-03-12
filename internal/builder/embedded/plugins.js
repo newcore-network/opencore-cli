@@ -322,6 +322,24 @@ function createTsconfigPathsPlugin(resourcePath) {
 
 }
 
+function findProjectConfigPath(resourcePath) {
+    if (!resourcePath) return null
+
+    let current = path.resolve(resourcePath)
+    while (true) {
+        const candidate = path.join(current, 'opencore.config.ts')
+        if (fs.existsSync(candidate)) {
+            return candidate
+        }
+
+        const parent = path.dirname(current)
+        if (parent === current) {
+            return null
+        }
+        current = parent
+    }
+}
+
 function getPackageManagerValue(packageManager) {
     const pm = String(packageManager || '').toLowerCase()
     if (pm === 'pnpm' || pm === 'yarn' || pm === 'npm') return pm
@@ -335,10 +353,60 @@ function installCmd(pm, pkg, isDev) {
     return isDev ? `pnpm add -D ${pkg}` : `pnpm add ${pkg}`
 }
 
-function createReflectMetadataPlugin(packageManager) {
+function createReflectMetadataPlugin(optionsOrPackageManager) {
+    const options = typeof optionsOrPackageManager === 'object' && optionsOrPackageManager !== null
+        ? optionsOrPackageManager
+        : { packageManager: optionsOrPackageManager }
+    const packageManager = options.packageManager
+    const resourcePath = options.resourcePath || null
+    const target = options.target || null
+    const projectConfigPath = findProjectConfigPath(resourcePath)
+    const adapterModulePath = target ? `opencore:project-adapter:${target}` : null
+    const cliConfigHelperPath = 'opencore:config-helper'
+
     return {
         name: 'reflect-metadata-injector',
         setup(build) {
+            if (adapterModulePath) {
+                build.onResolve({ filter: /^opencore:project-adapter:(server|client)$/ }, (args) => ({
+                    path: args.path,
+                    namespace: 'opencore-project-adapter',
+                }))
+
+                build.onLoad({ filter: /^opencore:project-adapter:(server|client)$/ , namespace: 'opencore-project-adapter' }, async (args) => {
+                    const side = args.path.endsWith(':server') ? 'server' : 'client'
+                    if (!projectConfigPath) {
+                        return {
+                            contents: 'export const __openCoreProjectAdapter = undefined\n',
+                            loader: 'js',
+                        }
+                    }
+
+                    return {
+                        contents: `import projectConfig from ${JSON.stringify('./' + path.basename(projectConfigPath))}\nexport const __openCoreProjectAdapter = projectConfig?.adapter?.${side}\n`,
+                        loader: 'js',
+                        resolveDir: path.dirname(projectConfigPath),
+                    }
+                })
+
+                build.onResolve({ filter: /^@open-core\/cli$/ }, (args) => {
+                    if (!projectConfigPath) return null
+                    if (path.resolve(args.importer) !== path.resolve(projectConfigPath)) {
+                        return null
+                    }
+
+                    return {
+                        path: cliConfigHelperPath,
+                        namespace: 'opencore-config-helper',
+                    }
+                })
+
+                build.onLoad({ filter: /^opencore:config-helper$/, namespace: 'opencore-config-helper' }, async () => ({
+                    contents: 'export function defineConfig(config) { return config }\n',
+                    loader: 'js',
+                }))
+            }
+
             // Force reflect-metadata to be bundled even if marked as external
             build.onResolve({ filter: /^reflect-metadata$/ }, () => {
                 try {
@@ -363,14 +431,23 @@ function createReflectMetadataPlugin(packageManager) {
 
                 try {
                     const contents = await fs.promises.readFile(args.path, 'utf8')
-                    if (contents.includes('reflect-metadata')) return null
+                    const lines = []
+                    if (!contents.includes('reflect-metadata')) {
+                        lines.push(`import 'reflect-metadata';`)
+                    }
+                    if (adapterModulePath && !contents.includes('__OPENCORE_PROJECT_') && !contents.includes(adapterModulePath)) {
+                        lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
+                        lines.push(`globalThis.__OPENCORE_PROJECT_${target.toUpperCase()}_ADAPTER__ = __openCoreProjectAdapter;`)
+                    }
+
+                    if (lines.length === 0) return null
 
                     const ext = path.extname(args.path).slice(1)
                     // If it's TS, use 'ts' or 'tsx' loader, otherwise esbuild will fail
                     const loader = ext === 'ts' || ext === 'tsx' ? ext : 'js'
 
                     return {
-                        contents: `import 'reflect-metadata';\n${contents}`,
+                        contents: `${lines.join('\n')}\n${contents}`,
                         loader: loader,
                     }
                 } catch (e) {

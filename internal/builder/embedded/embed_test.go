@@ -22,6 +22,8 @@ func TestEmbeddedBuildScript(t *testing.T) {
 		"createSwcPlugin",
 		"createExcludeNodeAdaptersPlugin",
 		"preserveFiveMExportsPlugin",
+		"findProjectConfigPath",
+		"__OPENCORE_PROJECT_",
 	}
 	for _, plugin := range requiredPlugins {
 		if !strings.Contains(pluginsContent, plugin) {

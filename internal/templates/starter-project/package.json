@@ -28,7 +28,8 @@
     "@citizenfx/client": "2.0.22443-1",
     "@citizenfx/server": "2.0.22443-1",
     "reflect-metadata": "^0.2.2",
-    "@open-core/framework": "latest"{{if .InstallIdentity}},
+    "@open-core/framework": "latest"{{if .InstallFiveMAdapter}},
+    "@open-core/fivem-adapter": "latest"{{end}}{{if .InstallIdentity}},
     "@open-core/identity": "latest"{{end}}
   }
 }

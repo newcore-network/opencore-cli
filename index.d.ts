@@ -58,6 +58,9 @@
  * ```
  */
 
+import type { OpenCoreClientAdapter } from '@open-core/framework/client';
+import type { OpenCoreServerAdapter } from '@open-core/framework/server';
+
 /**
  * Log levels supported by the OpenCore Framework.
  */
@@ -720,6 +723,25 @@ export interface BuildConfig {
 }
 
 /**
+ * Central adapter configuration applied by the OpenCore compiler.
+ *
+ * When present, the compiler injects these adapters into the generated
+ * server/client bundles so `Server.init()` and `Client.init()` can reuse them
+ * without repeating adapter setup in every entry point.
+ */
+export interface OpenCoreAdapterConfig {
+  /**
+   * Default server adapter used for compiled server bundles.
+   */
+  server?: OpenCoreServerAdapter;
+
+  /**
+   * Default client adapter used for compiled client bundles.
+   */
+  client?: OpenCoreClientAdapter;
+}
+
+/**
  * Main OpenCore configuration object.
  * This is the root configuration that defines your entire project structure.
  *
@@ -841,6 +863,11 @@ export interface OpenCoreConfig {
    * @example ['@open-core/identity']
    */
   modules?: string[];
+
+  /**
+   * Central runtime adapters injected by the compiler into built bundles.
+   */
+  adapter?: OpenCoreAdapterConfig;
 
   /**
    * Global build configuration.

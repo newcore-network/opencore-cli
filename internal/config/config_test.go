@@ -10,6 +10,20 @@ func TestConfigParsing(t *testing.T) {
 		"name": "test-project",
 		"outDir": "./dist",
 		"destination": "C:/FXServer/resources",
+		"adapter": {
+			"server": {
+				"name": "fivem",
+				"valid": true,
+				"package": "@open-core/fivem-adapter",
+				"entryPath": "@open-core/fivem-adapter/server"
+			},
+			"client": {
+				"name": "fivem",
+				"valid": true,
+				"package": "@open-core/fivem-adapter",
+				"entryPath": "@open-core/fivem-adapter/client"
+			}
+		},
 		"core": {
 			"path": "./core",
 			"resourceName": "[core]",
@@ -77,6 +91,16 @@ func TestConfigParsing(t *testing.T) {
 	// The logic for forcing OutDir = Destination is in Load() which we aren't testing here directly with json.Unmarshal.
 	if cfg.Destination != "C:/FXServer/resources" {
 		t.Errorf("Expected destination 'C:/FXServer/resources', got '%s'", cfg.Destination)
+	}
+
+	if cfg.Adapter == nil || cfg.Adapter.Server == nil || cfg.Adapter.Client == nil {
+		t.Fatal("Expected adapter metadata to be set")
+	}
+	if cfg.Adapter.Server.Name != "fivem" || !cfg.Adapter.Server.Valid {
+		t.Errorf("Expected valid server adapter metadata, got %#v", cfg.Adapter.Server)
+	}
+	if cfg.Adapter.Client.EntryPath != "@open-core/fivem-adapter/client" {
+		t.Errorf("Expected client adapter entry path '@open-core/fivem-adapter/client', got '%s'", cfg.Adapter.Client.EntryPath)
 	}
 
 	// Test core config

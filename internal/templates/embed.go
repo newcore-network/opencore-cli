@@ -21,6 +21,7 @@ type ProjectConfig struct {
 	ProjectName     string
 	Architecture    string
 	InstallIdentity bool
+	InstallFiveMAdapter bool
 	UseMinify       bool
 	Destination     string
 	PackageManager  string
@@ -43,7 +44,7 @@ type FeatureConfig struct {
 	FeatureNamePascal string
 }
 
-func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, useMinify bool, destination string, packageManager string) error {
+func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, installFiveMAdapter, useMinify bool, destination string, packageManager string) error {
 	if destination != "" {
 		// Ensure the generated TypeScript config is safe on Windows.
 		// Backslashes can be interpreted as escape sequences in JS/TS strings.
@@ -54,6 +55,7 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 		ProjectName:     projectName,
 		Architecture:    architecture,
 		InstallIdentity: installIdentity,
+		InstallFiveMAdapter: installFiveMAdapter,
 		UseMinify:       useMinify,
 		Destination:     destination,
 		PackageManager:  packageManager,

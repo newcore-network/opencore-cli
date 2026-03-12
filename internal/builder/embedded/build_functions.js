@@ -95,7 +95,7 @@ async function copyDirContents(srcDir, destDir) {
 
 function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(packageManager),
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
@@ -118,7 +118,7 @@ function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020'
 
 function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(packageManager),
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
@@ -140,7 +140,7 @@ function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2
 
 function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(packageManager),
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
