@@ -18,13 +18,15 @@ import (
 var templatesFS embed.FS
 
 type ProjectConfig struct {
-	ProjectName     string
-	Architecture    string
-	InstallIdentity bool
-	InstallFiveMAdapter bool
-	UseMinify       bool
-	Destination     string
-	PackageManager  string
+	ProjectName          string
+	Architecture         string
+	InstallIdentity      bool
+	Adapter              string
+	InstallFiveMAdapter  bool
+	InstallRageMPAdapter bool
+	UseMinify            bool
+	Destination          string
+	PackageManager       string
 }
 
 type ResourceConfig struct {
@@ -44,21 +46,25 @@ type FeatureConfig struct {
 	FeatureNamePascal string
 }
 
-func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity, installFiveMAdapter, useMinify bool, destination string, packageManager string) error {
+func GenerateStarterProject(targetPath, projectName, architecture string, installIdentity bool, adapter string, useMinify bool, destination string, packageManager string) error {
 	if destination != "" {
 		// Ensure the generated TypeScript config is safe on Windows.
 		// Backslashes can be interpreted as escape sequences in JS/TS strings.
 		destination = strings.ReplaceAll(destination, "\\", "/")
 	}
 
+	installFiveMAdapter := adapter == "fivem"
+
 	config := ProjectConfig{
-		ProjectName:     projectName,
-		Architecture:    architecture,
-		InstallIdentity: installIdentity,
-		InstallFiveMAdapter: installFiveMAdapter,
-		UseMinify:       useMinify,
-		Destination:     destination,
-		PackageManager:  packageManager,
+		ProjectName:          projectName,
+		Architecture:         architecture,
+		InstallIdentity:      installIdentity,
+		Adapter:              adapter,
+		InstallFiveMAdapter:  installFiveMAdapter,
+		InstallRageMPAdapter: adapter == "ragemp",
+		UseMinify:            useMinify,
+		Destination:          destination,
+		PackageManager:       packageManager,
 	}
 
 	// Create base directories

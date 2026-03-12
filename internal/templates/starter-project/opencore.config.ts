@@ -1,19 +1,29 @@
 import { defineConfig } from '@open-core/cli'
 {{ if .InstallFiveMAdapter }}import { FiveMClientAdapter } from '@open-core/fivem-adapter/client'
 import { FiveMServerAdapter } from '@open-core/fivem-adapter/server'
+{{ else if .InstallRageMPAdapter }}import { RageMPClientAdapter } from '@open-core/ragemp-adapter/client'
+import { RageMPServerAdapter } from '@open-core/ragemp-adapter/server'
 {{ end }}
 // If you get a missing packages error, install dependencies in the project root.
 
 export default defineConfig({
   name: '{{.ProjectName}}',
 
-  // Mandatory: Deploy to FiveM server
+{{ if .InstallRageMPAdapter }}  // Mandatory: deploy to your RageMP server root.
+  // OpenCore will place server files under packages/ and client files under client_packages/.
+{{ else }}  // Mandatory: Deploy to FiveM server
   // Here you must add the path where your FiveM resources are located.
+{{ end }}
   destination: '{{.Destination}}',
 
 {{ if .InstallFiveMAdapter }}  adapter: {
     server: FiveMServerAdapter(),
     client: FiveMClientAdapter(),
+  },
+
+{{ else if .InstallRageMPAdapter }}  adapter: {
+    server: RageMPServerAdapter(),
+    client: RageMPClientAdapter(),
   },
 
 {{ end }}
@@ -38,6 +48,8 @@ export default defineConfig({
     sourceMaps: false, // It's also useful for debugging, but it makes the build very large.
     parallel: true,
     maxWorkers: 8,
+{{ if .InstallRageMPAdapter }}    target: 'node14',
+{{ end }}
   },
 
   dev: {

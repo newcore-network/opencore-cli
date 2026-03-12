@@ -27,7 +27,7 @@ func NewInitCommand() *cobra.Command {
 	cmd.Flags().String("architecture", "", "Project architecture (domain-driven|layer-based|feature-based|hybrid)")
 	cmd.Flags().Bool("minify", false, "Enable code minification in production builds")
 	cmd.Flags().String("adapter", "", "Project adapter (none|fivem|redm|ragemp)")
-	cmd.Flags().String("destination", "", "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)")
+	cmd.Flags().String("destination", "", "Deployment root path (FiveM resources dir or RageMP server root)")
 	cmd.Flags().Bool("non-interactive", false, "Do not run the interactive wizard; use flags/defaults")
 
 	return cmd
@@ -121,10 +121,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 					Disabled: true,
 				},
 				{
-					Label:    "RageMP (In development)",
-					Value:    "ragemp",
-					Desc:     "Reserved adapter slot for RageMP support",
-					Disabled: true,
+					Label: "RageMP",
+					Value: "ragemp",
+					Desc:  "Install @open-core/ragemp-adapter and use RageMP build defaults",
 				},
 			},
 		},
@@ -147,7 +146,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	})
 	steps = append(steps, ui.WizardStep{
 		Title:       "Server Destination",
-		Description: "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)",
+		Description: "Deployment root path, e.g. C:/FXServer/server-data/resources or C:/ragemp-server (optional)",
 		Type:        ui.StepTypeInput,
 		Validate: func(s string) error {
 			return nil
@@ -173,15 +172,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 			adapter = "none"
 		}
 		switch adapter {
-		case "none", "fivem":
-		case "redm", "ragemp":
+		case "none", "fivem", "ragemp":
+		case "redm":
 			return fmt.Errorf("adapter %q is not available yet", adapter)
 		default:
 			return fmt.Errorf("invalid adapter %q (expected: none, fivem, redm, or ragemp)", adapter)
 		}
 		destination := strings.TrimSpace(destinationFlag)
-
-		installFiveMAdapter := adapter == "fivem"
 
 		resolved, err := pkgmgr.Resolve(preference)
 		if err != nil {
@@ -194,7 +191,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println(ui.Info(fmt.Sprintf("Creating project: %s", projectName)))
 		fmt.Println()
-		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, false, installFiveMAdapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
+		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 			return fmt.Errorf("failed to generate project: %w", err)
 		}
 		fmt.Println()
@@ -275,8 +272,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	installFiveMAdapter := adapter == "fivem"
-
 	// Create project directory
 	projectPath := filepath.Join(baseDir, projectName)
 
@@ -287,7 +282,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Generate project from template
-	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, false, installFiveMAdapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
+	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 		return fmt.Errorf("failed to generate project: %w", err)
 	}
 

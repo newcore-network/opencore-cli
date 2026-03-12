@@ -15,7 +15,7 @@ This may be outdated, the latest information is recommended at [opencorejs.dev](
 
 | Topic | Description |
 |-------|-------------|
-| [FiveM Runtime](./docs/fivem-runtime.md) | Server vs Client, platform limitations, incompatible packages |
+| [FiveM Runtime](./docs/fivem-runtime.md) | FiveM server vs client runtime details |
 | [Configuration](./docs/configuration.md) | Full configuration reference and examples |
 | [Commands](./docs/commands.md) | CLI commands and usage |
 
@@ -30,7 +30,7 @@ This may be outdated, the latest information is recommended at [opencorejs.dev](
 | **Simple Configuration** | Embedded build toolchain with sensible defaults, no setup required, a single typed config file |
 | **Hot Reload** | File watching with incremental compilation for rapid development |
 | **Three-Tier Architecture** | Core, satellite resources, and standalone scripts with proper dependency management |
-| **FiveM Optimization** | Node.js module exclusion, FiveM-specific transforms, and native API support |
+| **Runtime-Aware Builds** | Build defaults and output layout adapt to the selected adapter |
 | **Official Templates** | Clone production-ready templates directly from the OpenCore repository |
 | **Project Scaffolding** | Generate features, resources, and standalone scripts with a single command |
 
@@ -100,6 +100,15 @@ opencore init my-server
 cd my-server
 pnpm install
 opencore dev
+```
+
+For a RageMP project:
+
+```bash
+opencore init my-ragemp-server --adapter ragemp
+cd my-ragemp-server
+pnpm install
+opencore build
 ```
 
 If you don't have pnpm installed, you can use:
@@ -202,10 +211,16 @@ Projects are configured via `opencore.config.ts`:
 
 ```typescript
 import { defineConfig } from '@open-core/cli'
+import { FiveMClientAdapter } from '@open-core/fivem-adapter/client'
+import { FiveMServerAdapter } from '@open-core/fivem-adapter/server'
 
 export default defineConfig({
   name: 'my-server',
   destination: '/path/to/fxserver/resources',
+  adapter: {
+    server: FiveMServerAdapter(),
+    client: FiveMClientAdapter(),
+  },
 
   core: {
     path: './core',
@@ -222,6 +237,12 @@ export default defineConfig({
   },
 })
 ```
+
+The adapter is the central runtime switch:
+
+- `FiveM` keeps the standard resource layout and `fxmanifest.lua`
+- `RageMP` builds server output for Node 14 and splits output into `packages/` and `client_packages/`
+- `opencore doctor` shows the configured runtime and adapter status
 
 ### Configuration Reference
 

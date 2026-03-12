@@ -1,8 +1,13 @@
 {
     "compilerOptions": {
+{{ if .InstallRageMPAdapter }}        "target": "es2020",
+        "module": "commonjs",
+        "moduleResolution": "node",
+{{ else }}
         "target": "es2022",
         "module": "preserve",
         "moduleResolution": "bundler",
+{{ end }}
         "skipLibCheck": true,
         "strict": true,
         "baseUrl": ".",
@@ -12,7 +17,9 @@
         "useDefineForClassFields": false,
         "outDir": "./dist",
         "noEmit": true,
-        "types": ["@citizenfx/client", "@citizenfx/server"]
+{{ if .InstallRageMPAdapter }}        "types": ["node"]
+{{ else }}        "types": ["@citizenfx/client", "@citizenfx/server"]
+{{ end }}
     },
     "exclude": [
         "views",
