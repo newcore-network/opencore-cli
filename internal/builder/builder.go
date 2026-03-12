@@ -276,6 +276,121 @@ func findViewsPath(resourcePath string) string {
 	return ""
 }
 
+type resourceBuildLayout struct {
+	Runtime       string
+	ManifestKind  string
+	ServerOutDir  string
+	ClientOutDir  string
+	ViewsOutDir   string
+	ServerOutFile string
+	ClientOutFile string
+}
+
+func (b *Builder) runtimeKind() string {
+	if b == nil || b.config == nil {
+		return "fivem"
+	}
+	return b.config.RuntimeKind()
+}
+
+func (b *Builder) resourceLayout(resourceName string) resourceBuildLayout {
+	runtimeKind := b.runtimeKind()
+	serverHints := (*config.AdapterRuntimeSideHints)(nil)
+	clientHints := (*config.AdapterRuntimeSideHints)(nil)
+	manifestKind := ""
+	if b.config.Adapter != nil {
+		if b.config.Adapter.Server != nil && b.config.Adapter.Server.Runtime != nil {
+			serverHints = b.config.Adapter.Server.Runtime.Server
+			if b.config.Adapter.Server.Runtime.Manifest != nil {
+				manifestKind = b.config.Adapter.Server.Runtime.Manifest.Kind
+			}
+		}
+		if b.config.Adapter.Client != nil && b.config.Adapter.Client.Runtime != nil {
+			clientHints = b.config.Adapter.Client.Runtime.Client
+			if manifestKind == "" && b.config.Adapter.Client.Runtime.Manifest != nil {
+				manifestKind = b.config.Adapter.Client.Runtime.Manifest.Kind
+			}
+		}
+	}
+	serverRoot := "resource"
+	if serverHints != nil && serverHints.OutputRoot != "" {
+		serverRoot = serverHints.OutputRoot
+	}
+	clientRoot := "resource"
+	if clientHints != nil && clientHints.OutputRoot != "" {
+		clientRoot = clientHints.OutputRoot
+	}
+	serverFile := "server.js"
+	if serverHints != nil && serverHints.OutFileName != "" {
+		serverFile = serverHints.OutFileName
+	}
+	clientFile := "client.js"
+	if clientHints != nil && clientHints.OutFileName != "" {
+		clientFile = clientHints.OutFileName
+	}
+	if runtimeKind == "ragemp" {
+		if serverRoot == "resource" {
+			serverRoot = "packages"
+		}
+		if clientRoot == "resource" {
+			clientRoot = "client_packages"
+		}
+		if serverFile == "server.js" {
+			serverFile = "index.js"
+		}
+		if clientFile == "client.js" {
+			clientFile = "index.js"
+		}
+		if manifestKind == "" {
+			manifestKind = "none"
+		}
+		return resourceBuildLayout{
+			Runtime:       runtimeKind,
+			ManifestKind:  manifestKind,
+			ServerOutDir:  filepath.Join(b.config.OutDir, serverRoot, resourceName),
+			ClientOutDir:  filepath.Join(b.config.OutDir, clientRoot, resourceName),
+			ViewsOutDir:   filepath.Join(b.config.OutDir, clientRoot, resourceName, "ui"),
+			ServerOutFile: serverFile,
+			ClientOutFile: clientFile,
+		}
+	}
+	if manifestKind == "" {
+		manifestKind = "fxmanifest"
+	}
+	if serverRoot != "resource" || clientRoot != "resource" || serverFile != "server.js" || clientFile != "client.js" {
+		return resourceBuildLayout{
+			Runtime:       runtimeKind,
+			ManifestKind:  manifestKind,
+			ServerOutDir:  filepath.Join(b.config.OutDir, serverRoot, resourceName),
+			ClientOutDir:  filepath.Join(b.config.OutDir, clientRoot, resourceName),
+			ViewsOutDir:   filepath.Join(b.config.OutDir, clientRoot, resourceName, "ui"),
+			ServerOutFile: serverFile,
+			ClientOutFile: clientFile,
+		}
+	}
+
+	resourceDir := filepath.Join(b.config.OutDir, resourceName)
+	return resourceBuildLayout{
+		Runtime:       runtimeKind,
+		ManifestKind:  manifestKind,
+		ServerOutDir:  resourceDir,
+		ClientOutDir:  resourceDir,
+		ViewsOutDir:   filepath.Join(resourceDir, "ui"),
+		ServerOutFile: serverFile,
+		ClientOutFile: clientFile,
+	}
+}
+
+func buildOptionsWithLayout(layout resourceBuildLayout, opts BuildOptions) BuildOptions {
+	opts.Runtime = layout.Runtime
+	opts.ManifestKind = layout.ManifestKind
+	opts.ServerOutDir = layout.ServerOutDir
+	opts.ClientOutDir = layout.ClientOutDir
+	opts.ServerOutFile = layout.ServerOutFile
+	opts.ClientOutFile = layout.ClientOutFile
+	return opts
+}
+
 // collectAllTasks gathers all build tasks from config
 func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
@@ -301,14 +416,15 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	if logLevel == "" {
 		logLevel = "INFO"
 	}
+	coreLayout := b.resourceLayout(b.config.Core.ResourceName)
 
 	coreTask := BuildTask{
 		Path:           b.config.Core.Path,
 		ResourceName:   b.config.Core.ResourceName,
 		Type:           TypeCore,
-		OutDir:         filepath.Join(b.config.OutDir, b.config.Core.ResourceName),
+		OutDir:         coreLayout.ServerOutDir,
 		CustomCompiler: b.config.Core.CustomCompiler,
-		Options: BuildOptions{
+		Options: buildOptionsWithLayout(coreLayout, BuildOptions{
 			Server:     buildSideValue(true, coreServerCfg),
 			Client:     buildSideValue(true, coreClientCfg),
 			Minify:     b.config.Build.Minify,
@@ -316,7 +432,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			LogLevel:   logLevel,
 			Target:     b.config.Build.Target,
 			Compile:    true,
-		},
+		}),
 	}
 
 	// Add entry points if configured
@@ -342,7 +458,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			Path:           b.config.Core.Views.Path,
 			ResourceName:   b.config.Core.ResourceName + "/ui",
 			Type:           TypeViews,
-			OutDir:         filepath.Join(b.config.OutDir, b.config.Core.ResourceName, "ui"),
+			OutDir:         coreLayout.ViewsOutDir,
 			CustomCompiler: b.config.Core.CustomCompiler, // Use core's custom compiler for views too
 			Options: BuildOptions{
 				Framework:    b.config.Core.Views.Framework,
@@ -367,6 +483,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			}
 
 			resourceName := filepath.Base(match)
+			layout := b.resourceLayout(resourceName)
 
 			// Skip if it's the core path
 			if match == b.config.Core.Path {
@@ -408,8 +525,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Path:         match,
 				ResourceName: resourceName,
 				Type:         TypeResource,
-				OutDir:       filepath.Join(b.config.OutDir, resourceName),
-				Options: BuildOptions{
+				OutDir:       layout.ServerOutDir,
+				Options: buildOptionsWithLayout(layout, BuildOptions{
 					Server:         buildSideValue(true, b.config.Build.Server),
 					Client:         buildSideValue(b.hasClientCode(match), b.config.Build.Client),
 					Minify:         b.config.Build.Minify,
@@ -418,13 +535,16 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Target:         b.config.Build.Target,
 					Compile:        true,
 					ServerBinaries: nil,
-				},
+				}),
 			}
 
 			// Apply explicit overrides
 			if explicit != nil {
 				if explicit.ResourceName != "" {
 					task.ResourceName = explicit.ResourceName
+					layout = b.resourceLayout(task.ResourceName)
+					task.OutDir = layout.ServerOutDir
+					task.Options = buildOptionsWithLayout(layout, task.Options)
 				}
 				if explicit.CustomCompiler != "" {
 					task.CustomCompiler = explicit.CustomCompiler
@@ -471,7 +591,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Path:           viewsConfig.Path,
 						ResourceName:   task.ResourceName + "/ui",
 						Type:           TypeViews,
-						OutDir:         filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
+						OutDir:         layout.ViewsOutDir,
 						CustomCompiler: explicit.CustomCompiler, // Use same compiler for views
 						Options: BuildOptions{
 							Framework:    framework,
@@ -492,7 +612,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Path:         viewsConfig.Path,
 					ResourceName: task.ResourceName + "/ui",
 					Type:         TypeViews,
-					OutDir:       filepath.Join(b.config.OutDir, task.ResourceName, "ui"),
+					OutDir:       layout.ViewsOutDir,
 					Options: BuildOptions{
 						Framework:    viewsConfig.Framework,
 						Minify:       b.config.Build.Minify,
@@ -527,6 +647,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		if resourceName == "" {
 			resourceName = filepath.Base(res.Path)
 		}
+		layout := b.resourceLayout(resourceName)
 
 		// Determine log level
 		resourceLogLevel := b.config.Build.LogLevel
@@ -541,9 +662,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			Path:           res.Path,
 			ResourceName:   resourceName,
 			Type:           TypeResource,
-			OutDir:         filepath.Join(b.config.OutDir, resourceName),
+			OutDir:         layout.ServerOutDir,
 			CustomCompiler: res.CustomCompiler,
-			Options: BuildOptions{
+			Options: buildOptionsWithLayout(layout, BuildOptions{
 				Server:     buildSideValue(true, b.config.Build.Server),
 				Client:     buildSideValue(true, b.config.Build.Client),
 				Minify:     b.config.Build.Minify,
@@ -551,7 +672,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				LogLevel:   resourceLogLevel,
 				Target:     b.config.Build.Target,
 				Compile:    true,
-			},
+			}),
 		}
 
 		// Apply entryPoints if configured
@@ -612,7 +733,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Path:           viewsConfig.Path,
 				ResourceName:   resourceName + "/ui",
 				Type:           TypeViews,
-				OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
+				OutDir:         layout.ViewsOutDir,
 				CustomCompiler: res.CustomCompiler,
 				Options: BuildOptions{
 					Framework:    framework,
@@ -641,6 +762,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				}
 
 				resourceName := filepath.Base(match)
+				layout := b.resourceLayout(resourceName)
 				shouldCompile := b.config.ShouldCompile(match)
 
 				// Check for explicit override to get CustomCompiler and EntryPoints
@@ -675,9 +797,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Path:           match,
 					ResourceName:   resourceName,
 					Type:           taskType,
-					OutDir:         filepath.Join(b.config.OutDir, resourceName),
+					OutDir:         layout.ServerOutDir,
 					CustomCompiler: customCompiler,
-					Options: BuildOptions{
+					Options: buildOptionsWithLayout(layout, BuildOptions{
 						Server:      buildSideValue(true, b.config.Build.Server),
 						Client:      buildSideValue(b.hasClientCode(match), b.config.Build.Client),
 						Minify:      b.config.Build.Minify,
@@ -686,7 +808,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Target:      b.config.Build.Target,
 						Compile:     shouldCompile,
 						EntryPoints: entryPoints,
-					},
+					}),
 				})
 			}
 		}
@@ -697,6 +819,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			if resourceName == "" {
 				resourceName = filepath.Base(res.Path)
 			}
+			layout := b.resourceLayout(resourceName)
 
 			shouldCompile := true
 			if res.Compile != nil {
@@ -721,9 +844,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Path:           res.Path,
 				ResourceName:   resourceName,
 				Type:           taskType,
-				OutDir:         filepath.Join(b.config.OutDir, resourceName),
+				OutDir:         layout.ServerOutDir,
 				CustomCompiler: res.CustomCompiler,
-				Options: BuildOptions{
+				Options: buildOptionsWithLayout(layout, BuildOptions{
 					Server:     buildSideValue(true, b.config.Build.Server),
 					Client:     buildSideValue(b.hasClientCode(res.Path), b.config.Build.Client),
 					Minify:     b.config.Build.Minify,
@@ -731,7 +854,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					LogLevel:   standaloneLogLevel,
 					Target:     b.config.Build.Target,
 					Compile:    shouldCompile,
-				},
+				}),
 			}
 
 			// Apply entryPoints if configured
@@ -759,7 +882,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Path:           res.Views.Path,
 					ResourceName:   resourceName + "/ui",
 					Type:           TypeViews,
-					OutDir:         filepath.Join(b.config.OutDir, resourceName, "ui"),
+					OutDir:         layout.ViewsOutDir,
 					CustomCompiler: res.CustomCompiler,
 					Options: BuildOptions{
 						Framework:    res.Views.Framework,
@@ -926,18 +1049,19 @@ func (b *Builder) hasClientCode(resourcePath string) bool {
 }
 
 func (b *Builder) cleanResourceOutputDir(resourceName string) error {
-	outDir := b.config.OutDir
-	if outDir == "" {
-		outDir = "./build"
+	layout := b.resourceLayout(resourceName)
+	paths := []string{layout.ServerOutDir}
+	if layout.ClientOutDir != layout.ServerOutDir {
+		paths = append(paths, layout.ClientOutDir)
 	}
 
-	resourceDir := filepath.Join(outDir, resourceName)
-	if _, err := os.Stat(resourceDir); os.IsNotExist(err) {
-		return nil
-	}
-
-	if err := os.RemoveAll(resourceDir); err != nil {
-		return err
+	for _, resourceDir := range paths {
+		if _, err := os.Stat(resourceDir); os.IsNotExist(err) {
+			continue
+		}
+		if err := os.RemoveAll(resourceDir); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1042,11 +1166,11 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 		}
 		seen[resourceName] = true
 
-		resourceDir := filepath.Join(b.config.OutDir, resourceName)
+		layout := b.resourceLayout(resourceName)
 
 		// Handle views separately - calculate total directory size
 		if r.Task.Type == TypeViews {
-			totalSize := getDirSize(resourceDir)
+			totalSize := getDirSize(r.Task.OutDir)
 			if totalSize > 0 {
 				// Detect framework from source path
 				framework := detectFramework(r.Task.Path)
@@ -1062,14 +1186,12 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 
 		var serverSize, clientSize int64
 
-		// Check server.js
-		serverPath := filepath.Join(resourceDir, "server.js")
+		serverPath := filepath.Join(layout.ServerOutDir, layout.ServerOutFile)
 		if info, err := os.Stat(serverPath); err == nil {
 			serverSize = info.Size()
 		}
 
-		// Check client.js
-		clientPath := filepath.Join(resourceDir, "client.js")
+		clientPath := filepath.Join(layout.ClientOutDir, layout.ClientOutFile)
 		if info, err := os.Stat(clientPath); err == nil {
 			clientSize = info.Size()
 		}

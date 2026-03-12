@@ -455,6 +455,57 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 	}
 }
 
+func TestCollectAllTasks_RageMPLayout(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./build",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{},
+		Build:     config.BuildConfig{},
+		Adapter: &config.AdapterConfig{
+			Server: &config.AdapterBinding{
+				Name:  "ragemp",
+				Valid: true,
+				Runtime: &config.AdapterRuntimeBinding{
+					Runtime:  "ragemp",
+					Server:   &config.AdapterRuntimeSideHints{Target: "node14"},
+					Client:   &config.AdapterRuntimeSideHints{OutputRoot: "client_packages"},
+					Manifest: &config.AdapterManifestBinding{Kind: "none"},
+				},
+			},
+		},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+	if len(tasks) != 1 {
+		t.Fatalf("Expected 1 task, got %d", len(tasks))
+	}
+
+	task := tasks[0]
+	if task.OutDir != filepath.Join("build", "packages", "core") {
+		t.Fatalf("Expected RageMP server out dir, got '%s'", task.OutDir)
+	}
+	if task.Options.Runtime != "ragemp" {
+		t.Fatalf("Expected runtime 'ragemp', got '%s'", task.Options.Runtime)
+	}
+	if task.Options.ServerOutDir != filepath.Join("build", "packages", "core") {
+		t.Fatalf("Unexpected server out dir '%s'", task.Options.ServerOutDir)
+	}
+	if task.Options.ClientOutDir != filepath.Join("build", "client_packages", "core") {
+		t.Fatalf("Unexpected client out dir '%s'", task.Options.ClientOutDir)
+	}
+	if task.Options.ServerOutFile != "index.js" || task.Options.ClientOutFile != "index.js" {
+		t.Fatalf("Expected RageMP output files to use index.js")
+	}
+	if task.Options.ManifestKind != "none" {
+		t.Fatalf("Expected RageMP manifest kind 'none', got '%s'", task.Options.ManifestKind)
+	}
+}
+
 func TestHasClientCode(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -76,6 +76,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		configCheck.Required = true
 		checks = append(checks, configCheck)
 		if configCheck.Passed {
+			checks = append(checks, CheckResult{Name: "Runtime", Passed: true, Message: cfg.RuntimeKind(), Required: true})
 			adapterCheck := checkAdapter(cfg)
 			adapterCheck.Required = true
 			checks = append(checks, adapterCheck)
@@ -248,10 +249,17 @@ func formatAdapterBinding(side string, binding *config.AdapterBinding) string {
 
 	message := strings.TrimSpace(binding.Message)
 	if message != "" {
-		return fmt.Sprintf("%s: %s (%s: %s)", side, name, status, message)
+		return fmt.Sprintf("%s: %s [%s] (%s: %s)", side, name, adapterRuntimeLabel(binding), status, message)
 	}
 
-	return fmt.Sprintf("%s: %s (%s)", side, name, status)
+	return fmt.Sprintf("%s: %s [%s] (%s)", side, name, adapterRuntimeLabel(binding), status)
+}
+
+func adapterRuntimeLabel(binding *config.AdapterBinding) string {
+	if binding == nil || binding.Runtime == nil || strings.TrimSpace(binding.Runtime.Runtime) == "" {
+		return "default"
+	}
+	return strings.TrimSpace(binding.Runtime.Runtime)
 }
 
 func checkDependencies(pm pkgmgr.Resolved) CheckResult {

@@ -15,13 +15,20 @@ func TestConfigParsing(t *testing.T) {
 				"name": "fivem",
 				"valid": true,
 				"package": "@open-core/fivem-adapter",
-				"entryPath": "@open-core/fivem-adapter/server"
+				"entryPath": "@open-core/fivem-adapter/server",
+				"runtime": {
+					"runtime": "fivem",
+					"manifest": {"kind": "fxmanifest"}
+				}
 			},
 			"client": {
 				"name": "fivem",
 				"valid": true,
 				"package": "@open-core/fivem-adapter",
-				"entryPath": "@open-core/fivem-adapter/client"
+				"entryPath": "@open-core/fivem-adapter/client",
+				"runtime": {
+					"runtime": "fivem"
+				}
 			}
 		},
 		"core": {
@@ -101,6 +108,9 @@ func TestConfigParsing(t *testing.T) {
 	}
 	if cfg.Adapter.Client.EntryPath != "@open-core/fivem-adapter/client" {
 		t.Errorf("Expected client adapter entry path '@open-core/fivem-adapter/client', got '%s'", cfg.Adapter.Client.EntryPath)
+	}
+	if cfg.RuntimeKind() != "fivem" {
+		t.Errorf("Expected runtime kind 'fivem', got '%s'", cfg.RuntimeKind())
 	}
 
 	// Test core config
@@ -190,6 +200,28 @@ func TestConfigParsing(t *testing.T) {
 	}
 	if cfg.Build.ServerBinaryPlatform != "linux" {
 		t.Errorf("Expected serverBinaryPlatform 'linux'")
+	}
+}
+
+func TestRuntimeKindRageMP(t *testing.T) {
+	cfg := &Config{
+		Adapter: &AdapterConfig{
+			Server: &AdapterBinding{
+				Name:  "ragemp",
+				Valid: true,
+				Runtime: &AdapterRuntimeBinding{
+					Runtime: "ragemp",
+					Server:  &AdapterRuntimeSideHints{Target: "node14"},
+				},
+			},
+		},
+	}
+
+	if cfg.RuntimeKind() != "ragemp" {
+		t.Fatalf("Expected runtime kind 'ragemp', got '%s'", cfg.RuntimeKind())
+	}
+	if !cfg.UsesSplitRuntimeLayout() {
+		t.Fatal("Expected RageMP runtime to use split layout")
 	}
 }
 
