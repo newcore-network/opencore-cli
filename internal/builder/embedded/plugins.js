@@ -397,7 +397,7 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                     namespace: 'opencore-project-adapter',
                 }))
 
-                build.onLoad({ filter: /^opencore:project-adapter:(server|client)$/ , namespace: 'opencore-project-adapter' }, async (args) => {
+                build.onLoad({ filter: /^opencore:project-adapter:(server|client)$/, namespace: 'opencore-project-adapter' }, async (args) => {
                     const side = args.path.endsWith(':server') ? 'server' : 'client'
                     if (!projectConfigPath) {
                         return {
@@ -459,9 +459,11 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                     if (!contents.includes('reflect-metadata')) {
                         lines.push(`import 'reflect-metadata';`)
                     }
-                    if (adapterModulePath && !contents.includes('__OPENCORE_PROJECT_') && !contents.includes(adapterModulePath)) {
+
+                    if (adapterModulePath && !contents.includes(adapterModulePath)) {
                         lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
-                        lines.push(`globalThis.__OPENCORE_PROJECT_${target.toUpperCase()}_ADAPTER__ = __openCoreProjectAdapter;`)
+                        lines.push(`import { useAdapter as __useAdapter } from '@open-core/framework/server';`)
+                        lines.push(`if (__openCoreProjectAdapter) __useAdapter(__openCoreProjectAdapter);`)
                     }
 
                     if (lines.length === 0) return null
