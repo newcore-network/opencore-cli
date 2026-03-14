@@ -18,14 +18,15 @@ func TestEmbeddedBuildScript(t *testing.T) {
 	// 2. Check plugins.js
 	pluginsScript, _ := BuildFS.ReadFile("plugins.js")
 	pluginsContent := string(pluginsScript)
-	requiredPlugins := []string{
-		"createSwcPlugin",
-		"normalizeSwcTarget",
-		"createExcludeNodeAdaptersPlugin",
-		"preserveFiveMExportsPlugin",
-		"findProjectConfigPath",
-		"__OPENCORE_PROJECT_",
-	}
+		requiredPlugins := []string{
+			"createSwcPlugin",
+			"normalizeSwcTarget",
+			"createExcludeNodeAdaptersPlugin",
+			"preserveFiveMExportsPlugin",
+			"findProjectConfigPath",
+			"__openCoreProjectAdapter",
+			"__openCoreInitWithAdapter",
+		}
 	for _, plugin := range requiredPlugins {
 		if !strings.Contains(pluginsContent, plugin) {
 			t.Errorf("plugins.js missing required plugin: %s", plugin)

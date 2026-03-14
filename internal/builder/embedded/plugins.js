@@ -114,6 +114,10 @@ function createExcludeNodeAdaptersPlugin(isServerBuild) {
                 contents: 'module.exports = {};',
                 loader: 'js'
             }))
+            build.onLoad({ filter: /[/\\]runtime[/\\]client[/\\]adapter[/\\]node-[^/\\]+/ }, () => ({
+                contents: 'module.exports = {};',
+                loader: 'js'
+            }))
         },
     }
 }
@@ -392,6 +396,33 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
         name: 'reflect-metadata-injector',
         setup(build) {
             if (adapterModulePath) {
+                function buildSideAdapterModule(configSource, side) {
+                    const sideRegex = new RegExp(`${side}\\s*:\\s*([^,\\n]+)`, 'm')
+                    const sideMatch = configSource.match(sideRegex)
+                    if (!sideMatch) {
+                        return 'export const __openCoreProjectAdapter = undefined\n'
+                    }
+
+                    const expression = sideMatch[1].trim()
+                    const identifiers = Array.from(new Set((expression.match(/[A-Za-z_$][\w$]*/g) || [])
+                        .filter((name) => !['true', 'false', 'null', 'undefined'].includes(name))))
+
+                    const importLines = []
+                    for (const identifier of identifiers) {
+                        const importRegex = new RegExp(`^\\s*import\\s+[^\\n]*\\b${identifier}\\b[^\\n]*$`, 'm')
+                        const importMatch = configSource.match(importRegex)
+                        if (importMatch) {
+                            importLines.push(importMatch[0])
+                        }
+                    }
+
+                    if (identifiers.length > 0 && importLines.length === 0) {
+                        return null
+                    }
+
+                    return `${Array.from(new Set(importLines)).join('\n')}\nexport const __openCoreProjectAdapter = ${expression}\n`
+                }
+
                 build.onResolve({ filter: /^opencore:project-adapter:(server|client)$/ }, (args) => ({
                     path: args.path,
                     namespace: 'opencore-project-adapter',
@@ -403,6 +434,16 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                         return {
                             contents: 'export const __openCoreProjectAdapter = undefined\n',
                             loader: 'js',
+                        }
+                    }
+
+                    const configSource = await fs.promises.readFile(projectConfigPath, 'utf8')
+                    const sideModule = buildSideAdapterModule(configSource, side)
+                    if (sideModule) {
+                        return {
+                            contents: sideModule,
+                            loader: 'ts',
+                            resolveDir: path.dirname(projectConfigPath),
                         }
                     }
 
@@ -456,18 +497,36 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                 try {
                     const contents = await fs.promises.readFile(args.path, 'utf8')
                     const lines = []
+                    let transformedContents = contents
                     if (!contents.includes('reflect-metadata')) {
                         lines.push(`import 'reflect-metadata';`)
                     }
 
                     if (adapterModulePath && !contents.includes(adapterModulePath)) {
                         lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
+                        lines.push(`const __openCoreInitWithAdapter = (runtimeApi, adapter, options = {}) => {
+  if (!adapter) {
+    return runtimeApi.init(options);
+  }
+  if (options && typeof options === 'object' && !Array.isArray(options) && 'adapter' in options && options.adapter) {
+    return runtimeApi.init(options);
+  }
+  const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options)
+    ? { ...options, adapter }
+    : { adapter };
+  return runtimeApi.init(normalizedOptions);
+};`)
+
                         if (target === 'server') {
-                            lines.push(`import { useAdapter as __useAdapter } from '@open-core/framework/server';`)
-                            lines.push(`if (__openCoreProjectAdapter) __useAdapter(__openCoreProjectAdapter);`)
+                            transformedContents = transformedContents.replace(
+                                /\bServer\.init\s*\(/g,
+                                '__openCoreInitWithAdapter(Server, __openCoreProjectAdapter, '
+                            )
                         } else {
-                            lines.push(`import { useAdapter as __useAdapter } from '@open-core/framework/client';`)
-                            lines.push(`if (__openCoreProjectAdapter) __useAdapter(__openCoreProjectAdapter);`)
+                            transformedContents = transformedContents.replace(
+                                /\bClient\.init\s*\(/g,
+                                '__openCoreInitWithAdapter(Client, __openCoreProjectAdapter, '
+                            )
                         }
                     }
 
@@ -478,7 +537,7 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                     const loader = ext === 'ts' || ext === 'tsx' ? ext : 'js'
 
                     return {
-                        contents: `${lines.join('\n')}\n${contents}`,
+                        contents: `${lines.join('\n')}\n${transformedContents}`,
                         loader: loader,
                     }
                 } catch (e) {
