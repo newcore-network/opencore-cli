@@ -462,11 +462,11 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
 
                     if (adapterModulePath && !contents.includes(adapterModulePath)) {
                         lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
-                        // Only inject useAdapter on server builds. Importing @open-core/framework/server
-                        // on the client would pull its entire module graph (bootstrap, binary-process.manager,
-                        // worker-pool, etc.) which depend on Node.js APIs unavailable in game clients.
                         if (target === 'server') {
                             lines.push(`import { useAdapter as __useAdapter } from '@open-core/framework/server';`)
+                            lines.push(`if (__openCoreProjectAdapter) __useAdapter(__openCoreProjectAdapter);`)
+                        } else {
+                            lines.push(`import { useAdapter as __useAdapter } from '@open-core/framework/client';`)
                             lines.push(`if (__openCoreProjectAdapter) __useAdapter(__openCoreProjectAdapter);`)
                         }
                     }
