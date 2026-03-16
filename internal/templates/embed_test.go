@@ -128,3 +128,154 @@ func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
 		t.Fatal("did not expect core/fxmanifest.lua in RageMP starter")
 	}
 }
+
+func TestGenerateResourceWithFiveMRuntime(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "demo-resource")
+
+	err := GenerateResource(targetPath, "demo-resource", true, false, ScaffoldRuntimeOptions{
+		Runtime:      "fivem",
+		ManifestKind: "fxmanifest",
+	})
+	if err != nil {
+		t.Fatalf("GenerateResource() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(targetPath, "fxmanifest.lua")); err != nil {
+		t.Fatalf("expected fxmanifest.lua for FiveM resource: %v", err)
+	}
+
+	tsconfigContent, err := os.ReadFile(filepath.Join(targetPath, "tsconfig.json"))
+	if err != nil {
+		t.Fatalf("failed to read tsconfig.json: %v", err)
+	}
+	tsconfigText := string(tsconfigContent)
+	if !strings.Contains(tsconfigText, "\"module\": \"preserve\"") {
+		t.Fatal("expected FiveM resource tsconfig to use preserve module")
+	}
+	if !strings.Contains(tsconfigText, "@citizenfx/client") || !strings.Contains(tsconfigText, "@citizenfx/server") {
+		t.Fatal("expected FiveM resource tsconfig to include CitizenFX types")
+	}
+
+	packageContent, err := os.ReadFile(filepath.Join(targetPath, "package.json"))
+	if err != nil {
+		t.Fatalf("failed to read package.json: %v", err)
+	}
+	packageText := string(packageContent)
+	if !strings.Contains(packageText, "\"@citizenfx/server\": \"latest\"") || !strings.Contains(packageText, "\"@citizenfx/client\": \"latest\"") {
+		t.Fatal("expected FiveM resource package.json to include CitizenFX dev dependencies")
+	}
+	if strings.Contains(packageText, "@ragempcommunity/types-server") {
+		t.Fatal("did not expect RageMP types in FiveM resource package.json")
+	}
+}
+
+func TestGenerateResourceWithRageMPRuntime(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "demo-resource-ragemp")
+
+	err := GenerateResource(targetPath, "demo-resource-ragemp", true, false, ScaffoldRuntimeOptions{
+		Runtime:      "ragemp",
+		ManifestKind: "none",
+	})
+	if err != nil {
+		t.Fatalf("GenerateResource() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(targetPath, "fxmanifest.lua")); !os.IsNotExist(err) {
+		t.Fatal("did not expect fxmanifest.lua for RageMP resource")
+	}
+
+	tsconfigContent, err := os.ReadFile(filepath.Join(targetPath, "tsconfig.json"))
+	if err != nil {
+		t.Fatalf("failed to read tsconfig.json: %v", err)
+	}
+	tsconfigText := string(tsconfigContent)
+	if !strings.Contains(tsconfigText, "\"target\": \"es2020\"") {
+		t.Fatal("expected RageMP resource tsconfig target es2020")
+	}
+	if !strings.Contains(tsconfigText, "\"module\": \"commonjs\"") {
+		t.Fatal("expected RageMP resource tsconfig module commonjs")
+	}
+	if !strings.Contains(tsconfigText, "\"moduleResolution\": \"node\"") {
+		t.Fatal("expected RageMP resource tsconfig moduleResolution node")
+	}
+	if strings.Contains(tsconfigText, "@citizenfx") {
+		t.Fatal("did not expect CitizenFX types in RageMP resource tsconfig")
+	}
+	if !strings.Contains(tsconfigText, "@ragempcommunity/types-server") || !strings.Contains(tsconfigText, "@ragempcommunity/types-client") {
+		t.Fatal("expected RageMP resource tsconfig to include RageMP types")
+	}
+
+	packageContent, err := os.ReadFile(filepath.Join(targetPath, "package.json"))
+	if err != nil {
+		t.Fatalf("failed to read package.json: %v", err)
+	}
+	packageText := string(packageContent)
+	if !strings.Contains(packageText, "\"@types/node\": \"^14.18.63\"") {
+		t.Fatal("expected RageMP resource package.json to include Node types")
+	}
+	if !strings.Contains(packageText, "\"@ragempcommunity/types-server\": \"latest\"") || !strings.Contains(packageText, "\"@ragempcommunity/types-client\": \"latest\"") {
+		t.Fatal("expected RageMP resource package.json to include RageMP type dependencies")
+	}
+	if strings.Contains(packageText, "@citizenfx") {
+		t.Fatal("did not expect CitizenFX dependencies in RageMP resource package.json")
+	}
+}
+
+func TestGenerateStandaloneWithFiveMRuntime(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "demo-standalone")
+
+	err := GenerateStandalone(targetPath, "demo-standalone", true, false, ScaffoldRuntimeOptions{
+		Runtime:      "fivem",
+		ManifestKind: "fxmanifest",
+	})
+	if err != nil {
+		t.Fatalf("GenerateStandalone() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(targetPath, "fxmanifest.lua")); err != nil {
+		t.Fatalf("expected fxmanifest.lua for FiveM standalone: %v", err)
+	}
+
+	packageContent, err := os.ReadFile(filepath.Join(targetPath, "package.json"))
+	if err != nil {
+		t.Fatalf("failed to read package.json: %v", err)
+	}
+	packageText := string(packageContent)
+	if !strings.Contains(packageText, "\"@open-core/framework\": \"latest\"") {
+		t.Fatal("expected standalone package.json to include @open-core/framework")
+	}
+	if !strings.Contains(packageText, "\"@citizenfx/server\": \"latest\"") || !strings.Contains(packageText, "\"@citizenfx/client\": \"latest\"") {
+		t.Fatal("expected FiveM standalone package.json to include CitizenFX dev dependencies")
+	}
+}
+
+func TestGenerateStandaloneWithRageMPRuntime(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "demo-standalone-ragemp")
+
+	err := GenerateStandalone(targetPath, "demo-standalone-ragemp", true, false, ScaffoldRuntimeOptions{
+		Runtime:      "ragemp",
+		ManifestKind: "none",
+	})
+	if err != nil {
+		t.Fatalf("GenerateStandalone() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(targetPath, "fxmanifest.lua")); !os.IsNotExist(err) {
+		t.Fatal("did not expect fxmanifest.lua for RageMP standalone")
+	}
+
+	tsconfigContent, err := os.ReadFile(filepath.Join(targetPath, "tsconfig.json"))
+	if err != nil {
+		t.Fatalf("failed to read tsconfig.json: %v", err)
+	}
+	tsconfigText := string(tsconfigContent)
+	if !strings.Contains(tsconfigText, "\"module\": \"commonjs\"") {
+		t.Fatal("expected RageMP standalone tsconfig module commonjs")
+	}
+	if !strings.Contains(tsconfigText, "@ragempcommunity/types-server") || !strings.Contains(tsconfigText, "@ragempcommunity/types-client") {
+		t.Fatal("expected RageMP standalone tsconfig to include RageMP types")
+	}
+	if strings.Contains(tsconfigText, "@citizenfx") {
+		t.Fatal("did not expect CitizenFX types in RageMP standalone tsconfig")
+	}
+}

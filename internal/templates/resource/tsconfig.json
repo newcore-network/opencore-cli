@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
-    "module": "commonjs",
+    "target": "{{.TSConfigTarget}}",
+    "module": "{{.TSConfigModule}}",
+    "moduleResolution": "{{.TSModuleResolution}}",
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -12,9 +13,9 @@
     "sourceMap": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "types": ["@citizenfx/client", "@citizenfx/server"]
-  },
+{{if .UseNodeTypes}}    "types": ["node", "@ragempcommunity/types-server", "@ragempcommunity/types-client"]
+{{else}}    "types": ["@citizenfx/client", "@citizenfx/server"]
+{{end}}  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
-

@@ -71,12 +71,13 @@ func runCreateStandalone(cmd *cobra.Command, args []string, withClient, withNUI 
 
 	standalonePath := filepath.Join("standalones", standaloneName)
 	resolved, _ := pkgmgr.Resolve(pkgmgr.EffectivePreference("."))
+	runtimeOptions := detectScaffoldRuntimeOptions()
 
 	fmt.Println(ui.Info(fmt.Sprintf("Creating standalone: %s", standaloneName)))
 	fmt.Println()
 
 	// Generate standalone
-	if err := templates.GenerateStandalone(standalonePath, standaloneName, withClient, withNUI); err != nil {
+	if err := templates.GenerateStandalone(standalonePath, standaloneName, withClient, withNUI, runtimeOptions); err != nil {
 		return fmt.Errorf("failed to generate standalone: %w", err)
 	}
 

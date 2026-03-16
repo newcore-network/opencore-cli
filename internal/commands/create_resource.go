@@ -64,12 +64,13 @@ func runCreateResource(cmd *cobra.Command, args []string, withClient, withNUI bo
 
 	resourcePath := filepath.Join("resources", resourceName)
 	resolved, _ := pkgmgr.Resolve(pkgmgr.EffectivePreference("."))
+	runtimeOptions := detectScaffoldRuntimeOptions()
 
 	fmt.Println(ui.Info(fmt.Sprintf("Creating resource: %s", resourceName)))
 	fmt.Println()
 
 	// Generate resource
-	if err := templates.GenerateResource(resourcePath, resourceName, withClient, withNUI); err != nil {
+	if err := templates.GenerateResource(resourcePath, resourceName, withClient, withNUI, runtimeOptions); err != nil {
 		return fmt.Errorf("failed to generate resource: %w", err)
 	}
 

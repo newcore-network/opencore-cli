@@ -30,15 +30,113 @@ type ProjectConfig struct {
 }
 
 type ResourceConfig struct {
-	ResourceName string
-	HasClient    bool
-	HasNUI       bool
+	ResourceName       string
+	HasClient          bool
+	HasNUI             bool
+	Runtime            string
+	ManifestKind       string
+	GenerateManifest   bool
+	UseNodeTypes       bool
+	UseCitizenFXTypes  bool
+	UseRageMPTypes     bool
+	TSConfigTarget     string
+	TSConfigModule     string
+	TSModuleResolution string
 }
 
 type StandaloneConfig struct {
-	StandaloneName string
-	HasClient      bool
-	HasNUI         bool
+	StandaloneName     string
+	HasClient          bool
+	HasNUI             bool
+	Runtime            string
+	ManifestKind       string
+	GenerateManifest   bool
+	UseNodeTypes       bool
+	UseCitizenFXTypes  bool
+	UseRageMPTypes     bool
+	TSConfigTarget     string
+	TSConfigModule     string
+	TSModuleResolution string
+}
+
+type ScaffoldRuntimeOptions struct {
+	Runtime      string
+	ManifestKind string
+}
+
+func normalizeScaffoldRuntimeOptions(opts ScaffoldRuntimeOptions) ScaffoldRuntimeOptions {
+	runtime := strings.ToLower(strings.TrimSpace(opts.Runtime))
+	if runtime == "" {
+		runtime = "fivem"
+	}
+
+	manifestKind := strings.ToLower(strings.TrimSpace(opts.ManifestKind))
+	if manifestKind == "" {
+		if runtime == "ragemp" {
+			manifestKind = "none"
+		} else {
+			manifestKind = "fxmanifest"
+		}
+	}
+
+	return ScaffoldRuntimeOptions{
+		Runtime:      runtime,
+		ManifestKind: manifestKind,
+	}
+}
+
+func resourceTemplateConfig(resourceName string, hasClient, hasNUI bool, opts ScaffoldRuntimeOptions) ResourceConfig {
+	normalized := normalizeScaffoldRuntimeOptions(opts)
+	config := ResourceConfig{
+		ResourceName:       resourceName,
+		HasClient:          hasClient,
+		HasNUI:             hasNUI,
+		Runtime:            normalized.Runtime,
+		ManifestKind:       normalized.ManifestKind,
+		GenerateManifest:   normalized.ManifestKind == "fxmanifest",
+		TSConfigTarget:     "ES2022",
+		TSConfigModule:     "preserve",
+		TSModuleResolution: "bundler",
+	}
+
+	if normalized.Runtime == "ragemp" {
+		config.UseNodeTypes = true
+		config.UseRageMPTypes = true
+		config.TSConfigTarget = "es2020"
+		config.TSConfigModule = "commonjs"
+		config.TSModuleResolution = "node"
+	} else {
+		config.UseCitizenFXTypes = true
+	}
+
+	return config
+}
+
+func standaloneTemplateConfig(standaloneName string, hasClient, hasNUI bool, opts ScaffoldRuntimeOptions) StandaloneConfig {
+	normalized := normalizeScaffoldRuntimeOptions(opts)
+	config := StandaloneConfig{
+		StandaloneName:     standaloneName,
+		HasClient:          hasClient,
+		HasNUI:             hasNUI,
+		Runtime:            normalized.Runtime,
+		ManifestKind:       normalized.ManifestKind,
+		GenerateManifest:   normalized.ManifestKind == "fxmanifest",
+		TSConfigTarget:     "ES2022",
+		TSConfigModule:     "preserve",
+		TSModuleResolution: "bundler",
+	}
+
+	if normalized.Runtime == "ragemp" {
+		config.UseNodeTypes = true
+		config.UseRageMPTypes = true
+		config.TSConfigTarget = "es2020"
+		config.TSConfigModule = "commonjs"
+		config.TSModuleResolution = "node"
+	} else {
+		config.UseCitizenFXTypes = true
+	}
+
+	return config
 }
 
 type FeatureConfig struct {
@@ -172,12 +270,8 @@ func GenerateStarterProject(targetPath, projectName, architecture string, instal
 	return nil
 }
 
-func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) error {
-	config := ResourceConfig{
-		ResourceName: resourceName,
-		HasClient:    hasClient,
-		HasNUI:       hasNUI,
-	}
+func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool, opts ScaffoldRuntimeOptions) error {
+	config := resourceTemplateConfig(resourceName, hasClient, hasNUI, opts)
 
 	// Create directories
 	dirs := []string{
@@ -204,8 +298,11 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) e
 	files := map[string]string{
 		"package.json":       filepath.Join(targetPath, "package.json"),
 		"tsconfig.json":      filepath.Join(targetPath, "tsconfig.json"),
-		"fxmanifest.lua":     filepath.Join(targetPath, "fxmanifest.lua"),
 		"src/server/main.ts": filepath.Join(targetPath, "src", "server", "main.ts"),
+	}
+
+	if config.GenerateManifest {
+		files["fxmanifest.lua"] = filepath.Join(targetPath, "fxmanifest.lua")
 	}
 
 	if hasClient {
@@ -240,12 +337,8 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool) e
 }
 
 // GenerateStandalone generates a new standalone resource from templates.
-func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI bool) error {
-	config := StandaloneConfig{
-		StandaloneName: standaloneName,
-		HasClient:      hasClient,
-		HasNUI:         hasNUI,
-	}
+func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI bool, opts ScaffoldRuntimeOptions) error {
+	config := standaloneTemplateConfig(standaloneName, hasClient, hasNUI, opts)
 
 	// Create directories
 	dirs := []string{
@@ -272,8 +365,11 @@ func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI boo
 	files := map[string]string{
 		"package.json":       filepath.Join(targetPath, "package.json"),
 		"tsconfig.json":      filepath.Join(targetPath, "tsconfig.json"),
-		"fxmanifest.lua":     filepath.Join(targetPath, "fxmanifest.lua"),
 		"src/server/main.ts": filepath.Join(targetPath, "src", "server", "main.ts"),
+	}
+
+	if config.GenerateManifest {
+		files["fxmanifest.lua"] = filepath.Join(targetPath, "fxmanifest.lua")
 	}
 
 	if hasClient {
