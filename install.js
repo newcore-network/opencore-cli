@@ -64,7 +64,13 @@ async function install() {
     }
     
     const binaryPath = path.join(binDir, binaryName);
-    
+
+    // Skip download if binary already exists (e.g. built locally via `go build` for development)
+    if (fs.existsSync(binaryPath)) {
+      console.log('OpenCore CLI binary already exists, skipping download.');
+      return;
+    }
+
     // Download binary from GitHub releases
     const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/opencore-${platform}${platform.startsWith('windows') ? '.exe' : ''}`;
     
