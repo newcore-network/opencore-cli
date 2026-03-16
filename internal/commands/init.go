@@ -24,7 +24,6 @@ func NewInitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("dir", "d", ".", "Directory where the project folder will be created")
-	cmd.Flags().String("architecture", "", "Project architecture (domain-driven|layer-based|feature-based|hybrid)")
 	cmd.Flags().Bool("minify", false, "Enable code minification in production builds")
 	cmd.Flags().String("adapter", "", "Project adapter (none|fivem|redm|ragemp)")
 	cmd.Flags().String("destination", "", "Deployment root path (FiveM resources dir or RageMP server root)")
@@ -35,7 +34,6 @@ func NewInitCommand() *cobra.Command {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	baseDir, _ := cmd.Flags().GetString("dir")
-	architectureFlag, _ := cmd.Flags().GetString("architecture")
 	minifyFlag, _ := cmd.Flags().GetBool("minify")
 	adapterFlag, _ := cmd.Flags().GetString("adapter")
 	destinationFlag, _ := cmd.Flags().GetString("destination")
@@ -70,33 +68,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("directory '%s' already exists", projectDir)
 				}
 				return nil
-			},
-		},
-		{
-			Title:       "Architecture",
-			Description: "Choose how to organize your code",
-			Type:        ui.StepTypeSelect,
-			Options: []ui.WizardOption{
-				{
-					Label: "Domain-Driven",
-					Value: "domain-driven",
-					Desc:  "Recommended for large projects with complex business logic",
-				},
-				{
-					Label: "Layer-Based",
-					Value: "layer-based",
-					Desc:  "Traditional separation by technical layers (controllers, services)",
-				},
-				{
-					Label: "Feature-Based",
-					Value: "feature-based",
-					Desc:  "Simple structure, good for small projects",
-				},
-				{
-					Label: "Hybrid",
-					Value: "hybrid",
-					Desc:  "Flexible approach for evolving projects",
-				},
 			},
 		},
 		{
@@ -162,10 +133,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if projectName == "" {
 			return fmt.Errorf("project name is required in non-interactive mode")
 		}
-		architecture := architectureFlag
-		if architecture == "" {
-			architecture = "feature-based"
-		}
 		useMinify := minifyFlag
 		adapter := strings.TrimSpace(strings.ToLower(adapterFlag))
 		if adapter == "" {
@@ -191,7 +158,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println(ui.Info(fmt.Sprintf("Creating project: %s", projectName)))
 		fmt.Println()
-		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
+		if err := templates.GenerateStarterProject(projectPath, projectName, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 			return fmt.Errorf("failed to generate project: %w", err)
 		}
 		fmt.Println()
@@ -200,7 +167,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		summaryContent := fmt.Sprintf(
 			"Project: %s\n"+
-				"Architecture: %s\n"+
 				"Adapter: %s\n"+
 				"Minify: %s\n"+
 				"Destination: %s\n\n"+
@@ -209,7 +175,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 				"  %s\n"+
 				"  opencore dev",
 			projectName,
-			architecture,
 			adapter,
 			boolToYesNo(useMinify),
 			destination,
@@ -225,9 +190,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	wizard := ui.NewWizard(steps)
 	if len(args) > 0 {
 		wizard.GetValues()["Project Name"] = args[0]
-	}
-	if architectureFlag != "" {
-		wizard.GetValues()["Architecture"] = architectureFlag
 	}
 	if adapterFlag != "" {
 		wizard.GetValues()["Adapter"] = strings.ToLower(adapterFlag)
@@ -257,7 +219,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Extract values
 	projectName := result.GetStringValue("Project Name")
-	architecture := result.GetStringValue("Architecture")
 	adapter := result.GetStringValue("Adapter")
 	useMinify := result.GetBoolValue("Minification")
 	packageManager := result.GetStringValue("Package Manager")
@@ -282,7 +243,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Generate project from template
-	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
+	if err := templates.GenerateStarterProject(projectPath, projectName, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 		return fmt.Errorf("failed to generate project: %w", err)
 	}
 
@@ -293,7 +254,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Summary box
 	summaryContent := fmt.Sprintf(
 		"Project: %s\n"+
-			"Architecture: %s\n"+
 			"Adapter: %s\n"+
 			"Minify: %s\n"+
 			"Destination: %s\n\n"+
@@ -302,7 +262,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 			"  %s\n"+
 			"  opencore dev",
 		projectName,
-		architecture,
 		adapter,
 		boolToYesNo(useMinify),
 		destination,

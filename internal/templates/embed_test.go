@@ -13,7 +13,6 @@ func TestGenerateStarterProjectWithFiveMAdapter(t *testing.T) {
 	err := GenerateStarterProject(
 		targetPath,
 		"demo-project",
-		"feature-based",
 		false,
 		"fivem",
 		false,
@@ -51,6 +50,16 @@ func TestGenerateStarterProjectWithFiveMAdapter(t *testing.T) {
 	if !strings.Contains(string(packageContent), "\"@open-core/fivem-adapter\": \"latest\"") {
 		t.Fatal("expected generated package.json to include @open-core/fivem-adapter")
 	}
+
+	if _, err := os.Stat(filepath.Join(targetPath, "core", "src", "features")); err != nil {
+		t.Fatalf("expected core/src/features directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetPath, "core", "src", "server.ts")); err != nil {
+		t.Fatalf("expected core/src/server.ts: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetPath, "core", "src", "server", "main.ts")); !os.IsNotExist(err) {
+		t.Fatal("did not expect legacy server/main.ts in starter")
+	}
 }
 
 func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
@@ -59,7 +68,6 @@ func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
 	err := GenerateStarterProject(
 		targetPath,
 		"demo-ragemp",
-		"feature-based",
 		false,
 		"ragemp",
 		false,
@@ -126,6 +134,9 @@ func TestGenerateStarterProjectWithRageMPAdapter(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(targetPath, "core", "fxmanifest.lua")); !os.IsNotExist(err) {
 		t.Fatal("did not expect core/fxmanifest.lua in RageMP starter")
+	}
+	if _, err := os.Stat(filepath.Join(targetPath, "core", "src", "features")); err != nil {
+		t.Fatalf("expected core/src/features directory: %v", err)
 	}
 }
 
@@ -221,6 +232,30 @@ func TestGenerateResourceWithRageMPRuntime(t *testing.T) {
 	}
 }
 
+func TestGenerateResourceWithRedMRuntime(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "demo-resource-redm")
+
+	err := GenerateResource(targetPath, "demo-resource-redm", true, false, ScaffoldRuntimeOptions{
+		Runtime:      "redm",
+		ManifestKind: "fxmanifest",
+	})
+	if err != nil {
+		t.Fatalf("GenerateResource() error = %v", err)
+	}
+
+	manifestContent, err := os.ReadFile(filepath.Join(targetPath, "fxmanifest.lua"))
+	if err != nil {
+		t.Fatalf("failed to read fxmanifest.lua: %v", err)
+	}
+	manifestText := string(manifestContent)
+	if !strings.Contains(manifestText, "game 'rdr3'") {
+		t.Fatal("expected RedM resource manifest to target rdr3")
+	}
+	if !strings.Contains(manifestText, "rdr3_warning 'I acknowledge that this is a prerelease build of RedM") {
+		t.Fatal("expected RedM resource manifest to include rdr3_warning")
+	}
+}
+
 func TestGenerateStandaloneWithFiveMRuntime(t *testing.T) {
 	targetPath := filepath.Join(t.TempDir(), "demo-standalone")
 
@@ -277,5 +312,29 @@ func TestGenerateStandaloneWithRageMPRuntime(t *testing.T) {
 	}
 	if strings.Contains(tsconfigText, "@citizenfx") {
 		t.Fatal("did not expect CitizenFX types in RageMP standalone tsconfig")
+	}
+}
+
+func TestGenerateStandaloneWithRedMRuntime(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "demo-standalone-redm")
+
+	err := GenerateStandalone(targetPath, "demo-standalone-redm", true, false, ScaffoldRuntimeOptions{
+		Runtime:      "redm",
+		ManifestKind: "fxmanifest",
+	})
+	if err != nil {
+		t.Fatalf("GenerateStandalone() error = %v", err)
+	}
+
+	manifestContent, err := os.ReadFile(filepath.Join(targetPath, "fxmanifest.lua"))
+	if err != nil {
+		t.Fatalf("failed to read fxmanifest.lua: %v", err)
+	}
+	manifestText := string(manifestContent)
+	if !strings.Contains(manifestText, "game 'rdr3'") {
+		t.Fatal("expected RedM standalone manifest to target rdr3")
+	}
+	if !strings.Contains(manifestText, "rdr3_warning 'I acknowledge that this is a prerelease build of RedM") {
+		t.Fatal("expected RedM standalone manifest to include rdr3_warning")
 	}
 }

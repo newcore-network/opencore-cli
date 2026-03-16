@@ -29,7 +29,7 @@ This may be outdated, the latest information is recommended at [opencorejs.dev](
 | **Full TypeScript Support** | Decorators, metadata reflection, and modern ES2020+ features |
 | **Simple Configuration** | Embedded build toolchain with sensible defaults, no setup required, a single typed config file |
 | **Hot Reload** | File watching with incremental compilation for rapid development |
-| **Three-Tier Architecture** | Core, satellite resources, and standalone scripts with proper dependency management |
+| **Project Layout** | Core, satellite resources, and standalone scripts with proper dependency management |
 | **Runtime-Aware Builds** | Build defaults and output layout adapt to the selected adapter |
 | **Official Templates** | Clone production-ready templates directly from the OpenCore repository |
 | **Project Scaffolding** | Generate features, resources, and standalone scripts with a single command |
@@ -343,60 +343,23 @@ node custom-build.js single <type> <path> <outDir> '<options-json>'
 
 ---
 
-## Project Architectures
+## Project Structure
 
-The CLI supports four project structures:
-
-### Domain-Driven
-
-Recommended for large projects with complex business logic.
+New projects use a single default layout:
 
 ```
 project/
 ├── core/
-├── domains/
-│   ├── authentication/
-│   │   ├── src/
-│   │   │   ├── server/
-│   │   │   ├── client/
-│   │   │   └── shared/
-│   │   └── views/
-│   └── inventory/
-└── shared/
+│   └── src/
+│       ├── client.ts
+│       ├── server.ts
+│       └── features/
+├── resources/
+├── standalones/
+└── views/
 ```
 
-### Layer-Based
-
-Traditional separation by technical layers.
-
-```
-project/
-├── core/
-├── layers/
-│   ├── controllers/
-│   ├── services/
-│   ├── repositories/
-│   └── ui/
-└── shared/
-```
-
-### Feature-Based
-
-Simple structure for rapid development.
-
-```
-project/
-├── core/
-├── features/
-│   ├── player-spawn/
-│   ├── vehicle-shop/
-│   └── admin-panel/
-└── shared/
-```
-
-### Hybrid
-
-Combine domain modules for critical systems with feature folders for lightweight functionality.
+The CLI resolves the right entry files during build, and feature scaffolding in core always targets `core/src/features/`.
 
 ---
 
