@@ -673,8 +673,9 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     // Load framework plugins based on file detection
     const plugins = []
+    const isReact = hasReactFiles(viewPath)
 
-    if (hasReactFiles(viewPath)) {
+    if (isReact) {
         console.log(`[views] React files detected, checking dependencies...`)
         checkReactDependencies(viewPath, options)
     }
@@ -714,6 +715,7 @@ async function buildViews(viewPath, outDir, options = {}) {
         chunkNames: 'chunks/[name]-[hash]',
         assetNames: 'assets/[name]-[hash]',
         plugins,
+        ...(isReact ? { jsx: 'automatic', jsxImportSource: 'react' } : {}),
         loader: {
             // JavaScript/TypeScript
             '.tsx': 'tsx',
