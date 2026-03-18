@@ -140,7 +140,7 @@ func standaloneTemplateConfig(standaloneName string, hasClient, hasNUI bool, opt
 		config.UseNodeTypes = true
 		config.UseRageMPTypes = true
 		config.TSConfigTarget = "es2020"
-		config.TSConfigModule = "commonjs"
+		config.TSConfigModule = "preserve"
 		config.TSModuleResolution = "node"
 	} else {
 		config.UseCitizenFXTypes = true
