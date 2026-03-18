@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/newcore-network/opencore-cli/internal/config"
+	"github.com/newcore-network/opencore-cli/internal/templates"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
 
@@ -58,6 +60,37 @@ func featuresMessage(withClient, withNUI bool) string {
 		msg += "\n  • NUI (UI)"
 	}
 	return msg
+}
+
+func detectScaffoldRuntimeOptions() templates.ScaffoldRuntimeOptions {
+	cfg, _, err := config.LoadWithProjectRoot()
+	if err != nil || cfg == nil {
+		return templates.ScaffoldRuntimeOptions{Runtime: "fivem", ManifestKind: "fxmanifest"}
+	}
+
+	runtimeKind := cfg.RuntimeKind()
+	manifestKind := ""
+	if cfg.Adapter != nil {
+		if cfg.Adapter.Server != nil && cfg.Adapter.Server.Runtime != nil && cfg.Adapter.Server.Runtime.Manifest != nil {
+			manifestKind = strings.TrimSpace(cfg.Adapter.Server.Runtime.Manifest.Kind)
+		}
+		if manifestKind == "" && cfg.Adapter.Client != nil && cfg.Adapter.Client.Runtime != nil && cfg.Adapter.Client.Runtime.Manifest != nil {
+			manifestKind = strings.TrimSpace(cfg.Adapter.Client.Runtime.Manifest.Kind)
+		}
+	}
+
+	if manifestKind == "" {
+		if runtimeKind == "ragemp" {
+			manifestKind = "none"
+		} else {
+			manifestKind = "fxmanifest"
+		}
+	}
+
+	return templates.ScaffoldRuntimeOptions{
+		Runtime:      runtimeKind,
+		ManifestKind: manifestKind,
+	}
 }
 
 func renderCreateBox(content string) {

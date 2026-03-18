@@ -6,10 +6,16 @@ OpenCore CLI uses `opencore.config.ts` for project configuration.
 
 ```typescript
 import { defineConfig } from '@open-core/cli'
+import { FiveMClientAdapter } from '@open-core/fivem-adapter/client'
+import { FiveMServerAdapter } from '@open-core/fivem-adapter/server'
 
 export default defineConfig({
   name: 'my-server',
   destination: 'C:/FXServer/server-data/resources/[my-server]',
+  adapter: {
+    server: FiveMServerAdapter(),
+    client: FiveMClientAdapter(),
+  },
 
   core: {
     path: './core',
@@ -26,6 +32,53 @@ export default defineConfig({
   },
 })
 ```
+
+## Adapter-Based Runtime
+
+OpenCore uses the configured adapter as the runtime source of truth.
+
+### FiveM Example
+
+```typescript
+import { defineConfig } from '@open-core/cli'
+import { FiveMClientAdapter } from '@open-core/fivem-adapter/client'
+import { FiveMServerAdapter } from '@open-core/fivem-adapter/server'
+
+export default defineConfig({
+  name: 'my-fivem-server',
+  destination: 'C:/FXServer/server-data/resources',
+  adapter: {
+    server: FiveMServerAdapter(),
+    client: FiveMClientAdapter(),
+  },
+})
+```
+
+### RageMP Example
+
+```typescript
+import { defineConfig } from '@open-core/cli'
+import { RageMPClientAdapter } from '@open-core/ragemp-adapter/client'
+import { RageMPServerAdapter } from '@open-core/ragemp-adapter/server'
+
+export default defineConfig({
+  name: 'my-ragemp-server',
+  destination: 'C:/ragemp-server',
+  adapter: {
+    server: RageMPServerAdapter(),
+    client: RageMPClientAdapter(),
+  },
+  build: {
+    target: 'node14',
+  },
+})
+```
+
+Runtime behavior:
+
+- FiveM: standard resource layout with `fxmanifest.lua`
+- RageMP: server output in `packages/`, client output in `client_packages/`
+- The compiler injects the configured adapter into built bundles automatically
 
 ## Full Example
 
@@ -98,10 +151,11 @@ export default defineConfig({
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `name` | `string` | Yes | Project name |
-| `destination` | `string` | Yes | FiveM server resources path |
+| `destination` | `string` | Yes | Deployment root path for the selected runtime |
 | `core` | `CoreConfig` | Yes | Core resource configuration |
 | `resources` | `ResourcesConfig` | No | Satellite resources |
 | `standalone` | `StandaloneConfig` | No | Standalone resources |
+| `adapter` | `OpenCoreAdapterConfig` | No | Central server/client runtime adapters |
 | `build` | `BuildConfig` | No | Global build settings |
 | `dev` | `DevConfig` | No | Development settings |
 
@@ -125,4 +179,4 @@ export default defineConfig({
 | `target` | `string` | `es2020` | JS target |
 | `external` | `string[]` | `[]` | External packages (server only) |
 
-See [FiveM Runtime](./fivem-runtime.md) for platform details.
+See [FiveM Runtime](./fivem-runtime.md) for FiveM platform details.

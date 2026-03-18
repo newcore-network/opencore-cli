@@ -3,6 +3,7 @@ package builder
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/newcore-network/opencore-cli/internal/config"
@@ -22,7 +23,8 @@ func TestCollectAllTasks_CoreOnly(t *testing.T) {
 		Build: config.BuildConfig{
 			Minify:     true,
 			SourceMaps: true,
-			Target:     "ES2020",
+			Server:     &config.BuildSideConfig{Target: "ES2020"},
+			Client:     &config.BuildSideConfig{Target: "ES2020"},
 		},
 	}
 
@@ -417,7 +419,8 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 		Build: config.BuildConfig{
 			Minify:     true,
 			SourceMaps: false,
-			Target:     "ES2021",
+			Server:     &config.BuildSideConfig{Target: "ES2021"},
+			Client:     &config.BuildSideConfig{Target: "ES2021"},
 		},
 	}
 
@@ -450,8 +453,131 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 		t.Error("Expected SourceMaps to be false (inherited)")
 	}
 
-	if clientOnlyTask.Options.Target != "ES2021" {
-		t.Errorf("Expected Target 'ES2021', got '%s'", clientOnlyTask.Options.Target)
+	if clientOnlyTask.Options.Server.Options != nil && clientOnlyTask.Options.Server.Options.Target != "ES2021" {
+		t.Errorf("Expected server target 'ES2021', got '%s'", clientOnlyTask.Options.Server.Options.Target)
+	}
+	if clientOnlyTask.Options.Client.Options != nil && clientOnlyTask.Options.Client.Options.Target != "ES2021" {
+		t.Errorf("Expected client target 'ES2021', got '%s'", clientOnlyTask.Options.Client.Options.Target)
+	}
+}
+
+func TestCollectAllTasks_RageMPLayout(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./build",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{},
+		Build:     config.BuildConfig{},
+		Adapter: &config.AdapterConfig{
+			Server: &config.AdapterBinding{
+				Name:  "ragemp",
+				Valid: true,
+				Runtime: &config.AdapterRuntimeBinding{
+					Runtime:  "ragemp",
+					Server:   &config.AdapterRuntimeSideHints{Target: "node14"},
+					Client:   &config.AdapterRuntimeSideHints{OutputRoot: "client_packages"},
+					Manifest: &config.AdapterManifestBinding{Kind: "none"},
+				},
+			},
+		},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+	if len(tasks) != 1 {
+		t.Fatalf("Expected 1 task, got %d", len(tasks))
+	}
+
+	task := tasks[0]
+	if task.OutDir != filepath.Join("build", "packages", "core") {
+		t.Fatalf("Expected RageMP server out dir, got '%s'", task.OutDir)
+	}
+	if task.Options.Runtime != "ragemp" {
+		t.Fatalf("Expected runtime 'ragemp', got '%s'", task.Options.Runtime)
+	}
+	if task.Options.ServerOutDir != filepath.Join("build", "packages", "core") {
+		t.Fatalf("Unexpected server out dir '%s'", task.Options.ServerOutDir)
+	}
+	if task.Options.ClientOutDir != filepath.Join("build", "client_packages", "core") {
+		t.Fatalf("Unexpected client out dir '%s'", task.Options.ClientOutDir)
+	}
+	if task.Options.ServerOutFile != "index.js" || task.Options.ClientOutFile != "index.js" {
+		t.Fatalf("Expected RageMP output files to use index.js")
+	}
+	if task.Options.ManifestKind != "none" {
+		t.Fatalf("Expected RageMP manifest kind 'none', got '%s'", task.Options.ManifestKind)
+	}
+}
+
+func TestWriteRuntimeArtifactsRageMPBarrels(t *testing.T) {
+	outDir := t.TempDir()
+	cfg := &config.Config{
+		OutDir: outDir,
+		Core: config.CoreConfig{
+			ResourceName: "core",
+		},
+		Build: config.BuildConfig{},
+		Adapter: &config.AdapterConfig{
+			Server: &config.AdapterBinding{Name: "ragemp", Valid: true},
+			Client: &config.AdapterBinding{Name: "ragemp", Valid: true},
+		},
+	}
+	builder := New(cfg)
+
+	paths := []string{
+		filepath.Join(outDir, "packages", "core", "index.js"),
+		filepath.Join(outDir, "packages", "alpha", "index.js"),
+		filepath.Join(outDir, "client_packages", "core", "index.js"),
+		filepath.Join(outDir, "client_packages", "bravo", "index.js"),
+	}
+	for _, p := range paths {
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("module.exports = {}\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results := []BuildResult{
+		{Success: true, Task: BuildTask{ResourceName: "alpha", Type: TypeResource, Options: BuildOptions{Server: SideConfigValue{Enabled: true}, Client: SideConfigValue{Enabled: false}}}},
+		{Success: true, Task: BuildTask{ResourceName: "core", Type: TypeCore, Options: BuildOptions{Server: SideConfigValue{Enabled: true}, Client: SideConfigValue{Enabled: true}}}},
+		{Success: true, Task: BuildTask{ResourceName: "bravo", Type: TypeResource, Options: BuildOptions{Server: SideConfigValue{Enabled: false}, Client: SideConfigValue{Enabled: true}}}},
+		{Success: true, Task: BuildTask{ResourceName: "core/ui", Type: TypeViews, Options: BuildOptions{}}},
+	}
+
+	if err := builder.writeRuntimeArtifacts(results); err != nil {
+		t.Fatalf("writeRuntimeArtifacts() error = %v", err)
+	}
+
+	serverBarrel, err := os.ReadFile(filepath.Join(outDir, "packages", "index.js"))
+	if err != nil {
+		t.Fatalf("failed to read server barrel: %v", err)
+	}
+	serverText := string(serverBarrel)
+	if !strings.Contains(serverText, "require('./core')") || !strings.Contains(serverText, "require('./alpha')") {
+		t.Fatalf("unexpected server barrel contents: %s", serverText)
+	}
+	if strings.Index(serverText, "require('./core')") > strings.Index(serverText, "require('./alpha')") {
+		t.Fatal("expected core to be required before alpha in server barrel")
+	}
+	if strings.Contains(serverText, "bravo") {
+		t.Fatal("did not expect client-only resource in server barrel")
+	}
+
+	clientBarrel, err := os.ReadFile(filepath.Join(outDir, "client_packages", "index.js"))
+	if err != nil {
+		t.Fatalf("failed to read client barrel: %v", err)
+	}
+	clientText := string(clientBarrel)
+	if !strings.Contains(clientText, "require('./core')") || !strings.Contains(clientText, "require('./bravo')") {
+		t.Fatalf("unexpected client barrel contents: %s", clientText)
+	}
+	if strings.Contains(clientText, "alpha") {
+		t.Fatal("did not expect server-only resource in client barrel")
 	}
 }
 

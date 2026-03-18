@@ -29,8 +29,32 @@ function getTsconfigPaths() {
     return _tsconfigPaths
 }
 
+function normalizeSwcTarget(target = 'es2020') {
+    const value = String(target).toLowerCase()
+
+    if (value.startsWith('node')) {
+        switch (value) {
+            case 'node14':
+                return 'es2020'
+            case 'node16':
+                return 'es2021'
+            case 'node18':
+                return 'es2022'
+            case 'node20':
+            case 'node22':
+            case 'node24':
+                return 'es2023'
+            default:
+                return 'es2020'
+        }
+    }
+
+    return value
+}
+
 function createSwcPlugin(target = 'es2020') {
     const swc = getSwc()
+    const swcTarget = normalizeSwcTarget(target)
     return {
         name: 'swc-custom',
         setup(build) {
@@ -55,7 +79,7 @@ function createSwcPlugin(target = 'es2020') {
                                 legacyDecorator: true,
                                 decoratorMetadata: true,
                             },
-                            target: target,
+                            target: swcTarget,
                             keepClassNames: true,
                         },
                         filename: args.path,
@@ -87,6 +111,10 @@ function createExcludeNodeAdaptersPlugin(isServerBuild) {
                 external: true
             }))
             build.onLoad({ filter: /[/\\]adapters[/\\]node[/\\]/ }, () => ({
+                contents: 'module.exports = {};',
+                loader: 'js'
+            }))
+            build.onLoad({ filter: /[/\\]runtime[/\\]client[/\\]adapter[/\\]node-[^/\\]+/ }, () => ({
                 contents: 'module.exports = {};',
                 loader: 'js'
             }))
@@ -322,6 +350,24 @@ function createTsconfigPathsPlugin(resourcePath) {
 
 }
 
+function findProjectConfigPath(resourcePath) {
+    if (!resourcePath) return null
+
+    let current = path.resolve(resourcePath)
+    while (true) {
+        const candidate = path.join(current, 'opencore.config.ts')
+        if (fs.existsSync(candidate)) {
+            return candidate
+        }
+
+        const parent = path.dirname(current)
+        if (parent === current) {
+            return null
+        }
+        current = parent
+    }
+}
+
 function getPackageManagerValue(packageManager) {
     const pm = String(packageManager || '').toLowerCase()
     if (pm === 'pnpm' || pm === 'yarn' || pm === 'npm') return pm
@@ -335,10 +381,97 @@ function installCmd(pm, pkg, isDev) {
     return isDev ? `pnpm add -D ${pkg}` : `pnpm add ${pkg}`
 }
 
-function createReflectMetadataPlugin(packageManager) {
+function createReflectMetadataPlugin(optionsOrPackageManager) {
+    const options = typeof optionsOrPackageManager === 'object' && optionsOrPackageManager !== null
+        ? optionsOrPackageManager
+        : { packageManager: optionsOrPackageManager }
+    const packageManager = options.packageManager
+    const resourcePath = options.resourcePath || null
+    const target = options.target || null
+    const projectConfigPath = findProjectConfigPath(resourcePath)
+    const adapterModulePath = target ? `opencore:project-adapter:${target}` : null
+    const cliConfigHelperPath = 'opencore:config-helper'
+
     return {
         name: 'reflect-metadata-injector',
         setup(build) {
+            if (adapterModulePath) {
+                function buildSideAdapterModule(configSource, side) {
+                    const sideRegex = new RegExp(`${side}\\s*:\\s*([^,\\n]+)`, 'm')
+                    const sideMatch = configSource.match(sideRegex)
+                    if (!sideMatch) {
+                        return 'export const __openCoreProjectAdapter = undefined\n'
+                    }
+
+                    const expression = sideMatch[1].trim()
+                    const identifiers = Array.from(new Set((expression.match(/[A-Za-z_$][\w$]*/g) || [])
+                        .filter((name) => !['true', 'false', 'null', 'undefined'].includes(name))))
+
+                    const importLines = []
+                    for (const identifier of identifiers) {
+                        const importRegex = new RegExp(`^\\s*import\\s+[^\\n]*\\b${identifier}\\b[^\\n]*$`, 'm')
+                        const importMatch = configSource.match(importRegex)
+                        if (importMatch) {
+                            importLines.push(importMatch[0])
+                        }
+                    }
+
+                    if (identifiers.length > 0 && importLines.length === 0) {
+                        return null
+                    }
+
+                    return `${Array.from(new Set(importLines)).join('\n')}\nexport const __openCoreProjectAdapter = ${expression}\n`
+                }
+
+                build.onResolve({ filter: /^opencore:project-adapter:(server|client)$/ }, (args) => ({
+                    path: args.path,
+                    namespace: 'opencore-project-adapter',
+                }))
+
+                build.onLoad({ filter: /^opencore:project-adapter:(server|client)$/, namespace: 'opencore-project-adapter' }, async (args) => {
+                    const side = args.path.endsWith(':server') ? 'server' : 'client'
+                    if (!projectConfigPath) {
+                        return {
+                            contents: 'export const __openCoreProjectAdapter = undefined\n',
+                            loader: 'js',
+                        }
+                    }
+
+                    const configSource = await fs.promises.readFile(projectConfigPath, 'utf8')
+                    const sideModule = buildSideAdapterModule(configSource, side)
+                    if (sideModule) {
+                        return {
+                            contents: sideModule,
+                            loader: 'ts',
+                            resolveDir: path.dirname(projectConfigPath),
+                        }
+                    }
+
+                    return {
+                        contents: `import projectConfig from ${JSON.stringify('./' + path.basename(projectConfigPath))}\nexport const __openCoreProjectAdapter = projectConfig?.adapter?.${side}\n`,
+                        loader: 'js',
+                        resolveDir: path.dirname(projectConfigPath),
+                    }
+                })
+
+                build.onResolve({ filter: /^@open-core\/cli$/ }, (args) => {
+                    if (!projectConfigPath) return null
+                    if (path.resolve(args.importer) !== path.resolve(projectConfigPath)) {
+                        return null
+                    }
+
+                    return {
+                        path: cliConfigHelperPath,
+                        namespace: 'opencore-config-helper',
+                    }
+                })
+
+                build.onLoad({ filter: /^opencore:config-helper$/, namespace: 'opencore-config-helper' }, async () => ({
+                    contents: 'export function defineConfig(config) { return config }\n',
+                    loader: 'js',
+                }))
+            }
+
             // Force reflect-metadata to be bundled even if marked as external
             build.onResolve({ filter: /^reflect-metadata$/ }, () => {
                 try {
@@ -363,14 +496,48 @@ function createReflectMetadataPlugin(packageManager) {
 
                 try {
                     const contents = await fs.promises.readFile(args.path, 'utf8')
-                    if (contents.includes('reflect-metadata')) return null
+                    const lines = []
+                    let transformedContents = contents
+                    if (!contents.includes('reflect-metadata')) {
+                        lines.push(`import 'reflect-metadata';`)
+                    }
+
+                    if (adapterModulePath && !contents.includes(adapterModulePath)) {
+                        lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
+                        lines.push(`const __openCoreInitWithAdapter = (runtimeApi, adapter, options = {}) => {
+  if (!adapter) {
+    return runtimeApi.init(options);
+  }
+  if (options && typeof options === 'object' && !Array.isArray(options) && 'adapter' in options && options.adapter) {
+    return runtimeApi.init(options);
+  }
+  const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options)
+    ? { ...options, adapter }
+    : { adapter };
+  return runtimeApi.init(normalizedOptions);
+};`)
+
+                        if (target === 'server') {
+                            transformedContents = transformedContents.replace(
+                                /\bServer\.init\s*\(/g,
+                                '__openCoreInitWithAdapter(Server, __openCoreProjectAdapter, '
+                            )
+                        } else {
+                            transformedContents = transformedContents.replace(
+                                /\bClient\.init\s*\(/g,
+                                '__openCoreInitWithAdapter(Client, __openCoreProjectAdapter, '
+                            )
+                        }
+                    }
+
+                    if (lines.length === 0) return null
 
                     const ext = path.extname(args.path).slice(1)
                     // If it's TS, use 'ts' or 'tsx' loader, otherwise esbuild will fail
                     const loader = ext === 'ts' || ext === 'tsx' ? ext : 'js'
 
                     return {
-                        contents: `import 'reflect-metadata';\n${contents}`,
+                        contents: `${lines.join('\n')}\n${transformedContents}`,
                         loader: loader,
                     }
                 } catch (e) {

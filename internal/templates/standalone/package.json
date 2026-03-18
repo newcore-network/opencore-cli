@@ -5,9 +5,16 @@
   "scripts": {
     "build": "tsc"
   },
+  "dependencies": {
+    "reflect-metadata": "^0.2.2",
+    "@open-core/framework": "latest"
+  },
   "devDependencies": {
-    "typescript": "^5.3.3",
+    "typescript": "^5.3.3"{{if .UseCitizenFXTypes}},
     "@citizenfx/server": "latest",
-    "@citizenfx/client": "latest"
+    "@citizenfx/client": "latest"{{end}}{{if .UseNodeTypes}},
+    "@types/node": "^14.18.63",
+    "@ragempcommunity/types-server": "latest",
+    "@ragempcommunity/types-client": "latest"{{end}}
   }
 }

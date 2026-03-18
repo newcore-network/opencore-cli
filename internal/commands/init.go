@@ -24,10 +24,9 @@ func NewInitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("dir", "d", ".", "Directory where the project folder will be created")
-	cmd.Flags().String("architecture", "", "Project architecture (domain-driven|layer-based|feature-based|hybrid)")
 	cmd.Flags().Bool("minify", false, "Enable code minification in production builds")
-	cmd.Flags().StringArray("module", nil, "Add a module to install (repeatable)")
-	cmd.Flags().String("destination", "", "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)")
+	cmd.Flags().String("adapter", "", "Project adapter (none|fivem|redm|ragemp)")
+	cmd.Flags().String("destination", "", "Deployment root path (FiveM resources dir or RageMP server root)")
 	cmd.Flags().Bool("non-interactive", false, "Do not run the interactive wizard; use flags/defaults")
 
 	return cmd
@@ -35,9 +34,8 @@ func NewInitCommand() *cobra.Command {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	baseDir, _ := cmd.Flags().GetString("dir")
-	architectureFlag, _ := cmd.Flags().GetString("architecture")
 	minifyFlag, _ := cmd.Flags().GetBool("minify")
-	modulesFlag, _ := cmd.Flags().GetStringArray("module")
+	adapterFlag, _ := cmd.Flags().GetString("adapter")
 	destinationFlag, _ := cmd.Flags().GetString("destination")
 	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
 
@@ -73,53 +71,31 @@ func runInit(cmd *cobra.Command, args []string) error {
 			},
 		},
 		{
-			Title:       "Architecture",
-			Description: "Choose how to organize your code",
+			Title:       "Adapter",
+			Description: "Choose the runtime adapter to configure centrally",
 			Type:        ui.StepTypeSelect,
 			Options: []ui.WizardOption{
 				{
-					Label: "Domain-Driven",
-					Value: "domain-driven",
-					Desc:  "Recommended for large projects with complex business logic",
+					Label: "None",
+					Value: "none",
+					Desc:  "Use the framework default adapter resolution (NodeJS)",
 				},
 				{
-					Label: "Layer-Based",
-					Value: "layer-based",
-					Desc:  "Traditional separation by technical layers (controllers, services)",
+					Label: "FiveM",
+					Value: "fivem",
+					Desc:  "Install @open-core/fivem-adapter and wire server/client adapters centrally",
 				},
 				{
-					Label: "Feature-Based",
-					Value: "feature-based",
-					Desc:  "Simple structure, good for small projects",
+					Label:    "RedM (Coming soon)",
+					Value:    "redm",
+					Desc:     "Reserved adapter slot for RedM support",
+					Disabled: true,
 				},
 				{
-					Label: "Hybrid",
-					Value: "hybrid",
-					Desc:  "Flexible approach for evolving projects",
+					Label: "RageMP",
+					Value: "ragemp",
+					Desc:  "Install @open-core/ragemp-adapter and use RageMP build defaults",
 				},
-			},
-		},
-		{
-			Title:       "Modules",
-			Description: "Select official modules to install (space to toggle)",
-			Type:        ui.StepTypeMultiSelect,
-			Options: []ui.WizardOption{
-				{
-					Label: "@open-core/identity",
-					Value: "@open-core/identity",
-					Desc:  "Authentication and player identity management",
-				},
-				// Future modules can be added here:
-				// {
-				// 	Label: "@open-core/economy",
-				// 	Value: "@open-core/economy",
-				// 	Desc:  "In-game economy and currency system",
-				// },
-				// {
-				// 	Label: "@open-core/inventory",
-				// 	Value: "@open-core/inventory",
-				// 	Desc:  "Player inventory management",
-				// },
 			},
 		},
 		{
@@ -141,7 +117,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	})
 	steps = append(steps, ui.WizardStep{
 		Title:       "Server Destination",
-		Description: "FiveM resources folder (root), e.g. C:/FXServer/server-data/resources (optional)",
+		Description: "Deployment root path, e.g. C:/FXServer/server-data/resources or C:/ragemp-server (optional)",
 		Type:        ui.StepTypeInput,
 		Validate: func(s string) error {
 			return nil
@@ -157,21 +133,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if projectName == "" {
 			return fmt.Errorf("project name is required in non-interactive mode")
 		}
-		architecture := architectureFlag
-		if architecture == "" {
-			architecture = "feature-based"
-		}
 		useMinify := minifyFlag
-		modules := modulesFlag
-		destination := strings.TrimSpace(destinationFlag)
-
-		installIdentity := false
-		for _, mod := range modules {
-			if mod == "@open-core/identity" {
-				installIdentity = true
-				break
-			}
+		adapter := strings.TrimSpace(strings.ToLower(adapterFlag))
+		if adapter == "" {
+			adapter = "none"
 		}
+		switch adapter {
+		case "none", "fivem", "ragemp":
+		case "redm":
+			return fmt.Errorf("adapter %q is not available yet", adapter)
+		default:
+			return fmt.Errorf("invalid adapter %q (expected: none, fivem, redm, or ragemp)", adapter)
+		}
+		destination := strings.TrimSpace(destinationFlag)
 
 		resolved, err := pkgmgr.Resolve(preference)
 		if err != nil {
@@ -184,7 +158,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println(ui.Info(fmt.Sprintf("Creating project: %s", projectName)))
 		fmt.Println()
-		if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
+		if err := templates.GenerateStarterProject(projectPath, projectName, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 			return fmt.Errorf("failed to generate project: %w", err)
 		}
 		fmt.Println()
@@ -193,8 +167,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		summaryContent := fmt.Sprintf(
 			"Project: %s\n"+
-				"Architecture: %s\n"+
-				"Modules: %s\n"+
+				"Adapter: %s\n"+
 				"Minify: %s\n"+
 				"Destination: %s\n\n"+
 				"Next steps:\n"+
@@ -202,8 +175,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				"  %s\n"+
 				"  opencore dev",
 			projectName,
-			architecture,
-			strings.Join(modules, ", "),
+			adapter,
 			boolToYesNo(useMinify),
 			destination,
 			projectName,
@@ -219,11 +191,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		wizard.GetValues()["Project Name"] = args[0]
 	}
-	if architectureFlag != "" {
-		wizard.GetValues()["Architecture"] = architectureFlag
-	}
-	if len(modulesFlag) > 0 {
-		wizard.GetValues()["Modules"] = modulesFlag
+	if adapterFlag != "" {
+		wizard.GetValues()["Adapter"] = strings.ToLower(adapterFlag)
+	} else {
+		wizard.GetValues()["Adapter"] = "none"
 	}
 	wizard.GetValues()["Minification"] = minifyFlag
 	wizard.GetValues()["Package Manager"] = string(preference)
@@ -248,8 +219,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Extract values
 	projectName := result.GetStringValue("Project Name")
-	architecture := result.GetStringValue("Architecture")
-	modules := result.GetStringSliceValue("Modules")
+	adapter := result.GetStringValue("Adapter")
 	useMinify := result.GetBoolValue("Minification")
 	packageManager := result.GetStringValue("Package Manager")
 	destination := strings.TrimSpace(result.GetStringValue("Server Destination"))
@@ -263,15 +233,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Check if identity module is selected
-	installIdentity := false
-	for _, mod := range modules {
-		if mod == "@open-core/identity" {
-			installIdentity = true
-			break
-		}
-	}
-
 	// Create project directory
 	projectPath := filepath.Join(baseDir, projectName)
 
@@ -282,7 +243,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Generate project from template
-	if err := templates.GenerateStarterProject(projectPath, projectName, architecture, installIdentity, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
+	if err := templates.GenerateStarterProject(projectPath, projectName, false, adapter, useMinify, destination, fmt.Sprintf("%s@%s", resolved.Choice, resolved.Version)); err != nil {
 		return fmt.Errorf("failed to generate project: %w", err)
 	}
 
@@ -290,17 +251,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Success("Project created successfully!"))
 	fmt.Println()
 
-	// Build modules string
-	modulesStr := "None"
-	if len(modules) > 0 {
-		modulesStr = strings.Join(modules, ", ")
-	}
-
 	// Summary box
 	summaryContent := fmt.Sprintf(
 		"Project: %s\n"+
-			"Architecture: %s\n"+
-			"Modules: %s\n"+
+			"Adapter: %s\n"+
 			"Minify: %s\n"+
 			"Destination: %s\n\n"+
 			"Next steps:\n"+
@@ -308,8 +262,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			"  %s\n"+
 			"  opencore dev",
 		projectName,
-		architecture,
-		modulesStr,
+		adapter,
 		boolToYesNo(useMinify),
 		destination,
 		projectName,

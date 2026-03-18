@@ -1,9 +1,9 @@
 // OpenCore Framework - Server Entry Point
-import { Server } from '@open-core/framework/server';
-{{if .InstallIdentity}}import '@open-core/identity';{{end}}
+import { Server } from '@open-core/framework/server'
+{{if .InstallIdentity}}import '@open-core/identity'{{end}}
 
-// Register your controllers - OpenCore scans decorators automatically
-// Example: import './my-feature.server';
+// OpenCore scans decorators automatically when is Marked as Controller(), if not, import here
+// Example: import './my-feature.client';
 
 Server.init({
     mode: 'CORE',

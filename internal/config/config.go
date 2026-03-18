@@ -13,12 +13,46 @@ type Config struct {
 	Name        string            `json:"name"`
 	OutDir      string            `json:"outDir"`
 	Destination string            `json:"destination,omitempty"`
+	Adapter     *AdapterConfig    `json:"adapter,omitempty"`
 	Core        CoreConfig        `json:"core"`
 	Resources   ResourcesConfig   `json:"resources"`
 	Standalones *StandaloneConfig `json:"standalones,omitempty"`
 	Modules     []string          `json:"modules"`
 	Build       BuildConfig       `json:"build"`
 	Dev         DevConfig         `json:"dev"`
+}
+
+type AdapterConfig struct {
+	Server *AdapterBinding `json:"server,omitempty"`
+	Client *AdapterBinding `json:"client,omitempty"`
+}
+
+type AdapterBinding struct {
+	Name      string                 `json:"name,omitempty"`
+	Valid     bool                   `json:"valid"`
+	Message   string                 `json:"message,omitempty"`
+	Package   string                 `json:"package,omitempty"`
+	EntryPath string                 `json:"entryPath,omitempty"`
+	Runtime   *AdapterRuntimeBinding `json:"runtime,omitempty"`
+}
+
+type AdapterRuntimeBinding struct {
+	Runtime  string                   `json:"runtime,omitempty"`
+	Server   *AdapterRuntimeSideHints `json:"server,omitempty"`
+	Client   *AdapterRuntimeSideHints `json:"client,omitempty"`
+	Manifest *AdapterManifestBinding  `json:"manifest,omitempty"`
+}
+
+type AdapterRuntimeSideHints struct {
+	Platform    string `json:"platform,omitempty"`
+	Target      string `json:"target,omitempty"`
+	Format      string `json:"format,omitempty"`
+	OutFileName string `json:"outFileName,omitempty"`
+	OutputRoot  string `json:"outputRoot,omitempty"`
+}
+
+type AdapterManifestBinding struct {
+	Kind string `json:"kind,omitempty"`
 }
 
 type DevConfig struct {
@@ -31,6 +65,87 @@ type DevConfig struct {
 // IsTxAdminConfigured returns true if txAdmin credentials are fully configured
 func (d *DevConfig) IsTxAdminConfigured() bool {
 	return d.TxAdminURL != "" && d.TxAdminUser != "" && d.TxAdminPassword != ""
+}
+
+func (c *Config) RuntimeKind() string {
+	if c == nil || c.Adapter == nil {
+		return "fivem"
+	}
+
+	if c.Adapter.Server != nil {
+		if runtime := inferRuntimeKind(c.Adapter.Server); runtime != "" {
+			return runtime
+		}
+	}
+	if c.Adapter.Client != nil {
+		if runtime := inferRuntimeKind(c.Adapter.Client); runtime != "" {
+			return runtime
+		}
+	}
+
+	return "fivem"
+}
+
+func inferRuntimeKind(binding *AdapterBinding) string {
+	if binding == nil {
+		return ""
+	}
+	if binding.Runtime != nil && strings.TrimSpace(binding.Runtime.Runtime) != "" {
+		return strings.ToLower(strings.TrimSpace(binding.Runtime.Runtime))
+	}
+	name := strings.ToLower(strings.TrimSpace(binding.Name))
+	switch name {
+	case "fivem", "redm", "ragemp", "node":
+		return name
+	default:
+		return ""
+	}
+}
+
+func (c *Config) UsesSplitRuntimeLayout() bool {
+	return c.RuntimeKind() == "ragemp"
+}
+
+func (c *Config) ensureBuildSideConfigs() {
+	if c.Build.Server == nil {
+		c.Build.Server = &BuildSideConfig{}
+	}
+	if c.Build.Client == nil {
+		c.Build.Client = &BuildSideConfig{}
+	}
+}
+
+func (c *Config) adapterSideTarget(side string) string {
+	if c == nil || c.Adapter == nil {
+		return ""
+	}
+
+	var binding *AdapterBinding
+	switch side {
+	case "server":
+		binding = c.Adapter.Server
+	case "client":
+		binding = c.Adapter.Client
+	default:
+		return ""
+	}
+
+	if binding == nil || binding.Runtime == nil {
+		return ""
+	}
+
+	var hints *AdapterRuntimeSideHints
+	if side == "server" {
+		hints = binding.Runtime.Server
+	} else {
+		hints = binding.Runtime.Client
+	}
+
+	if hints == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(hints.Target)
 }
 
 type CoreConfig struct {
@@ -157,34 +272,118 @@ func LoadWithProjectRoot() (*Config, string, error) {
 	// Create temporary transpiler script
 	transpilerScript := `
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { createRequire } = require('module');
 
 // Make sure module resolution happens from the project root (cwd).
 const requireFromProject = createRequire(process.cwd() + path.sep);
 
+function inspectAdapterBinding(binding, pkgName, entryPath) {
+  if (!binding) {
+    return undefined;
+  }
+
+  const name = typeof binding.name === 'string' ? binding.name : '';
+  const hasRegister = typeof binding.register === 'function';
+  const issues = [];
+
+  if (!name) {
+    issues.push('missing adapter name');
+  }
+  if (!hasRegister) {
+    issues.push('missing register()');
+  }
+
+  return {
+    name,
+    valid: issues.length === 0,
+    message: issues.length > 0 ? issues.join(', ') : undefined,
+    package: pkgName,
+    entryPath,
+    runtime: inspectRuntimeHints(binding.runtime),
+  };
+}
+
+function inspectRuntimeHints(hints) {
+  if (!hints || typeof hints !== 'object') {
+    return undefined;
+  }
+
+  return {
+    runtime: typeof hints.runtime === 'string' ? hints.runtime : undefined,
+    server: inspectRuntimeSide(hints.server),
+    client: inspectRuntimeSide(hints.client),
+    manifest: hints.manifest && typeof hints.manifest === 'object'
+      ? { kind: typeof hints.manifest.kind === 'string' ? hints.manifest.kind : undefined }
+      : undefined,
+  };
+}
+
+function inspectRuntimeSide(side) {
+  if (!side || typeof side !== 'object') {
+    return undefined;
+  }
+
+  return {
+    platform: typeof side.platform === 'string' ? side.platform : undefined,
+    target: typeof side.target === 'string' ? side.target : undefined,
+    format: typeof side.format === 'string' ? side.format : undefined,
+    outFileName: typeof side.outFileName === 'string' ? side.outFileName : undefined,
+    outputRoot: typeof side.outputRoot === 'string' ? side.outputRoot : undefined,
+  };
+}
+
+async function loadConfig(configPath) {
+  const esbuild = requireFromProject('esbuild');
+  const outfile = path.join(
+    os.tmpdir(),
+    'opencore-config-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.cjs'
+  );
+
+  try {
+    try {
+      requireFromProject('reflect-metadata');
+    } catch (_) {}
+
+    await esbuild.build({
+      entryPoints: [configPath],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: ['node18'],
+      absWorkingDir: process.cwd(),
+      write: true,
+      logLevel: 'silent',
+    });
+
+    const result = require(outfile);
+    return result.default || result;
+  } finally {
+    try {
+      fs.unlinkSync(outfile);
+    } catch (_) {}
+  }
+}
+
 (async () => {
   try {
-    // Use tsx to run TypeScript directly
     const configPath = path.resolve(process.argv[2]);
+    const config = await loadConfig(configPath);
+    const serialized = {
+      ...config,
+      adapter: {
+        server: inspectAdapterBinding(config?.adapter?.server, '@open-core/fivem-adapter', '@open-core/fivem-adapter/server'),
+        client: inspectAdapterBinding(config?.adapter?.client, '@open-core/fivem-adapter', '@open-core/fivem-adapter/client'),
+      },
+    };
 
-    // Try to require tsx or ts-node
-    let result;
-    try {
-      requireFromProject('tsx/cjs');
-      result = requireFromProject(configPath);
-    } catch (e) {
-      // Fallback: try to use esbuild-register
-      try {
-        requireFromProject('esbuild-register/dist/node').register();
-        result = requireFromProject(configPath);
-      } catch (e2) {
-        // Last resort: assume it's already transpiled or use plain require
-        result = requireFromProject(configPath);
-      }
+    if (!serialized.adapter.server && !serialized.adapter.client) {
+      delete serialized.adapter;
     }
 
-    const config = result.default || result;
-    console.log(JSON.stringify(config, null, 2));
+    console.log(JSON.stringify(serialized, null, 2));
   } catch (error) {
     console.error('Failed to load config:', error.message);
     process.exit(1);
@@ -217,28 +416,54 @@ const requireFromProject = createRequire(process.cwd() + path.sep);
 		return nil, "", fmt.Errorf("config.name is required")
 	}
 
+	runtimeKind := config.RuntimeKind()
 	category := config.Name
 	if !isBracketFolderName(category) {
 		category = fmt.Sprintf("[%s]", config.Name)
 	}
 
 	if strings.TrimSpace(config.Destination) != "" {
-		// Destination is optional; when provided it is the output base directory.
-		// The CLI always creates a FiveM category folder derived from config.name.
-		config.Destination = filepath.Join(strings.TrimSpace(config.Destination), category)
-		config.OutDir = config.Destination
+		if runtimeKind == "ragemp" {
+			config.Destination = strings.TrimSpace(config.Destination)
+			config.OutDir = config.Destination
+		} else {
+			config.Destination = filepath.Join(strings.TrimSpace(config.Destination), category)
+			config.OutDir = config.Destination
+		}
 	} else {
-		// When destination is not set, build locally.
 		outBase := strings.TrimSpace(config.OutDir)
 		if outBase == "" {
 			outBase = "build"
 		}
-		config.OutDir = filepath.Join(outBase, category)
+		if runtimeKind == "ragemp" {
+			config.OutDir = outBase
+		} else {
+			config.OutDir = filepath.Join(outBase, category)
+		}
 		config.Destination = ""
 	}
 
-	if config.Build.Target == "" {
-		config.Build.Target = "ES2020"
+	config.ensureBuildSideConfigs()
+	legacyTarget := strings.TrimSpace(config.Build.Target)
+	if strings.TrimSpace(config.Build.Server.Target) == "" {
+		if adapterTarget := config.adapterSideTarget("server"); adapterTarget != "" {
+			config.Build.Server.Target = adapterTarget
+		} else if legacyTarget != "" {
+			config.Build.Server.Target = legacyTarget
+		} else if runtimeKind == "ragemp" {
+			config.Build.Server.Target = "node14"
+		} else {
+			config.Build.Server.Target = "ES2020"
+		}
+	}
+	if strings.TrimSpace(config.Build.Client.Target) == "" {
+		if adapterTarget := config.adapterSideTarget("client"); adapterTarget != "" {
+			config.Build.Client.Target = adapterTarget
+		} else if legacyTarget != "" {
+			config.Build.Client.Target = legacyTarget
+		} else {
+			config.Build.Client.Target = "ES2020"
+		}
 	}
 	if config.Build.LogLevel == "" {
 		config.Build.LogLevel = "INFO"

@@ -20,9 +20,10 @@ type WizardStep struct {
 
 // WizardOption represents an option in a select step
 type WizardOption struct {
-	Label string
-	Value string
-	Desc  string
+	Label    string
+	Value    string
+	Desc     string
+	Disabled bool
 }
 
 // StepType defines the type of input for a step
@@ -117,6 +118,14 @@ var (
 	optionDescStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
 			Italic(true)
+
+	optionDisabledStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#6B7280")).
+				Italic(true)
+
+	optionDisabledSelectedStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#9CA3AF")).
+					Italic(true)
 
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#EF4444")).
@@ -233,6 +242,10 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case " ": // Space to toggle in multi-select
 			if m.steps[m.currentStep].Type == StepTypeMultiSelect {
+				if m.steps[m.currentStep].Options[m.selectIndex].Disabled {
+					m.err = fmt.Errorf("this option is not available yet")
+					return m, nil
+				}
 				m.selectedItems[m.selectIndex] = !m.selectedItems[m.selectIndex]
 				return m, nil
 			}
@@ -248,7 +261,9 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Tab in multi-select toggles current and moves down
 			if m.steps[m.currentStep].Type == StepTypeMultiSelect {
-				m.selectedItems[m.selectIndex] = !m.selectedItems[m.selectIndex]
+				if !m.steps[m.currentStep].Options[m.selectIndex].Disabled {
+					m.selectedItems[m.selectIndex] = !m.selectedItems[m.selectIndex]
+				}
 				if m.selectIndex < len(m.steps[m.currentStep].Options)-1 {
 					m.selectIndex++
 				}
@@ -298,6 +313,10 @@ func (m *WizardModel) handleEnter() (tea.Model, tea.Cmd) {
 			}
 		}
 	case StepTypeSelect:
+		if step.Options[m.selectIndex].Disabled {
+			m.err = fmt.Errorf("this adapter is not available yet")
+			return m, nil
+		}
 		value = step.Options[m.selectIndex].Value
 	case StepTypeConfirm:
 		value = m.confirmVal
@@ -496,7 +515,13 @@ func (m WizardModel) renderSelectOptions(options []WizardOption, multiSelect boo
 			if isChecked {
 				checkbox = "[x]"
 			}
-			if isSelected {
+			if opt.Disabled {
+				if isSelected {
+					content.WriteString(optionDisabledSelectedStyle.Render(cursor + checkbox + " " + opt.Label))
+				} else {
+					content.WriteString(optionDisabledStyle.Render(cursor + checkbox + " " + opt.Label))
+				}
+			} else if isSelected {
 				content.WriteString(optionSelectedStyle.Render(cursor + checkbox + " " + opt.Label))
 			} else {
 				content.WriteString(optionStyle.Render(cursor + checkbox + " " + opt.Label))
@@ -506,7 +531,13 @@ func (m WizardModel) renderSelectOptions(options []WizardOption, multiSelect boo
 			if isSelected {
 				radio = "(*)"
 			}
-			if isSelected {
+			if opt.Disabled {
+				if isSelected {
+					content.WriteString(optionDisabledSelectedStyle.Render(cursor + radio + " " + opt.Label))
+				} else {
+					content.WriteString(optionDisabledStyle.Render(cursor + radio + " " + opt.Label))
+				}
+			} else if isSelected {
 				content.WriteString(optionSelectedStyle.Render(cursor + radio + " " + opt.Label))
 			} else {
 				content.WriteString(optionStyle.Render(cursor + radio + " " + opt.Label))
@@ -516,7 +547,11 @@ func (m WizardModel) renderSelectOptions(options []WizardOption, multiSelect boo
 
 		// Description for selected item
 		if opt.Desc != "" && isSelected {
-			content.WriteString(optionDescStyle.Render("      "+opt.Desc) + "\n")
+			style := optionDescStyle
+			if opt.Disabled {
+				style = optionDisabledStyle
+			}
+			content.WriteString(style.Render("      "+opt.Desc) + "\n")
 		}
 	}
 

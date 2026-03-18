@@ -95,7 +95,7 @@ async function copyDirContents(srcDir, destDir) {
 
 function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(packageManager),
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
@@ -118,7 +118,7 @@ function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020'
 
 function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(packageManager),
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
@@ -140,7 +140,7 @@ function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2
 
 function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null) {
     const plugins = [
-        createReflectMetadataPlugin(packageManager),
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
         createExternalPackagesPlugin(externals),
@@ -198,13 +198,26 @@ function resolveEntry(resourcePath, side, explicitEntry = null) {
     return null;
 }
 
+function getLayoutOptions(outDir, options = {}) {
+    return {
+        runtime: options.runtime || 'fivem',
+        serverOutDir: options.serverOutDir || outDir,
+        clientOutDir: options.clientOutDir || outDir,
+        serverOutFile: options.serverOutFile || 'server.js',
+        clientOutFile: options.clientOutFile || 'client.js',
+        manifestKind: options.manifestKind || 'fxmanifest',
+    }
+}
+
 async function buildCore(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
     const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
     const clientEntry = resolveEntry(resourcePath, 'client', options.entryPoints?.client)
+    const layout = getLayoutOptions(outDir, options)
 
-    await fs.promises.mkdir(outDir, { recursive: true })
+    await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
+    await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
     const builds = []
 
@@ -218,7 +231,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
-            outfile: path.join(outDir, 'server.js'),
+            outfile: path.join(layout.serverOutDir, layout.serverOutFile),
             plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager),
             external: serverExternals,
             define: {
@@ -238,7 +251,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             ...clientBuildOptions,
             target: clientTarget,
             entryPoints: [clientEntry],
-            outfile: path.join(outDir, 'client.js'),
+            outfile: path.join(layout.clientOutDir, layout.clientOutFile),
             plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager),
             external: clientExternals,
             define: {
@@ -249,25 +262,27 @@ async function buildCore(resourcePath, outDir, options = {}) {
     }
 
     const manifestSrc = path.join(resourcePath, 'fxmanifest.lua')
-    const manifestDst = path.join(outDir, 'fxmanifest.lua')
-    if (fs.existsSync(manifestSrc)) {
+    const manifestDst = path.join(layout.serverOutDir, 'fxmanifest.lua')
+    if (layout.manifestKind === 'fxmanifest' && fs.existsSync(manifestSrc)) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, outDir)
+        await handleDependencies(resourcePath, layout.serverOutDir)
     }
 
     await Promise.all(builds)
-    await copyServerBinaries(resourcePath, outDir, options, serverBuildOptions, serverEntry)
-    console.log(`[core] Built ${path.basename(outDir)}`)
+    await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
+    console.log(`[core] Built ${path.basename(layout.serverOutDir)}`)
 }
 
 
 async function buildResource(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
-    await fs.promises.mkdir(outDir, { recursive: true })
+    const layout = getLayoutOptions(outDir, options)
+    await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
+    await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
     const builds = []
 
@@ -282,7 +297,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
-            outfile: path.join(outDir, 'server.js'),
+            outfile: path.join(layout.serverOutDir, layout.serverOutFile),
             plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager),
             external: serverExternals,
             define: {
@@ -303,7 +318,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             ...shared, ...clientBuildOptions,
             target: clientTarget,
             entryPoints: [clientEntry],
-            outfile: path.join(outDir, 'client.js'),
+            outfile: path.join(layout.clientOutDir, layout.clientOutFile),
             plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager),
             external: clientExternals,
             define: {
@@ -315,25 +330,27 @@ async function buildResource(resourcePath, outDir, options = {}) {
     }
 
     const manifestSrc = path.join(resourcePath, 'fxmanifest.lua')
-    const manifestDst = path.join(outDir, 'fxmanifest.lua')
-    if (fs.existsSync(manifestSrc)) {
+    const manifestDst = path.join(layout.serverOutDir, 'fxmanifest.lua')
+    if (layout.manifestKind === 'fxmanifest' && fs.existsSync(manifestSrc)) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, outDir)
+        await handleDependencies(resourcePath, layout.serverOutDir)
     }
 
     if (builds.length > 0) await Promise.all(builds)
-    await copyServerBinaries(resourcePath, outDir, options, serverBuildOptions, serverEntry)
-    console.log(`[resource] Built ${path.basename(outDir)}`)
+    await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
+    console.log(`[resource] Built ${path.basename(layout.serverOutDir)}`)
 }
 
 
 async function buildStandalone(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
-    await fs.promises.mkdir(outDir, { recursive: true })
+    const layout = getLayoutOptions(outDir, options)
+    await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
+    await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
     const builds = []
 
@@ -347,7 +364,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             ...shared, ...serverBuildOptions,
             target: serverTarget,
             entryPoints: [serverEntry],
-            outfile: path.join(outDir, 'server.js'),
+            outfile: path.join(layout.serverOutDir, layout.serverOutFile),
             plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager),
             external: serverExternals,
             define: {
@@ -368,7 +385,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             ...shared, ...clientBuildOptions,
             target: clientTarget,
             entryPoints: [clientEntry],
-            outfile: path.join(outDir, 'client.js'),
+            outfile: path.join(layout.clientOutDir, layout.clientOutFile),
             plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager),
             external: clientExternals,
             define: {
@@ -380,18 +397,18 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     }
 
     const manifestSrc = path.join(resourcePath, 'fxmanifest.lua')
-    const manifestDst = path.join(outDir, 'fxmanifest.lua')
-    if (fs.existsSync(manifestSrc)) {
+    const manifestDst = path.join(layout.serverOutDir, 'fxmanifest.lua')
+    if (layout.manifestKind === 'fxmanifest' && fs.existsSync(manifestSrc)) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, outDir)
+        await handleDependencies(resourcePath, layout.serverOutDir)
     }
 
     if (builds.length > 0) await Promise.all(builds)
-    await copyServerBinaries(resourcePath, outDir, options, serverBuildOptions, serverEntry)
-    console.log(`[standalone] Built ${path.basename(outDir)}`)
+    await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
+    console.log(`[standalone] Built ${path.basename(layout.serverOutDir)}`)
 }
 
 
