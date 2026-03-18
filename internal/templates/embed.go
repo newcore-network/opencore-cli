@@ -108,7 +108,7 @@ func resourceTemplateConfig(resourceName string, hasClient, hasNUI bool, opts Sc
 		config.UseNodeTypes = true
 		config.UseRageMPTypes = true
 		config.TSConfigTarget = "es2020"
-		config.TSConfigModule = "commonjs"
+		config.TSConfigModule = "preserve"
 		config.TSModuleResolution = "node"
 	} else {
 		config.UseCitizenFXTypes = true
@@ -270,7 +270,6 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool, o
 	// Generate files
 	files := map[string]string{
 		"package.json":       filepath.Join(targetPath, "package.json"),
-		"tsconfig.json":      filepath.Join(targetPath, "tsconfig.json"),
 		"src/server/main.ts": filepath.Join(targetPath, "src", "server", "main.ts"),
 	}
 
@@ -337,7 +336,6 @@ func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI boo
 	// Generate files
 	files := map[string]string{
 		"package.json":       filepath.Join(targetPath, "package.json"),
-		"tsconfig.json":      filepath.Join(targetPath, "tsconfig.json"),
 		"src/server/main.ts": filepath.Join(targetPath, "src", "server", "main.ts"),
 	}
 

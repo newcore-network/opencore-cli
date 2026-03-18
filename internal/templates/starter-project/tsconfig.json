@@ -1,8 +1,8 @@
 {
     "compilerOptions": {
 {{ if .InstallRageMPAdapter }}        "target": "es2020",
-        "module": "commonjs",
-        "moduleResolution": "node",
+        "module": "preserve",
+        "moduleResolution": "bundler",
 {{ else }}
         "target": "es2022",
         "module": "preserve",
