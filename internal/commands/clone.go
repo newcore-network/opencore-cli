@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/pkgmgr"
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
@@ -40,6 +41,7 @@ type GitHubContent struct {
 func NewCloneCommand() *cobra.Command {
 	var listTemplates bool
 	var useAPI bool
+	var force bool
 	var branch string
 
 	cmd := &cobra.Command{
@@ -55,6 +57,7 @@ Examples:
   opencore clone --list
   opencore clone chat
   opencore clone admin --api
+  opencore clone chat --force
   opencore clone --list --branch develop
   opencore clone chat --branch develop`, templatesURL),
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -72,12 +75,13 @@ Examples:
 			if listTemplates {
 				return runListTemplates(branch)
 			}
-			return runClone(cmd, args, useAPI, branch)
+			return runClone(cmd, args, useAPI, force, branch)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&listTemplates, "list", "l", false, "List all available templates")
 	cmd.Flags().BoolVar(&useAPI, "api", false, "Force using GitHub API instead of git sparse checkout")
+	cmd.Flags().BoolVar(&force, "force", false, "Clone even if manifest compatibility does not match the current project")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "master", "Repository branch to use when listing/cloning templates")
 
 	return cmd
@@ -114,7 +118,7 @@ func runListTemplates(branch string) error {
 	if len(resources) > 0 {
 		fmt.Println(ui.SubtitleStyle.Render("Resources") + ui.MutedStyle.Render(" (framework-connected modules)"))
 		for _, t := range resources {
-			fmt.Printf("  • %s\n", t)
+			fmt.Printf("  • %s %s\n", t.Manifest.effectiveName(t.Name), ui.MutedStyle.Render("["+compatibilityStatusLabel(t)+"]"))
 		}
 		fmt.Println()
 	}
@@ -123,7 +127,7 @@ func runListTemplates(branch string) error {
 	if len(standalones) > 0 {
 		fmt.Println(ui.SubtitleStyle.Render("Standalones") + ui.MutedStyle.Render(" (independent scripts)"))
 		for _, t := range standalones {
-			fmt.Printf("  • %s\n", t)
+			fmt.Printf("  • %s %s\n", t.Manifest.effectiveName(t.Name), ui.MutedStyle.Render("["+compatibilityStatusLabel(t)+"]"))
 		}
 		fmt.Println()
 	}
@@ -143,7 +147,7 @@ func buildContentsAPIURL(path, branch string) string {
 }
 
 // fetchGroupedTemplates fetches templates grouped by category (resources vs standalones)
-func fetchGroupedTemplates(branch string) (resources []string, standalones []string, err error) {
+func fetchGroupedTemplates(branch string) (resources []templateDescriptor, standalones []templateDescriptor, err error) {
 	// Fetch root contents
 	resp, err := http.Get(buildContentsAPIURL("", branch))
 	if err != nil {
@@ -173,13 +177,13 @@ func fetchGroupedTemplates(branch string) (resources []string, standalones []str
 		switch item.Name {
 		case "resources":
 			// Fetch contents of resources/
-			resourceList, err := fetchFolderContents("resources", branch)
+			resourceList, err := fetchFolderContents("resources", templateCategoryResource, branch)
 			if err == nil {
 				resources = resourceList
 			}
 		case "standalones", "standalone":
 			// Fetch contents of standalones/ or standalone/
-			standaloneList, err := fetchFolderContents(item.Name, branch)
+			standaloneList, err := fetchFolderContents(item.Name, templateCategoryStandalone, branch)
 			if err == nil {
 				standalones = standaloneList
 			}
@@ -190,7 +194,7 @@ func fetchGroupedTemplates(branch string) (resources []string, standalones []str
 }
 
 // fetchFolderContents fetches the list of directories inside a folder
-func fetchFolderContents(folderPath, branch string) ([]string, error) {
+func fetchFolderContents(folderPath string, category templateCategory, branch string) ([]templateDescriptor, error) {
 	requestURL := buildContentsAPIURL(folderPath, branch)
 	resp, err := http.Get(requestURL)
 	if err != nil {
@@ -207,45 +211,100 @@ func fetchFolderContents(folderPath, branch string) ([]string, error) {
 		return nil, err
 	}
 
-	var items []string
+	var items []templateDescriptor
 	for _, item := range contents {
 		// Only include directories, skip files and _ folders
 		if item.Type == "dir" && !strings.HasPrefix(item.Name, "_") {
-			items = append(items, item.Name)
+			repoPath := folderPath + "/" + item.Name
+			manifest, manifestErr := fetchTemplateManifest(repoPath, branch)
+			if manifestErr == nil {
+				manifestErr = validateManifestCategory(manifest, category)
+			}
+			items = append(items, templateDescriptor{
+				Name:          item.Name,
+				SourcePath:    repoPath,
+				TargetPath:    filepath.Join(folderPath, item.Name),
+				Category:      category,
+				Manifest:      manifest,
+				ManifestError: manifestErr,
+			})
 		}
 	}
 
 	return items, nil
 }
 
+func fetchTemplateManifest(templatePath, branch string) (*templateManifest, error) {
+	requestURL := buildContentsAPIURL(templatePath, branch)
+	resp, err := http.Get(requestURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var contents []GitHubContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, err
+	}
+
+	for _, item := range contents {
+		if item.Type != "file" || item.Name != ocManifestFileName || item.DownloadURL == "" {
+			continue
+		}
+
+		manifestResp, err := http.Get(item.DownloadURL)
+		if err != nil {
+			return nil, err
+		}
+		defer manifestResp.Body.Close()
+
+		if manifestResp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to download %s: status %d", ocManifestFileName, manifestResp.StatusCode)
+		}
+
+		body, err := io.ReadAll(manifestResp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		return parseTemplateManifest(body)
+	}
+
+	return nil, nil
+}
+
 // resolveTemplatePaths determines the source path in the repo and target path locally
-func resolveTemplatePaths(templateName, branch string) (sourcePath, targetPath string, err error) {
+func resolveTemplate(templateName, branch string) (templateDescriptor, error) {
 	// Prevent cloning container folders
 	if templateName == "resources" || templateName == "standalones" || templateName == "standalone" {
-		return "", "", fmt.Errorf("cannot clone container folders directly\n\nUse 'opencore clone --list' to see available templates")
+		return templateDescriptor{}, fmt.Errorf("cannot clone container folders directly\n\nUse 'opencore clone --list' to see available templates")
 	}
 
 	resources, standalones, err := fetchGroupedTemplates(branch)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to fetch templates: %w", err)
+		return templateDescriptor{}, fmt.Errorf("failed to fetch templates: %w", err)
 	}
 
 	// Check if template exists in resources/
 	for _, res := range resources {
-		if res == templateName {
-			return "resources/" + templateName, filepath.Join("resources", templateName), nil
+		if res.Name == templateName {
+			return res, nil
 		}
 	}
 
 	// Check if template exists in standalones/
 	for _, std := range standalones {
-		if std == templateName {
-			return "standalones/" + templateName, filepath.Join("standalones", templateName), nil
+		if std.Name == templateName {
+			return std, nil
 		}
 	}
 
 	// Template not found
-	return "", "", fmt.Errorf("template '%s' not found in branch '%s'\n\nUse 'opencore clone --list --branch %s' to see available templates", templateName, branch, branch)
+	return templateDescriptor{}, fmt.Errorf("template '%s' not found in branch '%s'\n\nUse 'opencore clone --list --branch %s' to see available templates", templateName, branch, branch)
 }
 
 func fetchTemplateList() ([]string, error) {
@@ -553,7 +612,7 @@ func copyDir(src, dst string) error {
 	})
 }
 
-func runClone(cmd *cobra.Command, args []string, forceAPI bool, branch string) error {
+func runClone(cmd *cobra.Command, args []string, forceAPI bool, force bool, branch string) error {
 	fmt.Println(ui.TitleStyle.Render("Clone Template"))
 	fmt.Println()
 
@@ -569,10 +628,29 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool, branch string) e
 		return fmt.Errorf("cannot clone system folders (folders starting with '_')\n\nUse 'opencore clone --list' to see available templates")
 	}
 
-	// Determine the source path and target path
-	sourcePath, targetPath, err := resolveTemplatePaths(templateName, branch)
+	template, err := resolveTemplate(templateName, branch)
 	if err != nil {
 		return err
+	}
+	if template.ManifestError != nil {
+		fmt.Println(ui.Warning(fmt.Sprintf("Skipping manifest checks for '%s': %v", template.Name, template.ManifestError)))
+		fmt.Println()
+	}
+
+	if runtime, ok, err := detectCurrentProjectRuntime(); err != nil {
+		return err
+	} else if ok {
+		if compatibilityErr := validateManifestCompatibility(template, runtime); compatibilityErr != nil {
+			if !force {
+				return compatibilityErr
+			}
+			fmt.Println(ui.Warning(compatibilityErr.Error()))
+			fmt.Println()
+		}
+	} else if template.Manifest != nil && template.Manifest.Compatibility != nil && len(template.Manifest.Compatibility.Runtimes) > 0 {
+		fmt.Println(ui.Info(fmt.Sprintf("Template '%s' declares compatibility with: %s", template.Name, strings.Join(template.Manifest.Compatibility.Runtimes, ", "))))
+		fmt.Println(ui.MutedStyle.Render("No local opencore.config.ts found, skipping compatibility enforcement."))
+		fmt.Println()
 	}
 
 	s := spinner.New()
@@ -582,8 +660,8 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool, branch string) e
 	m := cloneModel{
 		spinner:    s,
 		template:   templateName,
-		sourcePath: sourcePath,
-		targetPath: targetPath,
+		sourcePath: template.SourcePath,
+		targetPath: template.TargetPath,
 		branch:     branch,
 		useAPI:     forceAPI,
 		done:       false,
@@ -600,4 +678,22 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool, branch string) e
 	}
 
 	return nil
+}
+
+func detectCurrentProjectRuntime() (runtime string, ok bool, err error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", false, err
+	}
+
+	if _, err := config.FindProjectRoot(wd); err != nil {
+		return "", false, nil
+	}
+
+	cfg, _, err := config.LoadWithProjectRoot()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to load current project config: %w", err)
+	}
+
+	return cfg.RuntimeKind(), true, nil
 }

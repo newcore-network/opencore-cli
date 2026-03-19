@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencorejs.dev/schemas/oc-manifest.schema.json",
+  "title": "OpenCore Template Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "kind"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-_]*$"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["resource", "standalone", "core"]
+    },
+    "description": {
+      "type": "string"
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["fivem", "redm", "ragemp"]
+          },
+          "uniqueItems": true
+        },
+        "gameProfiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["common", "gta5", "rdr3"]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "readme": {
+          "type": "string",
+          "minLength": 1
+        },
+        "docs": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

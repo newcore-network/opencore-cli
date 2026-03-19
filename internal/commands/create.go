@@ -22,17 +22,21 @@ Types:
               • Faster to develop, smaller bundle size
               • Best for: simple utilities, libraries, legacy scripts
 
+  manifest    Create an example oc.manifest.json for core/resources/standalones
+
 Examples:
   opencore create feature banking
   opencore create feature chat -r myresource
   opencore create resource admin --with-client
-  opencore create standalone utils`,
+  opencore create standalone utils
+  opencore create manifest --resource admin`,
 	}
 
 	// Add subcommands
 	cmd.AddCommand(newCreateFeatureCommand())
 	cmd.AddCommand(newCreateResourceCommand())
 	cmd.AddCommand(newCreateStandaloneCommand())
+	cmd.AddCommand(newCreateManifestCommand())
 
 	return cmd
 }

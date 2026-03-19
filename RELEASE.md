@@ -1,19 +1,41 @@
-## OpenCore CLI v1.1.0
+## OpenCore CLI v1.2.0
 
 ### Added
+- Added template manifest support through `oc.manifest.json` for official templates.
+- Added compatibility metadata support for template runtimes (`fivem`, `redm`, `ragemp`) and game profiles (`common`, `gta5`, `rdr3`).
+- Added `requires.templates` metadata to declare template dependencies.
+- Added a JSON Schema reference at `schemas/oc-manifest.schema.json` for editor validation and contributor guidance.
 
-- Add central adapter and runtime inspection to config loading, doctor output, and build defaults for FiveM and RageMP environments.
-- Add runtime-aware scaffolding for `create resource` and `create standalone`, including manifest generation rules, runtime-specific TypeScript targets, and correct type packages.
-- Add RedM manifest defaults in generated `fxmanifest.lua` files with `game 'rdr3'` and the required `rdr3_warning` directive.
-- Add automated coverage for adapter detection, simplified feature scaffolding, and runtime-specific template generation.
+### Clone Command
+- `opencore clone --list` now shows compatibility information when a template provides `oc.manifest.json`.
+- `opencore clone <template>` now validates manifest runtime compatibility against the current project's `opencore.config.ts` when available.
+- Added `opencore clone --force` to bypass compatibility validation for advanced or experimental use cases.
+- Templates without a manifest remain supported and are treated as compatibility `unknown` for backward compatibility.
 
-### Changed
+### Create Command
+- Added `opencore create manifest` to generate an example `oc.manifest.json` for existing `core/`, `resources/<name>/`, or `standalones/<name>/` directories.
+- The generated manifest includes the public schema URL, a starter compatibility block inferred from the current project runtime when available, and a default `core` dependency for framework-connected resources.
 
-- Standardize new project generation on a single default layout with `core/src/server.ts`, `core/src/client.ts`, and `core/src/features/`.
-- Remove architecture selection and all legacy architecture-specific generators and templates from `init` and `create feature` flows.
-- Update documentation to reflect adapter-driven runtime behavior and the simplified default project structure.
+### Manifest Format
+Example `oc.manifest.json`:
 
-### Improved
+```json
+{
+  "schemaVersion": 1,
+  "name": "example-template",
+  "displayName": "Example Template",
+  "kind": "resource",
+  "description": "Example OpenCore resource",
+  "compatibility": {
+    "runtimes": ["fivem", "redm"],
+    "gameProfiles": ["common"]
+  },
+  "requires": {
+    "templates": ["core"]
+  }
+}
+```
 
-- Improve embedded adapter injection and runtime bootstrap handling during builds.
-- Skip redundant binary downloads when `opencore-cli` is already available during installation.
+### Notes
+- The manifest is optional but recommended for all published templates.
+- Runtime compatibility is currently enforced during clone; additional manifest-driven behaviors can build on this later without changing the file name or schema family.
