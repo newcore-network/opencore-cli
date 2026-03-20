@@ -687,6 +687,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						OutDir:         layout.ViewsOutDir,
 						CustomCompiler: explicit.CustomCompiler, // Use same compiler for views
 						Options: BuildOptions{
+							Runtime:      layout.Runtime,
 							Framework:    framework,
 							Minify:       b.config.Build.Minify,
 							SourceMaps:   b.config.Build.SourceMaps,
@@ -707,6 +708,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Type:         TypeViews,
 					OutDir:       layout.ViewsOutDir,
 					Options: BuildOptions{
+						Runtime:      layout.Runtime,
 						Framework:    viewsConfig.Framework,
 						Minify:       b.config.Build.Minify,
 						SourceMaps:   b.config.Build.SourceMaps,
@@ -828,6 +830,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				OutDir:         layout.ViewsOutDir,
 				CustomCompiler: res.CustomCompiler,
 				Options: BuildOptions{
+					Runtime:      layout.Runtime,
 					Framework:    framework,
 					Minify:       b.config.Build.Minify,
 					SourceMaps:   b.config.Build.SourceMaps,
@@ -975,6 +978,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					OutDir:         layout.ViewsOutDir,
 					CustomCompiler: res.CustomCompiler,
 					Options: BuildOptions{
+						Runtime:      layout.Runtime,
 						Framework:    res.Views.Framework,
 						Minify:       b.config.Build.Minify,
 						SourceMaps:   b.config.Build.SourceMaps,
@@ -991,6 +995,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 
 	for i := range tasks {
 		tasks[i].Options.PackageManager = pm
+		tasks[i].Options.ResourceName = tasks[i].ResourceName
 	}
 	return tasks
 }

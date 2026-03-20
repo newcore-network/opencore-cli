@@ -37,6 +37,7 @@
     "win32"
   ],
   "files": [
+    "bin/opencore",
     "index.js",
     "index.d.ts",
     "binary.js",

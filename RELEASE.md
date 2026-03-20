@@ -10,6 +10,7 @@
 - `opencore clone --list` now shows compatibility information when a template provides `oc.manifest.json`.
 - `opencore clone <template>` now validates manifest runtime compatibility against the current project's `opencore.config.ts` when available.
 - Added `opencore clone --force` to bypass compatibility validation for advanced or experimental use cases.
+- `opencore clone <template>` now removes `fxmanifest.lua` after cloning into RageMP projects so CFX-specific manifests are not copied into RageMP resources.
 - Templates without a manifest remain supported and are treated as compatibility `unknown` for backward compatibility.
 
 ### Create Command

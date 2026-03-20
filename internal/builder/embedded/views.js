@@ -699,6 +699,8 @@ async function buildViews(viewPath, outDir, options = {}) {
         plugins.push(tailwindPlugin)
     }
 
+    const isRageMP = options.runtime === 'ragemp'
+
     await esbuild.build({
         ...shared,
         banner: {
@@ -707,10 +709,10 @@ async function buildViews(viewPath, outDir, options = {}) {
         entryPoints: [entryPoint],
         outdir: outDir,
         platform: 'browser',
-        target: options.target || 'es2020',
-        format: 'esm',
+        target: options.target || (isRageMP ? 'es2015' : 'es2020'),
+        format: isRageMP ? 'iife' : 'esm',
         bundle: true,
-        splitting: true,
+        splitting: isRageMP ? false : true,
         chunkNames: 'chunks/[name]-[hash]',
         assetNames: 'assets/[name]-[hash]',
         plugins,

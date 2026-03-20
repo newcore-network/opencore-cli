@@ -236,7 +236,8 @@ async function buildCore(resourcePath, outDir, options = {}) {
             external: serverExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
-                '__OPENCORE_TARGET__': '"server"'
+                '__OPENCORE_TARGET__': '"server"',
+                '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
             }
         }))
     }
@@ -256,7 +257,8 @@ async function buildCore(resourcePath, outDir, options = {}) {
             external: clientExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
-                '__OPENCORE_TARGET__': '"client"'
+                '__OPENCORE_TARGET__': '"client"',
+                '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
             }
         }))
     }
@@ -303,7 +305,8 @@ async function buildResource(resourcePath, outDir, options = {}) {
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
-                '__OPENCORE_TARGET__': '"server"'
+                '__OPENCORE_TARGET__': '"server"',
+                '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
             }
         }))
     }
@@ -324,7 +327,8 @@ async function buildResource(resourcePath, outDir, options = {}) {
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
-                '__OPENCORE_TARGET__': '"client"'
+                '__OPENCORE_TARGET__': '"client"',
+                '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
             }
         }))
     }
@@ -370,7 +374,8 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
-                '__OPENCORE_TARGET__': '"server"'
+                '__OPENCORE_TARGET__': '"server"',
+                '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
             }
         }))
     }
@@ -391,7 +396,8 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
-                '__OPENCORE_TARGET__': '"client"'
+                '__OPENCORE_TARGET__': '"client"',
+                '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
             }
         }))
     }

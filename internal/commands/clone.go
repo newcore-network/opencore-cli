@@ -677,6 +677,34 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool, force bool, bran
 		return fm.err
 	}
 
+	if runtime, ok, err := detectCurrentProjectRuntime(); err != nil {
+		return err
+	} else if ok {
+		if err := applyPostCloneRuntimeAdjustments(template.TargetPath, runtime); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func applyPostCloneRuntimeAdjustments(targetPath, runtime string) error {
+	if runtime != "ragemp" {
+		return nil
+	}
+
+	manifestPath := filepath.Join(targetPath, "fxmanifest.lua")
+	if _, err := os.Stat(manifestPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect cloned manifest: %w", err)
+	}
+
+	if err := os.Remove(manifestPath); err != nil {
+		return fmt.Errorf("failed to remove fxmanifest.lua for ragemp template clone: %w", err)
+	}
+
 	return nil
 }
 
