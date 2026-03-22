@@ -345,6 +345,11 @@ function createTailwindPlugin(viewPath, options = {}) {
         const tailwindPlugin = require(pluginPath)
         const pluginOptions = tailwindInfo.configPath ? { config: tailwindInfo.configPath } : {}
         plugins.push(tailwindPlugin(pluginOptions))
+        const nestingPath = resolveDependency(viewPath, 'postcss-nesting')
+        const nestingPlugin = nestingPath ? require(nestingPath) : null
+        if (nestingPlugin) {
+            plugins.push(nestingPlugin())
+        }
         const autoprefixerPath = resolveDependency(viewPath, 'autoprefixer')
         const autoprefixer = autoprefixerPath ? require(autoprefixerPath) : null
         if (autoprefixer) {
