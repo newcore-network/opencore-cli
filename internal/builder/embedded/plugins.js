@@ -397,8 +397,12 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
         setup(build) {
             if (adapterModulePath) {
                 function buildSideAdapterModule(configSource, side) {
+                    const sanitizedSource = configSource
+                        .replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*\/\/.*$/gm, '')
+
                     const sideRegex = new RegExp(`${side}\\s*:\\s*([^,\\n]+)`, 'm')
-                    const sideMatch = configSource.match(sideRegex)
+                    const sideMatch = sanitizedSource.match(sideRegex)
                     if (!sideMatch) {
                         return 'export const __openCoreProjectAdapter = undefined\n'
                     }
@@ -410,7 +414,7 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                     const importLines = []
                     for (const identifier of identifiers) {
                         const importRegex = new RegExp(`^\\s*import\\s+[^\\n]*\\b${identifier}\\b[^\\n]*$`, 'm')
-                        const importMatch = configSource.match(importRegex)
+                        const importMatch = sanitizedSource.match(importRegex)
                         if (importMatch) {
                             importLines.push(importMatch[0])
                         }
