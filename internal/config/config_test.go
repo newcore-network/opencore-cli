@@ -225,6 +225,60 @@ func TestRuntimeKindRageMP(t *testing.T) {
 	}
 }
 
+func TestDevConfigNormalize(t *testing.T) {
+	dev := DevConfig{
+		Port:            3847,
+		TxAdminURL:      "http://localhost:40120",
+		TxAdminUser:     "admin",
+		TxAdminPassword: "secret",
+	}
+
+	dev.Normalize()
+
+	if dev.Bridge.Port != 3847 {
+		t.Fatalf("expected bridge port 3847, got %d", dev.Bridge.Port)
+	}
+	if dev.TxAdmin.URL != "http://localhost:40120" {
+		t.Fatalf("expected txAdmin URL to be normalized, got %q", dev.TxAdmin.URL)
+	}
+	if !dev.IsTxAdminConfigured() {
+		t.Fatal("expected txAdmin config to be detected")
+	}
+	if dev.RestartMode() != "auto" {
+		t.Fatalf("expected restart mode auto, got %q", dev.RestartMode())
+	}
+	if dev.Process.StopTimeoutMs != 5000 {
+		t.Fatalf("expected default stop timeout 5000, got %d", dev.Process.StopTimeoutMs)
+	}
+	if dev.Process.StopSignal != "SIGTERM" {
+		t.Fatalf("expected default stop signal SIGTERM, got %q", dev.Process.StopSignal)
+	}
+}
+
+func TestDevConfigPrefersNestedValues(t *testing.T) {
+	dev := DevConfig{
+		Bridge: DevBridgeConfig{Port: 9999},
+		TxAdmin: DevTxAdminConfig{
+			URL:      "http://nested",
+			User:     "nested-user",
+			Password: "nested-pass",
+		},
+		Port:            3847,
+		TxAdminURL:      "http://legacy",
+		TxAdminUser:     "legacy-user",
+		TxAdminPassword: "legacy-pass",
+	}
+
+	dev.Normalize()
+
+	if dev.BridgePort() != 9999 {
+		t.Fatalf("expected nested bridge port to win, got %d", dev.BridgePort())
+	}
+	if dev.TxAdmin.URL != "http://nested" {
+		t.Fatalf("expected nested txAdmin URL to win, got %q", dev.TxAdmin.URL)
+	}
+}
+
 func TestGetCustomCompiler(t *testing.T) {
 	cfg := &Config{
 		Core: CoreConfig{

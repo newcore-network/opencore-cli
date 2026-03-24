@@ -56,15 +56,116 @@ type AdapterManifestBinding struct {
 }
 
 type DevConfig struct {
-	Port            int    `json:"port"`
-	TxAdminURL      string `json:"txAdminUrl,omitempty"`
-	TxAdminUser     string `json:"txAdminUser,omitempty"`
-	TxAdminPassword string `json:"txAdminPassword,omitempty"`
+	Bridge          DevBridgeConfig  `json:"bridge,omitempty"`
+	Restart         DevRestartConfig `json:"restart,omitempty"`
+	TxAdmin         DevTxAdminConfig `json:"txAdmin,omitempty"`
+	Process         DevProcessConfig `json:"process,omitempty"`
+	Port            int              `json:"port,omitempty"`
+	TxAdminURL      string           `json:"txAdminUrl,omitempty"`
+	TxAdminUser     string           `json:"txAdminUser,omitempty"`
+	TxAdminPassword string           `json:"txAdminPassword,omitempty"`
+}
+
+type DevBridgeConfig struct {
+	Port int `json:"port,omitempty"`
+}
+
+type DevRestartConfig struct {
+	Mode string `json:"mode,omitempty"`
+}
+
+type DevTxAdminConfig struct {
+	URL      string `json:"url,omitempty"`
+	User     string `json:"user,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
+type DevProcessConfig struct {
+	Command       string            `json:"command,omitempty"`
+	Args          []string          `json:"args,omitempty"`
+	Cwd           string            `json:"cwd,omitempty"`
+	Env           map[string]string `json:"env,omitempty"`
+	StopSignal    string            `json:"stopSignal,omitempty"`
+	StopTimeoutMs int               `json:"stopTimeoutMs,omitempty"`
 }
 
 // IsTxAdminConfigured returns true if txAdmin credentials are fully configured
 func (d *DevConfig) IsTxAdminConfigured() bool {
-	return d.TxAdminURL != "" && d.TxAdminUser != "" && d.TxAdminPassword != ""
+	return strings.TrimSpace(d.TxAdmin.URL) != "" && strings.TrimSpace(d.TxAdmin.User) != "" && strings.TrimSpace(d.TxAdmin.Password) != ""
+}
+
+func (d *DevConfig) BridgePort() int {
+	if d == nil {
+		return 3847
+	}
+	if d.Bridge.Port > 0 {
+		return d.Bridge.Port
+	}
+	if d.Port > 0 {
+		return d.Port
+	}
+	return 3847
+}
+
+func (d *DevConfig) RestartMode() string {
+	if d == nil {
+		return "auto"
+	}
+	mode := strings.ToLower(strings.TrimSpace(d.Restart.Mode))
+	if mode == "" {
+		return "auto"
+	}
+	return mode
+}
+
+func (d *DevConfig) HasManagedProcess() bool {
+	if d == nil {
+		return false
+	}
+	return strings.TrimSpace(d.Process.Command) != ""
+}
+
+func (d *DevConfig) Normalize() {
+	if d == nil {
+		return
+	}
+
+	if d.Bridge.Port == 0 {
+		d.Bridge.Port = d.Port
+	}
+	if d.Bridge.Port == 0 {
+		d.Bridge.Port = 3847
+	}
+
+	if strings.TrimSpace(d.TxAdmin.URL) == "" {
+		d.TxAdmin.URL = strings.TrimSpace(d.TxAdminURL)
+	}
+	if strings.TrimSpace(d.TxAdmin.User) == "" {
+		d.TxAdmin.User = strings.TrimSpace(d.TxAdminUser)
+	}
+	if strings.TrimSpace(d.TxAdmin.Password) == "" {
+		d.TxAdmin.Password = d.TxAdminPassword
+	}
+
+	if d.Port == 0 {
+		d.Port = d.Bridge.Port
+	}
+	if strings.TrimSpace(d.TxAdminURL) == "" {
+		d.TxAdminURL = d.TxAdmin.URL
+	}
+	if strings.TrimSpace(d.TxAdminUser) == "" {
+		d.TxAdminUser = d.TxAdmin.User
+	}
+	if strings.TrimSpace(d.TxAdminPassword) == "" {
+		d.TxAdminPassword = d.TxAdmin.Password
+	}
+
+	if d.Process.StopTimeoutMs <= 0 {
+		d.Process.StopTimeoutMs = 5000
+	}
+	if strings.TrimSpace(d.Process.StopSignal) == "" {
+		d.Process.StopSignal = "SIGTERM"
+	}
 }
 
 func (c *Config) RuntimeKind() string {
@@ -468,20 +569,18 @@ async function loadConfig(configPath) {
 	if config.Build.LogLevel == "" {
 		config.Build.LogLevel = "INFO"
 	}
-	if config.Dev.Port == 0 {
-		config.Dev.Port = 3847
-	}
 
 	// Environment variables override config file (higher priority)
 	if envURL := os.Getenv("OPENCORE_TXADMIN_URL"); envURL != "" {
-		config.Dev.TxAdminURL = envURL
+		config.Dev.TxAdmin.URL = envURL
 	}
 	if envUser := os.Getenv("OPENCORE_TXADMIN_USER"); envUser != "" {
-		config.Dev.TxAdminUser = envUser
+		config.Dev.TxAdmin.User = envUser
 	}
 	if envPass := os.Getenv("OPENCORE_TXADMIN_PASSWORD"); envPass != "" {
-		config.Dev.TxAdminPassword = envPass
+		config.Dev.TxAdmin.Password = envPass
 	}
+	config.Dev.Normalize()
 
 	return &config, root, nil
 }

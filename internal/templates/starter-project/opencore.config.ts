@@ -57,10 +57,23 @@ export default defineConfig({
   },
 
   dev: {
-    port: 3847,
-    // you can also set your env system
-    // txAdminUser: '',
-    // txAdminPassword: '',
-    // txAdminUrl: ''
+    bridge: {
+      port: 3847,
+    },
+    restart: {
+      mode: 'auto',
+    },
+    txAdmin: {
+      // Optional. Recommended for FiveM CORE resource restarts.
+      // url: 'http://localhost:40120',
+      // user: 'admin',
+      // password: process.env.OPENCORE_TXADMIN_PASSWORD,
+    },
+    process: {
+      // Optional. Recommended for RageMP or custom managed servers.
+      // command: './server',
+      // args: [],
+      // cwd: '../server',
+    },
   }
 })
