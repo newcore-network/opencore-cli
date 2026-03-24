@@ -1,6 +1,8 @@
 package builder
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -138,11 +140,16 @@ func (b *Builder) resolveOutputMode(requested OutputMode) OutputMode {
 
 // Build executes the full build process
 func (b *Builder) Build() error {
-	return b.BuildWithOutput(OutputModeAuto)
+	return b.BuildWithOutputContext(context.Background(), OutputModeAuto)
 }
 
 // BuildWithOutput executes the full build process with explicit output mode
 func (b *Builder) BuildWithOutput(requestedMode OutputMode) error {
+	return b.BuildWithOutputContext(context.Background(), requestedMode)
+}
+
+// BuildWithOutputContext executes the full build process with explicit output mode and cancellation support.
+func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode OutputMode) error {
 	mode := b.resolveOutputMode(requestedMode)
 	plain := mode == OutputModePlain
 
@@ -189,15 +196,18 @@ func (b *Builder) BuildWithOutput(requestedMode OutputMode) error {
 
 	if b.config.Build.Parallel && len(tasks) > 1 {
 		if mode == OutputModeTUI {
-			results, err = b.buildParallelTUI(tasks, workers)
+			results, err = b.buildParallelTUI(ctx, tasks, workers)
 		} else {
-			results, err = b.buildParallelPlain(tasks, workers)
+			results, err = b.buildParallelPlain(ctx, tasks, workers)
 		}
 	} else {
-		results, err = b.buildSequential(tasks, plain)
+		results, err = b.buildSequential(ctx, tasks, plain)
 	}
 
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
 		return err
 	}
 
@@ -229,6 +239,10 @@ func (b *Builder) BuildWithOutput(requestedMode OutputMode) error {
 }
 
 func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
+	return b.BuildTasksContext(context.Background(), tasks)
+}
+
+func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]BuildResult, error) {
 	if len(tasks) == 0 {
 		return nil, nil
 	}
@@ -252,7 +266,7 @@ func (b *Builder) BuildTasks(tasks []BuildTask) ([]BuildResult, error) {
 		}
 	}
 
-	results, err := b.buildSequential(tasks, false)
+	results, err := b.buildSequential(ctx, tasks, false)
 	if err != nil {
 		return results, err
 	}
@@ -1001,16 +1015,17 @@ func (b *Builder) collectAllTasks() []BuildTask {
 }
 
 // buildParallelTUI executes builds in parallel using worker pool with TUI
-func (b *Builder) buildParallelTUI(tasks []BuildTask, workers int) ([]BuildResult, error) {
+func (b *Builder) buildParallelTUI(ctx context.Context, tasks []BuildTask, workers int) ([]BuildResult, error) {
 	pool := NewWorkerPool(workers)
-	pool.Start(b.resourceBuilder.Build)
+	pool.StartWithContext(b.resourceBuilder.BuildWithContext)
+	defer pool.Cancel()
 
 	// Submit all tasks
 	pool.SubmitAll(tasks)
 
 	// Run TUI
 	m := newBuildModel(tasks, pool.Results())
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithContext(ctx))
 
 	finalModel, err := p.Run()
 	if err != nil {
@@ -1018,9 +1033,14 @@ func (b *Builder) buildParallelTUI(tasks []BuildTask, workers int) ([]BuildResul
 		return nil, err
 	}
 
-	pool.Close()
-
 	model := finalModel.(buildModel)
+	if model.cancelled || errors.Is(ctx.Err(), context.Canceled) {
+		pool.Cancel()
+		pool.Close()
+		return model.results, context.Canceled
+	}
+
+	pool.Close()
 
 	// Check for failures
 	failCount := 0
@@ -1038,9 +1058,10 @@ func (b *Builder) buildParallelTUI(tasks []BuildTask, workers int) ([]BuildResul
 }
 
 // buildParallelPlain executes builds in parallel with plain logs (non-TTY/CI friendly)
-func (b *Builder) buildParallelPlain(tasks []BuildTask, workers int) ([]BuildResult, error) {
+func (b *Builder) buildParallelPlain(ctx context.Context, tasks []BuildTask, workers int) ([]BuildResult, error) {
 	pool := NewWorkerPool(workers)
-	pool.Start(b.resourceBuilder.Build)
+	pool.StartWithContext(b.resourceBuilder.BuildWithContext)
+	defer pool.Cancel()
 
 	pool.SubmitAll(tasks)
 
@@ -1048,18 +1069,24 @@ func (b *Builder) buildParallelPlain(tasks []BuildTask, workers int) ([]BuildRes
 
 	results := make([]BuildResult, 0, len(tasks))
 	for i := 0; i < len(tasks); i++ {
-		result := <-pool.Results()
-		results = append(results, result)
+		select {
+		case <-ctx.Done():
+			pool.Cancel()
+			pool.Close()
+			return results, ctx.Err()
+		case result := <-pool.Results():
+			results = append(results, result)
 
-		if result.Success {
-			fmt.Printf("OK    [%s] (%s)\n", result.Task.ResourceName, result.Duration.Round(time.Millisecond))
-			continue
-		}
+			if result.Success {
+				fmt.Printf("OK    [%s] (%s)\n", result.Task.ResourceName, result.Duration.Round(time.Millisecond))
+				continue
+			}
 
-		fmt.Printf("FAIL  [%s] %v\n", result.Task.ResourceName, result.Error)
-		if result.Output != "" {
-			fmt.Println("Build output:")
-			fmt.Println(result.Output)
+			fmt.Printf("FAIL  [%s] %v\n", result.Task.ResourceName, result.Error)
+			if result.Output != "" {
+				fmt.Println("Build output:")
+				fmt.Println(result.Output)
+			}
 		}
 	}
 
@@ -1080,17 +1107,21 @@ func (b *Builder) buildParallelPlain(tasks []BuildTask, workers int) ([]BuildRes
 }
 
 // buildSequential executes builds one by one
-func (b *Builder) buildSequential(tasks []BuildTask, plain bool) ([]BuildResult, error) {
+func (b *Builder) buildSequential(ctx context.Context, tasks []BuildTask, plain bool) ([]BuildResult, error) {
 	results := make([]BuildResult, 0, len(tasks))
 
 	for _, task := range tasks {
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
+
 		if plain {
 			fmt.Printf("Building %s...\n", task.ResourceName)
 		} else {
 			fmt.Printf("%s Building %s...\n", ui.Info("→"), task.ResourceName)
 		}
 
-		result := b.resourceBuilder.Build(task)
+		result := b.resourceBuilder.BuildWithContext(ctx, task)
 		results = append(results, result)
 
 		if result.Success {
@@ -1112,6 +1143,9 @@ func (b *Builder) buildSequential(tasks []BuildTask, plain bool) ([]BuildResult,
 					fmt.Println(ui.Muted("Build output:"))
 				}
 				fmt.Println(result.Output)
+			}
+			if errors.Is(result.Error, context.Canceled) {
+				return results, result.Error
 			}
 			return results, fmt.Errorf("build failed for %s", task.ResourceName)
 		}
@@ -1567,6 +1601,7 @@ type buildModel struct {
 	completed   int
 	total       int
 	done        bool
+	cancelled   bool
 }
 
 type resultMsg BuildResult
@@ -1662,6 +1697,7 @@ func (m buildModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
+			m.cancelled = true
 			return m, tea.Quit
 		}
 	}

@@ -209,7 +209,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("wizard error: %w", err)
 	}
 
-	result := finalModel.(*ui.WizardModel)
+	result, ok := finalModel.(ui.WizardModel)
+	if !ok {
+		return fmt.Errorf("unexpected wizard result type %T", finalModel)
+	}
 
 	// Check if cancelled
 	if result.IsCancelled() {

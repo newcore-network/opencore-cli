@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -61,7 +62,7 @@ func New(cfg *config.Config) (*Watcher, error) {
 	return watcher, nil
 }
 
-func (w *Watcher) Watch() error {
+func (w *Watcher) Watch(ctx context.Context) error {
 	allTasks := w.builder.CollectTasks()
 
 	// Watch config file for dynamic updates
@@ -78,7 +79,7 @@ func (w *Watcher) Watch() error {
 	w.registerPaths()
 
 	// Start log bridge
-	go w.startLogBridge()
+	go w.startLogBridge(ctx)
 
 	fmt.Println()
 
@@ -141,13 +142,15 @@ func (w *Watcher) Watch() error {
 	fmt.Println()
 
 	// Build once at start
-	if err := w.builder.Build(); err != nil {
+	if err := w.builder.BuildWithOutputContext(ctx, builder.OutputModeAuto); err != nil {
 		fmt.Println(ui.Error(fmt.Sprintf("Initial build failed: %v", err)))
 	}
 
 	// Watch for changes
 	for {
 		select {
+		case <-ctx.Done():
+			return nil
 		case event, ok := <-w.watcher.Events:
 			if !ok {
 				return nil
@@ -164,6 +167,10 @@ func (w *Watcher) Watch() error {
 
 				// Create new timer that will execute after 500ms of silence
 				w.debounceTimers[fileName] = time.AfterFunc(500*time.Millisecond, func() {
+					if ctx.Err() != nil {
+						delete(w.debounceTimers, fileName)
+						return
+					}
 					// Handle config file change
 					if filepath.Base(fileName) == "opencore.config.ts" {
 						fmt.Println(ui.Info("Configuration changed, reloading..."))
@@ -184,7 +191,7 @@ func (w *Watcher) Watch() error {
 						w.registerPaths()
 
 						fmt.Println(ui.Info("Config reloaded, triggering full build..."))
-						if err := w.builder.Build(); err != nil {
+						if err := w.builder.BuildWithOutputContext(ctx, builder.OutputModeAuto); err != nil {
 							fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
 						}
 						return
@@ -228,7 +235,7 @@ func (w *Watcher) Watch() error {
 
 					// Perform the build
 					fmt.Println(ui.Info(fmt.Sprintf("File changed: %s", filepath.Base(fileName))))
-					results, err := w.builder.BuildTasks(affected)
+					results, err := w.builder.BuildTasksContext(ctx, affected)
 
 					// Unmark resources as being built
 					w.buildingMutex.Lock()
@@ -528,11 +535,17 @@ type LogResponse struct {
 	Timestamp int64        `json:"timestamp"`
 }
 
-func (w *Watcher) startLogBridge() {
+func (w *Watcher) startLogBridge(ctx context.Context) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
 		port := w.config.Dev.Port
 		endpoint := fmt.Sprintf("http://localhost:%d/logs", port)
 

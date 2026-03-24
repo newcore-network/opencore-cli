@@ -18,6 +18,11 @@ const (
 	githubRepo  = "opencore-cli"
 )
 
+var (
+	updateCheckClient = &http.Client{Timeout: 1500 * time.Millisecond}
+	updateClient      = &http.Client{Timeout: 30 * time.Second}
+)
+
 type Release struct {
 	TagName string  `json:"tag_name"`
 	Assets  []Asset `json:"assets"`
@@ -37,7 +42,7 @@ type UpdateInfo struct {
 func CheckForUpdate(currentVersion string, force bool) (*UpdateInfo, error) {
 	// Fetch from GitHub
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
-	resp, err := http.Get(url)
+	resp, err := updateCheckClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +81,7 @@ func NeedsUpdate(currentVersion, latestVersion string) bool {
 // Update performs the self-update
 func Update(version string) error {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", githubOwner, githubRepo, version)
-	resp, err := http.Get(url)
+	resp, err := updateClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -100,7 +105,7 @@ func Update(version string) error {
 		return fmt.Errorf("could not find binary for platform %s", platform)
 	}
 
-	resp, err = http.Get(downloadURL)
+	resp, err = updateClient.Get(downloadURL)
 	if err != nil {
 		return err
 	}

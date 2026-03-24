@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -17,6 +20,9 @@ var (
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	rootCmd := &cobra.Command{
 		Use:   "opencore",
 		Short: "OpenCore CLI - Official tooling for OpenCore Framework",
@@ -53,9 +59,10 @@ func main() {
 	rootCmd.AddCommand(commands.NewDevCommand())
 	rootCmd.AddCommand(commands.NewDoctorCommand())
 	rootCmd.AddCommand(commands.NewCloneCommand())
+	rootCmd.AddCommand(commands.NewAdapterCommand())
 	rootCmd.AddCommand(commands.NewUpdateCommand())
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Println(ui.Error(err.Error()))
 		os.Exit(1)
 	}

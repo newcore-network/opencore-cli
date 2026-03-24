@@ -43,5 +43,5 @@ func runDev(cmd *cobra.Command, args []string) error {
 	defer w.Close()
 
 	// Start watching
-	return w.Watch()
+	return w.Watch(cmd.Context())
 }

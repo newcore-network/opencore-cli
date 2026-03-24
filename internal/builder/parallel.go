@@ -13,7 +13,7 @@ type WorkerPool struct {
 	wg         sync.WaitGroup
 	ctx        context.Context
 	cancel     context.CancelFunc
-	buildFunc  func(BuildTask) BuildResult
+	buildFunc  func(context.Context, BuildTask) BuildResult
 }
 
 // NewWorkerPool creates a new worker pool with the specified number of workers
@@ -28,8 +28,15 @@ func NewWorkerPool(workers int) *WorkerPool {
 	}
 }
 
-// Start begins the worker pool with the given build function
+// Start begins the worker pool with the given build function.
 func (wp *WorkerPool) Start(buildFunc func(BuildTask) BuildResult) {
+	wp.StartWithContext(func(_ context.Context, task BuildTask) BuildResult {
+		return buildFunc(task)
+	})
+}
+
+// StartWithContext begins the worker pool with a cancellation-aware build function.
+func (wp *WorkerPool) StartWithContext(buildFunc func(context.Context, BuildTask) BuildResult) {
 	wp.buildFunc = buildFunc
 
 	for i := 0; i < wp.workers; i++ {
@@ -48,7 +55,7 @@ func (wp *WorkerPool) worker(id int) {
 			if !ok {
 				return
 			}
-			result := wp.buildFunc(task)
+			result := wp.buildFunc(wp.ctx, task)
 			select {
 			case wp.resultChan <- result:
 			case <-wp.ctx.Done():
