@@ -677,7 +677,7 @@ async function buildViews(viewPath, outDir, options = {}) {
     }
 
     const explicitFramework = (options.framework || '').toLowerCase()
-    const isVite = explicitFramework !== '' && detectViteFramework(viewPath)
+    const isVite = explicitFramework === 'vite' || (explicitFramework === '' && detectViteFramework(viewPath))
     if (isVite) {
         await buildViteViews(viewPath, outDir, options)
         return
