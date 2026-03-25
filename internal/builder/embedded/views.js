@@ -768,7 +768,7 @@ async function buildViews(viewPath, outDir, options = {}) {
     if (fs.existsSync(htmlSrc)) {
         let html = await fs.promises.readFile(htmlSrc, 'utf8')
         const entryBase = path.basename(entryPoint, path.extname(entryPoint))
-        
+
         html = html.replace(
             /(<script[^>]*\ssrc=["'])([^"']+\.(ts|tsx|jsx|js|svelte|vue))(['"][^>]*>)/gi,
             (match, prefix, src, ext, suffix) => {
@@ -778,6 +778,15 @@ async function buildViews(viewPath, outDir, options = {}) {
                 return match
             }
         )
+
+        // Inject <link> for esbuild-generated CSS if not already present
+        const cssFile = `${entryBase}.css`
+        const cssOutPath = path.join(outDir, cssFile)
+        const cssAlreadyLinked = new RegExp(`href=["'][^"']*${cssFile}["']`, 'i').test(html)
+        if (fs.existsSync(cssOutPath) && !cssAlreadyLinked) {
+            html = html.replace(/(<\/head>)/i, `  <link rel="stylesheet" href="./${cssFile}">\n$1`)
+            console.log(`[views] Injected CSS link for ${cssFile}`)
+        }
 
         await fs.promises.writeFile(htmlDst, html, 'utf8')
         console.log(`[views] Processed and copied index.html`)
