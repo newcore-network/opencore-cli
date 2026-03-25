@@ -63,6 +63,8 @@ func TestEmbeddedBuildScript(t *testing.T) {
 		"forceInclude",
 		"buildAstroViews",
 		"astro.config",
+		"buildViteViews",
+		"detectViteFramework",
 	}
 	for _, symbol := range requiredViewsSymbols {
 		if !strings.Contains(viewsContent, symbol) {

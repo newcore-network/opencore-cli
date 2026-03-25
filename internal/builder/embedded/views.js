@@ -76,6 +76,66 @@ function resolveDependency(viewPath, name) {
     }
 }
 
+function detectViteFramework(viewPath) {
+    const configFiles = [
+        'vite.config.js',
+        'vite.config.ts',
+        'vite.config.mjs',
+        'vite.config.cjs',
+    ]
+
+    for (const fileName of configFiles) {
+        if (fs.existsSync(path.join(viewPath, fileName))) {
+            return true
+        }
+    }
+
+    return false
+}
+
+async function buildViteViews(viewPath, outDir, options = {}) {
+    const vitePath = resolveDependency(viewPath, 'vite')
+    if (!vitePath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing Vite dependency\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  Vite was detected but the package is not installed.\n` +
+            `\n` +
+            `  Missing: vite\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    ${addCmd(options, ['vite'], true)}\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    const absOutDir = path.resolve(outDir).replace(/\\/g, '/')
+    const baseCommand = options.buildCommand || execCmd(options, 'vite', ['build'])
+    const buildCommand = `${baseCommand} --outDir "${absOutDir}"`
+
+    console.log(`[views] Vite detected, running: ${buildCommand}`)
+
+    const spawn = require('child_process').spawn
+
+    await new Promise((resolve, reject) => {
+        const proc = spawn(buildCommand, { cwd: viewPath, stdio: 'inherit', shell: true })
+        proc.on('close', code => {
+            if (code === 0) {
+                resolve()
+            } else {
+                reject(new Error(`[views] Vite build failed with exit code ${code}`))
+            }
+        })
+    })
+
+    console.log(`[views] Vite build complete`)
+}
+
 function detectAstroFramework(viewPath) {
     if (hasAstroFiles(viewPath)) {
         return true
@@ -608,6 +668,13 @@ async function buildViews(viewPath, outDir, options = {}) {
     const isAstro = (options.framework || '').toLowerCase() === 'astro' || detectAstroFramework(viewPath)
     if (isAstro) {
         await buildAstroViews(viewPath, outDir, options)
+        return
+    }
+
+    const explicitFramework = (options.framework || '').toLowerCase()
+    const isVite = explicitFramework !== '' && detectViteFramework(viewPath)
+    if (isVite) {
+        await buildViteViews(viewPath, outDir, options)
         return
     }
 
