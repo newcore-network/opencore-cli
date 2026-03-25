@@ -69,11 +69,12 @@ func main() {
 
 	// Check for updates in the background after command execution
 	if shouldCheckForUpdates(os.Args) {
-		if info, err := updater.CheckForUpdate(version, false); err == nil {
+		channel := updater.GetConfiguredChannel()
+		if info, err := updater.CheckForUpdate(version, false, channel); err == nil {
 			if updater.NeedsUpdate(version, info.LatestVersion) {
 				fmt.Println()
-				fmt.Println(ui.Info(fmt.Sprintf("New version available: %s -> %s", version, info.LatestVersion)))
-				fmt.Println(ui.Info("Run 'opencore update' to update to the latest version."))
+				fmt.Println(ui.Info(fmt.Sprintf("New %s version available: %s -> %s", channel, version, info.LatestVersion)))
+				fmt.Println(ui.Info(fmt.Sprintf("Run 'opencore update --channel %s' to update.", channel)))
 			}
 		}
 	}

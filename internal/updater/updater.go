@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/blang/semver/v4"
@@ -24,8 +25,10 @@ var (
 )
 
 type Release struct {
-	TagName string  `json:"tag_name"`
-	Assets  []Asset `json:"assets"`
+	TagName    string  `json:"tag_name"`
+	Prerelease bool    `json:"prerelease"`
+	Draft      bool    `json:"draft"`
+	Assets     []Asset `json:"assets"`
 }
 
 type Asset struct {
@@ -34,14 +37,20 @@ type Asset struct {
 }
 
 type UpdateInfo struct {
+	Channel       string    `json:"channel"`
 	LatestVersion string    `json:"latest_version"`
 	LastCheck     time.Time `json:"last_check"`
 }
 
+const (
+	ChannelStable = "stable"
+	ChannelBeta   = "beta"
+)
+
 // CheckForUpdate checks if a new version is available on GitHub
-func CheckForUpdate(currentVersion string, force bool) (*UpdateInfo, error) {
-	// Fetch from GitHub
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
+func CheckForUpdate(currentVersion string, force bool, channel string) (*UpdateInfo, error) {
+	channel = NormalizeChannel(channel)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", githubOwner, githubRepo)
 	resp, err := updateCheckClient.Get(url)
 	if err != nil {
 		return nil, err
@@ -49,20 +58,90 @@ func CheckForUpdate(currentVersion string, force bool) (*UpdateInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch latest release: %s", resp.Status)
+		return nil, fmt.Errorf("failed to fetch releases: %s", resp.Status)
 	}
 
-	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	var releases []Release
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
+	}
+
+	release, err := selectReleaseForChannel(releases, channel)
+	if err != nil {
 		return nil, err
 	}
 
 	info := &UpdateInfo{
+		Channel:       channel,
 		LatestVersion: release.TagName,
 		LastCheck:     time.Now(),
 	}
 
 	return info, nil
+}
+
+func NormalizeChannel(channel string) string {
+	switch strings.ToLower(strings.TrimSpace(channel)) {
+	case "", ChannelStable:
+		return ChannelStable
+	case ChannelBeta:
+		return ChannelBeta
+	default:
+		return ChannelStable
+	}
+}
+
+func GetConfiguredChannel() string {
+	return NormalizeChannel(os.Getenv("OPENCORE_UPDATE_CHANNEL"))
+}
+
+func selectReleaseForChannel(releases []Release, channel string) (*Release, error) {
+	channel = NormalizeChannel(channel)
+
+	var best *Release
+	var bestVersion semver.Version
+
+	for i := range releases {
+		release := &releases[i]
+		if !releaseAllowedForChannel(*release, channel) {
+			continue
+		}
+
+		version, err := semver.ParseTolerant(release.TagName)
+		if err != nil {
+			continue
+		}
+
+		if best == nil || version.GT(bestVersion) {
+			best = release
+			bestVersion = version
+		}
+	}
+
+	if best == nil {
+		return nil, fmt.Errorf("no releases found for %s channel", channel)
+	}
+
+	return best, nil
+}
+
+func releaseAllowedForChannel(release Release, channel string) bool {
+	if release.Draft {
+		return false
+	}
+
+	tag := strings.ToLower(release.TagName)
+	channel = NormalizeChannel(channel)
+
+	switch channel {
+	case ChannelBeta:
+		if !release.Prerelease {
+			return true
+		}
+		return strings.Contains(tag, "beta")
+	default:
+		return !release.Prerelease
+	}
 }
 
 // NeedsUpdate compares current version with latest version

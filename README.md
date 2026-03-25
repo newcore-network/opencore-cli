@@ -73,7 +73,7 @@ go build -o opencore .
 | `opencore dev` | Start development mode with file watching |
 | `opencore doctor` | Validate project configuration |
 | `opencore update` | self-update CLI |
-| `opencore --v` | Display CLI version |
+| `opencore --version` | Display CLI version |
 | `opencore --h` | Help |
 
 ---
@@ -90,6 +90,22 @@ You can also disable automatic update checks in CI logs:
 
 ```bash
 OPENCORE_DISABLE_UPDATE_CHECK=1 opencore build --output=plain
+```
+
+Choose a release channel when you want to validate prereleases before stable rollout:
+
+```bash
+opencore update --channel stable
+opencore update --channel beta
+
+OPENCORE_UPDATE_CHANNEL=beta opencore build
+```
+
+For npm installations, use dist-tags directly:
+
+```bash
+npm install -g @open-core/cli
+npm install -g @open-core/cli@beta
 ```
 
 ---
