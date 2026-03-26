@@ -18,15 +18,15 @@ func TestEmbeddedBuildScript(t *testing.T) {
 	// 2. Check plugins.js
 	pluginsScript, _ := BuildFS.ReadFile("plugins.js")
 	pluginsContent := string(pluginsScript)
-		requiredPlugins := []string{
-			"createSwcPlugin",
-			"normalizeSwcTarget",
-			"createExcludeNodeAdaptersPlugin",
-			"preserveFiveMExportsPlugin",
-			"findProjectConfigPath",
-			"__openCoreProjectAdapter",
-			"__openCoreInitWithAdapter",
-		}
+	requiredPlugins := []string{
+		"createSwcPlugin",
+		"normalizeSwcTarget",
+		"createExcludeNodeAdaptersPlugin",
+		"preserveFiveMExportsPlugin",
+		"findProjectConfigPath",
+		"__openCoreProjectAdapter",
+		"__openCoreInitWithAdapter",
+	}
 	for _, plugin := range requiredPlugins {
 		if !strings.Contains(pluginsContent, plugin) {
 			t.Errorf("plugins.js missing required plugin: %s", plugin)
@@ -63,11 +63,19 @@ func TestEmbeddedBuildScript(t *testing.T) {
 		"forceInclude",
 		"buildAstroViews",
 		"astro.config",
+		"buildViteViews",
+		"detectViteFramework",
 	}
 	for _, symbol := range requiredViewsSymbols {
 		if !strings.Contains(viewsContent, symbol) {
 			t.Errorf("views.js missing required symbol: %s", symbol)
 		}
+	}
+	if strings.Contains(viewsContent, "const isVite = explicitFramework !== '' && detectViteFramework(viewPath)") {
+		t.Error("views.js still contains the buggy Vite auto-detection condition")
+	}
+	if !strings.Contains(viewsContent, "const isVite = explicitFramework === 'vite' || (explicitFramework === '' && detectViteFramework(viewPath))") {
+		t.Error("views.js missing the guarded Vite detection condition")
 	}
 }
 

@@ -1,10 +1,11 @@
 package watcher
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"github.com/newcore-network/opencore-cli/internal/builder"
 	"github.com/newcore-network/opencore-cli/internal/config"
 	"github.com/newcore-network/opencore-cli/internal/ui"
-	"github.com/newcore-network/opencore-cli/internal/watcher/txadmin"
 )
 
 type Watcher struct {
@@ -25,7 +25,8 @@ type Watcher struct {
 	builder        *builder.Builder
 	watcher        *fsnotify.Watcher
 	debounceTimers map[string]*time.Timer
-	txAdminClient  *txadmin.Client
+	restarter      restarter
+	logQueue       chan LogMessage
 	buildingMutex  sync.Mutex
 	buildingSet    map[string]bool // Track which resources are currently being built
 }
@@ -41,27 +42,20 @@ func New(cfg *config.Config) (*Watcher, error) {
 		builder:        builder.New(cfg),
 		watcher:        w,
 		debounceTimers: make(map[string]*time.Timer),
+		logQueue:       make(chan LogMessage, 256),
 		buildingSet:    make(map[string]bool),
 	}
 
-	// Initialize txAdmin client if configured
-	if cfg.Dev.IsTxAdminConfigured() {
-		client, err := txadmin.NewClient(
-			cfg.Dev.TxAdminURL,
-			cfg.Dev.TxAdminUser,
-			cfg.Dev.TxAdminPassword,
-		)
-		if err != nil {
-			fmt.Println(ui.Warning(fmt.Sprintf("Failed to create txAdmin client: %v", err)))
-		} else {
-			watcher.txAdminClient = client
-		}
+	restarter, err := newRestarter(cfg)
+	if err != nil {
+		return nil, err
 	}
+	watcher.restarter = restarter
 
 	return watcher, nil
 }
 
-func (w *Watcher) Watch() error {
+func (w *Watcher) Watch(ctx context.Context) error {
 	allTasks := w.builder.CollectTasks()
 
 	// Watch config file for dynamic updates
@@ -77,8 +71,10 @@ func (w *Watcher) Watch() error {
 	// Add paths to watch recursively
 	w.registerPaths()
 
-	// Start log bridge
-	go w.startLogBridge()
+	if err := w.startBridgeServer(ctx); err != nil {
+		fmt.Println(ui.Warning(fmt.Sprintf("Failed to start dev bridge: %v", err)))
+	}
+	go w.startLogPrinter(ctx)
 
 	fmt.Println()
 
@@ -122,32 +118,39 @@ func (w *Watcher) Watch() error {
 		headerStyle.Render(" DEV MODE "),
 		statusStyle.Render(strings.Join(statusParts, " | ")))
 
-	// Show hot-reload mode
-	if w.txAdminClient != nil {
-		fmt.Println(ui.Info(fmt.Sprintf("Hot-reload: txAdmin (%s)", w.config.Dev.TxAdminURL)))
-		// Attempt initial login
+	fmt.Println(ui.Muted(fmt.Sprintf("Bridge: http://localhost:%d/logs", w.config.Dev.BridgePort())))
+	switch w.restarter.Mode() {
+	case "txadmin":
+		fmt.Println(ui.Info(fmt.Sprintf("Restart mode: txAdmin (%s)", w.config.Dev.TxAdmin.URL)))
 		fmt.Println(ui.Muted("Authenticating with txAdmin..."))
-		if err := w.txAdminClient.Login(); err != nil {
+		if err := w.restarter.Start(ctx); err != nil {
 			fmt.Println(ui.Warning(fmt.Sprintf("txAdmin login failed: %v", err)))
-			fmt.Println(ui.Warning("Hot-reload via txAdmin will not work. Check your credentials."))
+			fmt.Println(ui.Warning("Automatic restarts via txAdmin are disabled until credentials work."))
+			w.restarter = &noopRestarter{}
 		} else {
 			fmt.Println(ui.Success("Connected to txAdmin"))
 		}
-	} else {
-		fmt.Println(ui.Muted("Hot-reload: Internal HTTP (configure txAdmin for CORE hot-reload)"))
+	case "process":
+		fmt.Println(ui.Info(fmt.Sprintf("Restart mode: managed process (%s)", w.config.Dev.Process.Command)))
+	case "none":
+		fmt.Println(ui.Muted("Restart mode: build only"))
 	}
 
 	fmt.Println(ui.Muted("Watching for changes... (Ctrl+C to stop)"))
 	fmt.Println()
 
 	// Build once at start
-	if err := w.builder.Build(); err != nil {
+	if err := w.builder.BuildWithOutputContext(ctx, builder.OutputModeAuto); err != nil {
 		fmt.Println(ui.Error(fmt.Sprintf("Initial build failed: %v", err)))
+	} else if err := w.restarter.Start(ctx); err != nil {
+		fmt.Println(ui.Error(fmt.Sprintf("Failed to start dev runtime: %v", err)))
 	}
 
 	// Watch for changes
 	for {
 		select {
+		case <-ctx.Done():
+			return nil
 		case event, ok := <-w.watcher.Events:
 			if !ok {
 				return nil
@@ -164,6 +167,10 @@ func (w *Watcher) Watch() error {
 
 				// Create new timer that will execute after 500ms of silence
 				w.debounceTimers[fileName] = time.AfterFunc(500*time.Millisecond, func() {
+					if ctx.Err() != nil {
+						delete(w.debounceTimers, fileName)
+						return
+					}
 					// Handle config file change
 					if filepath.Base(fileName) == "opencore.config.ts" {
 						fmt.Println(ui.Info("Configuration changed, reloading..."))
@@ -178,14 +185,25 @@ func (w *Watcher) Watch() error {
 						}
 						w.config = newCfg
 						w.builder = builder.New(newCfg)
+						newRestarter, restarterErr := newRestarter(newCfg)
+						if restarterErr != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to configure restart mode: %v", restarterErr)))
+							return
+						}
+						if w.restarter != nil {
+							_ = w.restarter.Stop()
+						}
+						w.restarter = newRestarter
 						allTasks = w.builder.CollectTasks()
 
 						// Re-add all paths (fsnotify handles duplicates)
 						w.registerPaths()
 
 						fmt.Println(ui.Info("Config reloaded, triggering full build..."))
-						if err := w.builder.Build(); err != nil {
+						if err := w.builder.BuildWithOutputContext(ctx, builder.OutputModeAuto); err != nil {
 							fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
+						} else if err := w.restarter.Start(ctx); err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to start dev runtime: %v", err)))
 						}
 						return
 					}
@@ -228,7 +246,7 @@ func (w *Watcher) Watch() error {
 
 					// Perform the build
 					fmt.Println(ui.Info(fmt.Sprintf("File changed: %s", filepath.Base(fileName))))
-					results, err := w.builder.BuildTasks(affected)
+					results, err := w.builder.BuildTasksContext(ctx, affected)
 
 					// Unmark resources as being built
 					w.buildingMutex.Lock()
@@ -244,7 +262,7 @@ func (w *Watcher) Watch() error {
 					}
 
 					// Notify framework for hot reload
-					w.notifyFramework(affected, results)
+					w.notifyFramework(results)
 
 					// Clean up timer reference
 					delete(w.debounceTimers, fileName)
@@ -389,124 +407,43 @@ func (w *Watcher) tasksForChangedFile(all []builder.BuildTask, changedFile strin
 }
 
 func (w *Watcher) Close() error {
+	if w.restarter != nil {
+		_ = w.restarter.Stop()
+	}
 	return w.watcher.Close()
 }
 
-// notifyFramework tells the framework to restart the affected resources
-func (w *Watcher) notifyFramework(tasks []builder.BuildTask, results []builder.BuildResult) {
+// notifyFramework restarts affected resources or the managed process.
+func (w *Watcher) notifyFramework(results []builder.BuildResult) {
 	// Find unique resources that were successfully built
-	uniqueResources := make(map[string]bool)
+	uniqueResources := make(map[string]struct{})
 	for _, r := range results {
 		if r.Success {
 			// Get base resource name (e.g., "core" instead of "core/ui")
 			baseName := strings.Split(r.Task.ResourceName, "/")[0]
-			uniqueResources[baseName] = true
+			uniqueResources[baseName] = struct{}{}
 		}
 	}
-
-	// Get core resource name from config
-	coreResourceName := w.config.Core.ResourceName
-	if coreResourceName == "" {
-		coreResourceName = "core"
-	}
-
-	// Notify framework for each resource
+	resources := make([]string, 0, len(uniqueResources))
 	for resourceName := range uniqueResources {
-		// Check if we need txAdmin for this resource
-		isCoreResource := resourceName == coreResourceName
-
-		if w.txAdminClient != nil {
-			// Use txAdmin API (works for all resources including CORE)
-			go w.notifyViaTxAdmin(resourceName)
-		} else if isCoreResource {
-			// CORE resource without txAdmin - show warning
-			fmt.Println(ui.Warning(fmt.Sprintf(
-				"Cannot hot-reload '%s' (CORE resource cannot restart itself). Configure txAdmin in opencore.config.ts for CORE hot-reload.",
-				resourceName,
-			)))
-		} else {
-			// Non-CORE resource - use internal HTTP
-			go w.notifyViaHTTP(resourceName)
-		}
+		resources = append(resources, resourceName)
 	}
-}
-
-// notifyViaTxAdmin uses txAdmin API to restart a resource
-func (w *Watcher) notifyViaTxAdmin(resourceName string) {
-	// Helper function to check if error is auth-related
-	isAuthError := func(err error) bool {
-		if err == nil {
-			return false
-		}
-		errMsg := err.Error()
-		return strings.Contains(errMsg, "authentication") ||
-			strings.Contains(errMsg, "unauthorized") ||
-			strings.Contains(errMsg, "status 401") ||
-			strings.Contains(errMsg, "status 403")
-	}
-
-	// Helper function to re-authenticate
-	reauth := func() error {
-		fmt.Println(ui.Warning("txAdmin session expired, re-authenticating..."))
-		if err := w.txAdminClient.Login(); err != nil {
-			return fmt.Errorf("login failed: %w", err)
-		}
-		fmt.Println(ui.Success("Re-authenticated with txAdmin"))
-		return nil
-	}
-
-	// First refresh resources to ensure txAdmin sees the updated files
-	if err := w.txAdminClient.RefreshResources(); err != nil {
-		if isAuthError(err) {
-			if reauthErr := reauth(); reauthErr != nil {
-				fmt.Println(ui.Error(fmt.Sprintf("Re-authentication failed: %v", reauthErr)))
-				return
-			}
-			// Retry refresh after re-auth
-			if err := w.txAdminClient.RefreshResources(); err != nil {
-				fmt.Println(ui.Error(fmt.Sprintf("Failed to refresh resources: %v", err)))
-				return
-			}
-		} else {
-			fmt.Println(ui.Warning(fmt.Sprintf("Failed to refresh resources: %v", err)))
-		}
-	}
-
-	// Then restart the resource
-	if err := w.txAdminClient.RestartResource(resourceName); err != nil {
-		if isAuthError(err) {
-			if reauthErr := reauth(); reauthErr != nil {
-				fmt.Println(ui.Error(fmt.Sprintf("Re-authentication failed: %v", reauthErr)))
-				return
-			}
-			// Retry restart after re-auth
-			if err := w.txAdminClient.RestartResource(resourceName); err != nil {
-				fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, err)))
-				return
-			}
-		} else {
-			fmt.Println(ui.Error(fmt.Sprintf("Hot-reload failed for %s: %v", resourceName, err)))
-			return
-		}
-	}
-
-	fmt.Println(ui.Success(fmt.Sprintf("Hot-reload triggered for %s (via txAdmin)", resourceName)))
-}
-
-// notifyViaHTTP uses internal HTTP server to restart a resource (fallback)
-func (w *Watcher) notifyViaHTTP(resourceName string) {
-	port := w.config.Dev.Port
-	endpoint := fmt.Sprintf("http://localhost:%d/restart?resource=%s", port, url.QueryEscape(resourceName))
-
-	resp, err := http.Post(endpoint, "application/json", nil)
-	if err != nil {
-		// Don't show error if framework is not running (silent failure is better here)
+	if err := w.restarter.Restart(resources); err != nil {
+		fmt.Println(ui.Error(fmt.Sprintf("Restart failed: %v", err)))
 		return
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		fmt.Println(ui.Success(fmt.Sprintf("Hot-reload triggered for %s", resourceName)))
+	if len(resources) == 0 || w.restarter.Mode() == "none" {
+		return
+	}
+
+	if w.restarter.Mode() == "process" {
+		fmt.Println(ui.Success("Managed server process restarted"))
+		return
+	}
+
+	for _, resourceName := range resources {
+		fmt.Println(ui.Success(fmt.Sprintf("Restart triggered for %s (via %s)", resourceName, w.restarter.Mode())))
 	}
 }
 
@@ -523,35 +460,78 @@ type LogMessage struct {
 	} `json:"error,omitempty"`
 }
 
-type LogResponse struct {
-	Logs      []LogMessage `json:"logs"`
-	Timestamp int64        `json:"timestamp"`
-}
-
-func (w *Watcher) startLogBridge() {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		port := w.config.Dev.Port
-		endpoint := fmt.Sprintf("http://localhost:%d/logs", port)
-
-		resp, err := http.Get(endpoint)
-		if err != nil {
-			continue // Framework probably not running
-		}
-
-		var logResp LogResponse
-		if err := json.NewDecoder(resp.Body).Decode(&logResp); err != nil {
-			resp.Body.Close()
-			continue
-		}
-		resp.Body.Close()
-
-		for _, log := range logResp.Logs {
+func (w *Watcher) startLogPrinter(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case log := <-w.logQueue:
 			w.displayLog(log)
 		}
 	}
+}
+
+func (w *Watcher) startBridgeServer(ctx context.Context) error {
+	port := w.config.Dev.BridgePort()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/logs", w.handleLogs)
+
+	server := &http.Server{
+		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Println(ui.Warning(fmt.Sprintf("Dev bridge stopped: %v", err)))
+		}
+	}()
+
+	return nil
+}
+
+func (w *Watcher) handleLogs(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload struct {
+		Type    string       `json:"type"`
+		Payload []LogMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for _, log := range payload.Payload {
+		select {
+		case w.logQueue <- log:
+		default:
+		}
+	}
+
+	rw.WriteHeader(http.StatusAccepted)
 }
 
 func (w *Watcher) displayLog(log LogMessage) {

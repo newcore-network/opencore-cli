@@ -886,48 +886,122 @@ export interface OpenCoreConfig {
  * @example
  * ```typescript
  * dev: {
- *   port: 3847,
- *   // txAdmin integration for CORE hot-reload
- *   txAdminUrl: 'http://localhost:40120',
- *   txAdminUser: 'admin',
- *   txAdminPassword: 'my-password',
+ *   bridge: {
+ *     port: 3847,
+ *   },
+ *   restart: {
+ *     mode: 'auto',
+ *   },
+ *   txAdmin: {
+ *     url: 'http://localhost:40120',
+ *     user: 'admin',
+ *     password: process.env.OPENCORE_TXADMIN_PASSWORD,
+ *   },
+ *   process: {
+ *     command: './server',
+ *     cwd: '../server',
+ *   },
  * }
  * ```
  */
 export interface DevConfig {
   /**
-   * Port for the framework's hot-reload server.
-   * This should match the port configured in the framework.
-   * @default 3847
+   * CLI/framework bridge configuration used for dev logs and tooling.
+   */
+  bridge?: DevBridgeConfig;
+
+  /**
+   * Restart strategy used by `opencore dev`.
+   * @default { mode: 'auto' }
+   */
+  restart?: DevRestartConfig;
+
+  /**
+   * Optional txAdmin integration for FiveM/RedM restarts.
+   */
+  txAdmin?: DevTxAdminConfig;
+
+  /**
+   * Optional managed server process configuration.
+   * Recommended for RageMP or custom server executables.
+   */
+  process?: DevProcessConfig;
+
+  /**
+   * Legacy alias for `dev.bridge.port`.
+   * @deprecated Use `dev.bridge.port`.
    */
   port?: number;
 
   /**
-   * txAdmin panel URL for hot-reload integration.
-   * When configured, the CLI will use txAdmin API to restart resources,
-   * which allows hot-reloading the CORE resource (not possible via internal HTTP).
+   * Legacy alias for `dev.txAdmin.url`.
    *
    * Can also be set via `OPENCORE_TXADMIN_URL` environment variable.
    * @example 'http://localhost:40120'
+   * @deprecated Use `dev.txAdmin.url`.
    */
   txAdminUrl?: string;
 
   /**
-   * txAdmin username for authentication.
-   * The user must have the `commands.resources` permission.
+   * Legacy alias for `dev.txAdmin.user`.
    *
    * Can also be set via `OPENCORE_TXADMIN_USER` environment variable.
    * @example 'admin'
+   * @deprecated Use `dev.txAdmin.user`.
    */
   txAdminUser?: string;
 
   /**
-   * txAdmin password for authentication.
+   * Legacy alias for `dev.txAdmin.password`.
    *
    * **Security note**: For production, prefer using the
    * `OPENCORE_TXADMIN_PASSWORD` environment variable instead.
+   * @deprecated Use `dev.txAdmin.password`.
    */
   txAdminPassword?: string;
+}
+
+export interface DevBridgeConfig {
+  /**
+   * Port used by the CLI/framework bridge.
+   * @default 3847
+   */
+  port?: number;
+}
+
+export interface DevRestartConfig {
+  /**
+   * Restart strategy for `opencore dev`.
+   * - `auto`: process first, then txAdmin if configured, otherwise build-only
+   * - `process`: manage a local server executable
+   * - `txadmin`: restart resources via txAdmin API
+   * - `none`: only rebuild files
+   */
+  mode?: 'auto' | 'process' | 'txadmin' | 'none';
+}
+
+export interface DevTxAdminConfig {
+  /** txAdmin panel URL. */
+  url?: string;
+  /** txAdmin username. */
+  user?: string;
+  /** txAdmin password. */
+  password?: string;
+}
+
+export interface DevProcessConfig {
+  /** Server executable or script to launch. */
+  command?: string;
+  /** Arguments passed to the command. */
+  args?: string[];
+  /** Optional working directory for the managed process. */
+  cwd?: string;
+  /** Extra environment variables for the process. */
+  env?: Record<string, string>;
+  /** Stop signal used before forcing termination. */
+  stopSignal?: 'SIGTERM' | 'SIGINT' | 'SIGKILL';
+  /** Milliseconds to wait before killing the process. */
+  stopTimeoutMs?: number;
 }
 
 /**

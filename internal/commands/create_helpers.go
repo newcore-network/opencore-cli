@@ -93,6 +93,24 @@ func detectScaffoldRuntimeOptions() templates.ScaffoldRuntimeOptions {
 	}
 }
 
+type manifestCompatibilityDefaults struct {
+	Runtime     string
+	GameProfile string
+}
+
+func detectManifestCompatibilityDefaults() manifestCompatibilityDefaults {
+	runtime := detectScaffoldRuntimeOptions().Runtime
+
+	switch runtime {
+	case "redm":
+		return manifestCompatibilityDefaults{Runtime: runtime, GameProfile: "rdr3"}
+	case "ragemp", "fivem":
+		return manifestCompatibilityDefaults{Runtime: runtime, GameProfile: "gta5"}
+	default:
+		return manifestCompatibilityDefaults{Runtime: "fivem", GameProfile: "gta5"}
+	}
+}
+
 func renderCreateBox(content string) {
 	fmt.Println(ui.BoxStyle.Render(content))
 	fmt.Println()

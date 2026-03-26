@@ -10,7 +10,8 @@
 | `opencore create <type>` | Create scaffolding |
 | `opencore clone <template>` | Clone official template |
 | `opencore doctor` | Validate configuration |
-| `opencore version` | Display CLI version |
+| `opencore update` | Update the CLI |
+| `opencore --version` | Display CLI version |
 
 ## init
 
@@ -115,3 +116,16 @@ Checks:
 - Configuration file exists and is valid
 - Required paths exist
 - Dependencies are compatible
+
+## update
+
+Update the CLI from the selected release channel.
+
+```bash
+opencore update
+opencore update --channel beta
+```
+
+Options:
+- `--channel stable|beta` selects which release stream to check
+- `OPENCORE_UPDATE_CHANNEL=beta` changes the default channel for update checks

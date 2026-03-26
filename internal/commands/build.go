@@ -41,5 +41,5 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Create builder and build
 	b := builder.New(cfg)
-	return b.BuildWithOutput(outputMode)
+	return b.BuildWithOutputContext(cmd.Context(), outputMode)
 }

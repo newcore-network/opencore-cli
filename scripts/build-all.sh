@@ -35,7 +35,7 @@ for platform in "${platforms[@]}"; do
     GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \
         go build -ldflags "-X main.version=${VERSION}" \
         -o "${OUTPUT_DIR}/${output_name}" \
-        ./cmd/opencore
+        .
     
     echo "✅ ${output_name}"
     echo ""
@@ -43,4 +43,3 @@ done
 
 echo "✨ Build complete! Binaries in ${OUTPUT_DIR}/"
 ls -lh "$OUTPUT_DIR"
-

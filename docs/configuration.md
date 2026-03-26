@@ -136,13 +136,31 @@ export default defineConfig({
   },
 
   dev: {
-    port: 3847,
-    txAdminUrl: 'http://localhost:40120',
-    txAdminUser: 'admin',
-    txAdminPassword: '',
+    bridge: {
+      port: 3847,
+    },
+    restart: {
+      mode: 'auto',
+    },
+    txAdmin: {
+      url: 'http://localhost:40120',
+      user: 'admin',
+      password: '',
+    },
+    process: {
+      command: './server',
+      args: [],
+      cwd: '../server',
+    },
   },
 })
 ```
+
+Notes:
+
+- `dev.bridge.port` is the CLI/framework bridge port used for development logs and tooling.
+- `dev.txAdmin` is optional and intended for txAdmin-managed FiveM restarts.
+- `dev.process` is the simplest cross-runtime option for RageMP or custom servers: build, stop process, start process again.
 
 ## Configuration Reference
 

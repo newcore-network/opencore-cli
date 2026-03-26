@@ -68,11 +68,12 @@ go build -o opencore .
 | `opencore build` | Build all resources for production |
 | `opencore completion` | Completion files config  to set in your zsh, bash etc |
 | `opencore create <type>` | Create scaffolding (feature, resource, standalone) |
+| `opencore adapter check` | Validate external adapter contract coverage |
 | `opencore clone <template>` | Clone an official template |
 | `opencore dev` | Start development mode with file watching |
 | `opencore doctor` | Validate project configuration |
 | `opencore update` | self-update CLI |
-| `opencore --v` | Display CLI version |
+| `opencore --version` | Display CLI version |
 | `opencore --h` | Help |
 
 ---
@@ -89,6 +90,22 @@ You can also disable automatic update checks in CI logs:
 
 ```bash
 OPENCORE_DISABLE_UPDATE_CHECK=1 opencore build --output=plain
+```
+
+Choose a release channel when you want to validate prereleases before stable rollout:
+
+```bash
+opencore update --channel stable
+opencore update --channel beta
+
+OPENCORE_UPDATE_CHANNEL=beta opencore build
+```
+
+For npm installations, use dist-tags directly:
+
+```bash
+npm install -g @open-core/cli
+npm install -g @open-core/cli@beta
 ```
 
 ---
@@ -200,6 +217,37 @@ opencore clone admin --api
 The clone command automatically selects the best download method:
 1. Uses git sparse-checkout if git >= 2.25 is available (faster)
 2. Falls back to GitHub API for older git versions or when git is unavailable
+
+---
+
+## Adapter Check Command
+
+Validate external adapter packages such as `@open-core/fivem-adapter` or `@open-core/ragemp-adapter` against the framework contract baseline:
+
+```bash
+# inside an adapter repository
+opencore adapter check
+
+# fail on optional parity gaps too
+opencore adapter check --strict
+
+# machine-readable output
+opencore adapter check --json
+```
+
+What it checks:
+
+- Compares the adapter's registered server/client bindings with the framework's default adapter baseline
+- Detects missing required contracts and reports optional parity gaps as warnings by default
+- Understands transport helpers like `bindMessagingTransport(...)` so the report reflects actual runtime coverage
+
+This command is designed for adapter maintainers, not regular game projects.
+
+Reference:
+
+- CLI usage: [./docs/commands.md](./docs/commands.md)
+- Adapter overview: [opencorejs.dev/docs/adapters](https://opencorejs.dev/docs/adapters)
+- Framework contracts: [opencorejs.dev/docs/contracts/introduction](https://opencorejs.dev/docs/contracts/introduction)
 
 ---
 

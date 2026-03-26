@@ -1,7 +1,9 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -106,6 +108,11 @@ func (rb *ResourceBuilder) getBuildScriptPath(task BuildTask) (string, error) {
 
 // Build executes a build task and returns the result
 func (rb *ResourceBuilder) Build(task BuildTask) BuildResult {
+	return rb.BuildWithContext(context.Background(), task)
+}
+
+// BuildWithContext executes a build task and returns the result.
+func (rb *ResourceBuilder) BuildWithContext(ctx context.Context, task BuildTask) BuildResult {
 	start := time.Now()
 
 	var err error
@@ -126,15 +133,15 @@ func (rb *ResourceBuilder) Build(task BuildTask) BuildResult {
 
 	switch task.Type {
 	case TypeCore:
-		output, err = rb.buildCore(task)
+		output, err = rb.buildCore(ctx, task)
 	case TypeResource:
-		output, err = rb.buildResource(task)
+		output, err = rb.buildResource(ctx, task)
 	case TypeStandalone:
-		output, err = rb.buildStandalone(task)
+		output, err = rb.buildStandalone(ctx, task)
 	case TypeViews:
-		output, err = rb.buildViews(task)
+		output, err = rb.buildViews(ctx, task)
 	case TypeCopy:
-		output, err = rb.copyResource(task)
+		output, err = rb.copyResourceWithContext(ctx, task)
 	default:
 		err = fmt.Errorf("unknown resource type: %s", task.Type)
 	}
@@ -151,7 +158,7 @@ func (rb *ResourceBuilder) Build(task BuildTask) BuildResult {
 }
 
 // buildCore builds the core resource
-func (rb *ResourceBuilder) buildCore(task BuildTask) (string, error) {
+func (rb *ResourceBuilder) buildCore(ctx context.Context, task BuildTask) (string, error) {
 	scriptPath, err := rb.getBuildScriptPath(task)
 	if err != nil {
 		return "", err
@@ -162,12 +169,15 @@ func (rb *ResourceBuilder) buildCore(task BuildTask) (string, error) {
 		return "", fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	cmd := exec.Command("node", scriptPath, "single",
+	cmd := exec.CommandContext(ctx, "node", scriptPath, "single",
 		string(TypeCore), task.Path, task.OutDir, string(optionsJSON))
 	cmd.Dir = rb.projectPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return string(output), ctx.Err()
+		}
 		return string(output), fmt.Errorf("core build failed: %w\nOutput:\n%s", err, string(output))
 	}
 
@@ -175,7 +185,7 @@ func (rb *ResourceBuilder) buildCore(task BuildTask) (string, error) {
 }
 
 // buildResource builds a satellite resource
-func (rb *ResourceBuilder) buildResource(task BuildTask) (string, error) {
+func (rb *ResourceBuilder) buildResource(ctx context.Context, task BuildTask) (string, error) {
 	scriptPath, err := rb.getBuildScriptPath(task)
 	if err != nil {
 		return "", err
@@ -186,12 +196,15 @@ func (rb *ResourceBuilder) buildResource(task BuildTask) (string, error) {
 		return "", fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	cmd := exec.Command("node", scriptPath, "single",
+	cmd := exec.CommandContext(ctx, "node", scriptPath, "single",
 		string(TypeResource), task.Path, task.OutDir, string(optionsJSON))
 	cmd.Dir = rb.projectPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return string(output), ctx.Err()
+		}
 		return string(output), fmt.Errorf("resource build failed: %w\nOutput:\n%s", err, string(output))
 	}
 
@@ -199,7 +212,7 @@ func (rb *ResourceBuilder) buildResource(task BuildTask) (string, error) {
 }
 
 // buildStandalone builds a standalone resource
-func (rb *ResourceBuilder) buildStandalone(task BuildTask) (string, error) {
+func (rb *ResourceBuilder) buildStandalone(ctx context.Context, task BuildTask) (string, error) {
 	scriptPath, err := rb.getBuildScriptPath(task)
 	if err != nil {
 		return "", err
@@ -210,12 +223,15 @@ func (rb *ResourceBuilder) buildStandalone(task BuildTask) (string, error) {
 		return "", fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	cmd := exec.Command("node", scriptPath, "single",
+	cmd := exec.CommandContext(ctx, "node", scriptPath, "single",
 		string(TypeStandalone), task.Path, task.OutDir, string(optionsJSON))
 	cmd.Dir = rb.projectPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return string(output), ctx.Err()
+		}
 		return string(output), fmt.Errorf("standalone build failed: %w\nOutput:\n%s", err, string(output))
 	}
 
@@ -223,7 +239,7 @@ func (rb *ResourceBuilder) buildStandalone(task BuildTask) (string, error) {
 }
 
 // buildViews builds views/NUI for a resource
-func (rb *ResourceBuilder) buildViews(task BuildTask) (string, error) {
+func (rb *ResourceBuilder) buildViews(ctx context.Context, task BuildTask) (string, error) {
 	scriptPath, err := rb.getBuildScriptPath(task)
 	if err != nil {
 		return "", err
@@ -234,12 +250,15 @@ func (rb *ResourceBuilder) buildViews(task BuildTask) (string, error) {
 		return "", fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	cmd := exec.Command("node", scriptPath, "single",
+	cmd := exec.CommandContext(ctx, "node", scriptPath, "single",
 		string(TypeViews), task.Path, task.OutDir, string(optionsJSON))
 	cmd.Dir = rb.projectPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return string(output), ctx.Err()
+		}
 		return string(output), fmt.Errorf("views build failed: %w", err)
 	}
 
@@ -248,6 +267,10 @@ func (rb *ResourceBuilder) buildViews(task BuildTask) (string, error) {
 
 // copyResource copies a resource without compilation (for compile: false)
 func (rb *ResourceBuilder) copyResource(task BuildTask) (string, error) {
+	return rb.copyResourceWithContext(context.Background(), task)
+}
+
+func (rb *ResourceBuilder) copyResourceWithContext(ctx context.Context, task BuildTask) (string, error) {
 	scriptPath, err := rb.getBuildScriptPath(task)
 	if err != nil {
 		return "", err
@@ -259,12 +282,15 @@ func (rb *ResourceBuilder) copyResource(task BuildTask) (string, error) {
 	}
 
 	// Use the embedded script to handle the copy so it also handles dependencies/symlinks
-	cmd := exec.Command("node", scriptPath, "single",
+	cmd := exec.CommandContext(ctx, "node", scriptPath, "single",
 		"copy", task.Path, task.OutDir, string(optionsJSON))
 	cmd.Dir = rb.projectPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return string(output), ctx.Err()
+		}
 		return string(output), fmt.Errorf("resource copy failed: %w\nOutput:\n%s", err, string(output))
 	}
 

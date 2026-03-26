@@ -100,6 +100,7 @@ type BuildOptions struct {
 	ForceInclude         []string        `json:"forceInclude,omitempty"`
 	BuildCommand         string          `json:"buildCommand,omitempty"`
 	OutputDir            string          `json:"outputDir,omitempty"`
+	ResourceName         string          `json:"resourceName,omitempty"`
 	ServerBinaries       []string        `json:"serverBinaries,omitempty"`
 	ServerBinaryPlatform string          `json:"serverBinaryPlatform,omitempty"`
 }

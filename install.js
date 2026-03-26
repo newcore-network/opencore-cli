@@ -67,6 +67,9 @@ async function install() {
 
     // Skip download if binary already exists (e.g. built locally via `go build` for development)
     if (fs.existsSync(binaryPath)) {
+      if (process.platform !== 'win32') {
+        fs.chmodSync(binaryPath, 0o755);
+      }
       console.log('OpenCore CLI binary already exists, skipping download.');
       return;
     }
@@ -93,4 +96,3 @@ async function install() {
 }
 
 install();
-

@@ -77,12 +77,26 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Resolve release channel
+        if: ${{ matrix.isPublisher }}
+        id: channel
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "$VERSION" == *-* ]]; then
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to NPM (Trusted Publisher)
         if: ${{ matrix.isPublisher }}
         env:
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --tag "${{ steps.channel.outputs.channel }}"
 
       - name: Download all artifacts
         if: ${{ matrix.isPublisher }}
@@ -104,7 +118,7 @@ jobs:
         with:
           files: ./release/*
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.channel.outputs.prerelease }}
           body_path: RELEASE.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

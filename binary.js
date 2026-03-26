@@ -43,6 +43,14 @@ function getBinaryPath() {
       `This might be an installation issue. Please try reinstalling @open-core/cli.`
     );
   }
+
+  if (os.platform() !== 'win32') {
+    try {
+      fs.chmodSync(binaryPath, 0o755);
+    } catch (error) {
+      throw new Error(`Failed to make binary executable at ${binaryPath}: ${error.message}`);
+    }
+  }
   
   return binaryPath;
 }
@@ -52,4 +60,3 @@ module.exports = {
   getBinaryName,
   getBinaryPath
 };
-

@@ -1,1 +1,12 @@
 .opencore/
+.env
+.env.*
+!.env.example
+
+node_modules/
+.pnpm-store/
+.npm/
+
+.DS_Store
+Thumbs.db
+desktop.ini

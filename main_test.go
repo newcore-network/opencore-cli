@@ -21,3 +21,11 @@ func TestShouldCheckForUpdatesSkipsVersionAndUpdate(t *testing.T) {
 		t.Fatalf("expected --version command to skip update checks")
 	}
 }
+
+func TestShouldCheckForUpdatesSkipsShortVersionFlag(t *testing.T) {
+	t.Setenv("OPENCORE_DISABLE_UPDATE_CHECK", "")
+
+	if shouldCheckForUpdates([]string{"opencore", "-v"}) {
+		t.Fatalf("expected -v command to skip update checks")
+	}
+}

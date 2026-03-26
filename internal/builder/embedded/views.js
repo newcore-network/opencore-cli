@@ -76,6 +76,66 @@ function resolveDependency(viewPath, name) {
     }
 }
 
+function detectViteFramework(viewPath) {
+    const configFiles = [
+        'vite.config.js',
+        'vite.config.ts',
+        'vite.config.mjs',
+        'vite.config.cjs',
+    ]
+
+    for (const fileName of configFiles) {
+        if (fs.existsSync(path.join(viewPath, fileName))) {
+            return true
+        }
+    }
+
+    return false
+}
+
+async function buildViteViews(viewPath, outDir, options = {}) {
+    const vitePath = resolveDependency(viewPath, 'vite')
+    if (!vitePath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing Vite dependency\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  Vite was detected but the package is not installed.\n` +
+            `\n` +
+            `  Missing: vite\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    ${addCmd(options, ['vite'], true)}\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    const absOutDir = path.resolve(outDir).replace(/\\/g, '/')
+    const baseCommand = options.buildCommand || execCmd(options, 'vite', ['build'])
+    const buildCommand = `${baseCommand} --outDir "${absOutDir}"`
+
+    console.log(`[views] Vite detected, running: ${buildCommand}`)
+
+    const spawn = require('child_process').spawn
+
+    await new Promise((resolve, reject) => {
+        const proc = spawn(buildCommand, { cwd: viewPath, stdio: 'inherit', shell: true })
+        proc.on('close', code => {
+            if (code === 0) {
+                resolve()
+            } else {
+                reject(new Error(`[views] Vite build failed with exit code ${code}`))
+            }
+        })
+    })
+
+    console.log(`[views] Vite build complete`)
+}
+
 function detectAstroFramework(viewPath) {
     if (hasAstroFiles(viewPath)) {
         return true
@@ -345,6 +405,11 @@ function createTailwindPlugin(viewPath, options = {}) {
         const tailwindPlugin = require(pluginPath)
         const pluginOptions = tailwindInfo.configPath ? { config: tailwindInfo.configPath } : {}
         plugins.push(tailwindPlugin(pluginOptions))
+        const nestingPath = resolveDependency(viewPath, 'postcss-nesting')
+        const nestingPlugin = nestingPath ? require(nestingPath) : null
+        if (nestingPlugin) {
+            plugins.push(nestingPlugin())
+        }
         const autoprefixerPath = resolveDependency(viewPath, 'autoprefixer')
         const autoprefixer = autoprefixerPath ? require(autoprefixerPath) : null
         if (autoprefixer) {
@@ -611,6 +676,13 @@ async function buildViews(viewPath, outDir, options = {}) {
         return
     }
 
+    const explicitFramework = (options.framework || '').toLowerCase()
+    const isVite = explicitFramework === 'vite' || (explicitFramework === '' && detectViteFramework(viewPath))
+    if (isVite) {
+        await buildViteViews(viewPath, outDir, options)
+        return
+    }
+
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
 
@@ -673,8 +745,9 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     // Load framework plugins based on file detection
     const plugins = []
+    const isReact = hasReactFiles(viewPath)
 
-    if (hasReactFiles(viewPath)) {
+    if (isReact) {
         console.log(`[views] React files detected, checking dependencies...`)
         checkReactDependencies(viewPath, options)
     }
@@ -699,6 +772,8 @@ async function buildViews(viewPath, outDir, options = {}) {
         plugins.push(tailwindPlugin)
     }
 
+    const isRageMP = options.runtime === 'ragemp'
+
     await esbuild.build({
         ...shared,
         banner: {
@@ -707,13 +782,14 @@ async function buildViews(viewPath, outDir, options = {}) {
         entryPoints: [entryPoint],
         outdir: outDir,
         platform: 'browser',
-        target: options.target || 'es2020',
-        format: 'esm',
+        target: options.target || (isRageMP ? 'es2015' : 'es2020'),
+        format: isRageMP ? 'iife' : 'esm',
         bundle: true,
-        splitting: true,
+        splitting: isRageMP ? false : true,
         chunkNames: 'chunks/[name]-[hash]',
         assetNames: 'assets/[name]-[hash]',
         plugins,
+        ...(isReact ? { jsx: 'automatic', jsxImportSource: 'react' } : {}),
         loader: {
             // JavaScript/TypeScript
             '.tsx': 'tsx',
@@ -766,7 +842,7 @@ async function buildViews(viewPath, outDir, options = {}) {
     if (fs.existsSync(htmlSrc)) {
         let html = await fs.promises.readFile(htmlSrc, 'utf8')
         const entryBase = path.basename(entryPoint, path.extname(entryPoint))
-        
+
         html = html.replace(
             /(<script[^>]*\ssrc=["'])([^"']+\.(ts|tsx|jsx|js|svelte|vue))(['"][^>]*>)/gi,
             (match, prefix, src, ext, suffix) => {
@@ -776,6 +852,15 @@ async function buildViews(viewPath, outDir, options = {}) {
                 return match
             }
         )
+
+        // Inject <link> for esbuild-generated CSS if not already present
+        const cssFile = `${entryBase}.css`
+        const cssOutPath = path.join(outDir, cssFile)
+        const cssAlreadyLinked = new RegExp(`href=["'][^"']*${cssFile}["']`, 'i').test(html)
+        if (fs.existsSync(cssOutPath) && !cssAlreadyLinked) {
+            html = html.replace(/(<\/head>)/i, `  <link rel="stylesheet" href="./${cssFile}">\n$1`)
+            console.log(`[views] Injected CSS link for ${cssFile}`)
+        }
 
         await fs.promises.writeFile(htmlDst, html, 'utf8')
         console.log(`[views] Processed and copied index.html`)

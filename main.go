@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -13,10 +16,13 @@ import (
 )
 
 var (
-	version = "1.1.0"
+	version = "1.2.0"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	rootCmd := &cobra.Command{
 		Use:   "opencore",
 		Short: "OpenCore CLI - Official tooling for OpenCore Framework",
@@ -53,20 +59,22 @@ func main() {
 	rootCmd.AddCommand(commands.NewDevCommand())
 	rootCmd.AddCommand(commands.NewDoctorCommand())
 	rootCmd.AddCommand(commands.NewCloneCommand())
+	rootCmd.AddCommand(commands.NewAdapterCommand())
 	rootCmd.AddCommand(commands.NewUpdateCommand())
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Println(ui.Error(err.Error()))
 		os.Exit(1)
 	}
 
 	// Check for updates in the background after command execution
 	if shouldCheckForUpdates(os.Args) {
-		if info, err := updater.CheckForUpdate(version, false); err == nil {
+		channel := updater.GetConfiguredChannel()
+		if info, err := updater.CheckForUpdate(version, false, channel); err == nil {
 			if updater.NeedsUpdate(version, info.LatestVersion) {
 				fmt.Println()
-				fmt.Println(ui.Info(fmt.Sprintf("New version available: %s -> %s", version, info.LatestVersion)))
-				fmt.Println(ui.Info("Run 'opencore update' to update to the latest version."))
+				fmt.Println(ui.Info(fmt.Sprintf("New %s version available: %s -> %s", channel, version, info.LatestVersion)))
+				fmt.Println(ui.Info(fmt.Sprintf("Run 'opencore update --channel %s' to update.", channel)))
 			}
 		}
 	}
