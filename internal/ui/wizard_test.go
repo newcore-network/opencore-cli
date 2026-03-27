@@ -15,8 +15,7 @@ func TestWizardDisabledSelectOptionCannotBeSubmitted(t *testing.T) {
 	})
 
 	wizard.selectIndex = 1
-	model, _ := wizard.handleEnter()
-	updated := model.(*WizardModel)
+	updated, _ := wizard.handleEnter()
 
 	if updated.err == nil {
 		t.Fatal("expected disabled option to produce an error")
