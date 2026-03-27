@@ -297,7 +297,7 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *WizardModel) handleEnter() (tea.Model, tea.Cmd) {
+func (m *WizardModel) handleEnter() (WizardModel, tea.Cmd) {
 	step := m.steps[m.currentStep]
 
 	// Get value based on step type
