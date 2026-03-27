@@ -309,13 +309,13 @@ func (m *WizardModel) handleEnter() (tea.Model, tea.Cmd) {
 		if step.Validate != nil {
 			if err := step.Validate(value.(string)); err != nil {
 				m.err = err
-				return m, nil
+				return *m, nil
 			}
 		}
 	case StepTypeSelect:
 		if step.Options[m.selectIndex].Disabled {
 			m.err = fmt.Errorf("this adapter is not available yet")
-			return m, nil
+			return *m, nil
 		}
 		value = step.Options[m.selectIndex].Value
 	case StepTypeConfirm:
@@ -345,10 +345,10 @@ func (m *WizardModel) handleEnter() (tea.Model, tea.Cmd) {
 		m.loadStepValue()
 	} else {
 		m.done = true
-		return m, tea.Quit
+		return *m, tea.Quit
 	}
 
-	return m, nil
+	return *m, nil
 }
 
 func (m *WizardModel) loadStepValue() {
