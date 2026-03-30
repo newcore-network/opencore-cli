@@ -726,8 +726,9 @@ export interface BuildConfig {
  * Central adapter configuration applied by the OpenCore compiler.
  *
  * When present, the compiler injects these adapters into the generated
- * server/client bundles so `Server.init()` and `Client.init()` can reuse them
- * without repeating adapter setup in every entry point.
+ * server/client bundles so `Server.init()`, `Client.init()`, and direct
+ * `init()` imports can reuse them without repeating adapter setup in every
+ * entry point.
  */
 export interface OpenCoreAdapterConfig {
   /**
