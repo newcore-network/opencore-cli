@@ -1,5 +1,8 @@
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
+const { pathToFileURL } = require('url')
+const { createRequire } = require('module')
 const { getEsbuild } = require('./plugins')
 const { getSharedConfig } = require('./config')
 
@@ -73,6 +76,195 @@ function resolveDependency(viewPath, name) {
         return require.resolve(name, { paths: [viewPath, process.cwd()] })
     } catch (e) {
         return null
+    }
+}
+
+function resolveDependencyFrom(basePath, name) {
+    try {
+        return require.resolve(name, { paths: [basePath, process.cwd()] })
+    } catch (e) {
+        return null
+    }
+}
+
+function findProjectRoot(viewPath) {
+    let currentDir = path.resolve(viewPath)
+    const rootDir = path.parse(currentDir).root
+
+    while (true) {
+        if (fs.existsSync(path.join(currentDir, 'opencore.config.ts'))) {
+            return currentDir
+        }
+
+        if (currentDir === rootDir) {
+            return null
+        }
+
+        currentDir = path.dirname(currentDir)
+    }
+}
+
+function findProjectPostcssConfigPath(viewPath) {
+    const projectRoot = findProjectRoot(viewPath)
+    if (!projectRoot) {
+        return null
+    }
+
+    const configFiles = [
+        'postcss.config.js',
+        'postcss.config.cjs',
+        'postcss.config.mjs',
+        'postcss.config.ts',
+    ]
+
+    for (const fileName of configFiles) {
+        const candidate = path.join(projectRoot, fileName)
+        if (fs.existsSync(candidate)) {
+            return candidate
+        }
+    }
+
+    return null
+}
+
+function unwrapModuleDefault(value) {
+    if (value && typeof value === 'object' && 'default' in value) {
+        return value.default
+    }
+    return value
+}
+
+async function loadConfigModule(configPath) {
+    const ext = path.extname(configPath).toLowerCase()
+
+    if (ext === '.mjs') {
+        const mod = await import(pathToFileURL(configPath).href)
+        return unwrapModuleDefault(mod)
+    }
+
+    if (ext === '.js' || ext === '.cjs') {
+        return unwrapModuleDefault(require(configPath))
+    }
+
+    const esbuild = getEsbuild()
+    const outfile = path.join(
+        os.tmpdir(),
+        `opencore-postcss-config-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.cjs`
+    )
+
+    try {
+        await esbuild.build({
+            entryPoints: [configPath],
+            outfile,
+            bundle: true,
+            platform: 'node',
+            format: 'cjs',
+            target: ['node18'],
+            absWorkingDir: path.dirname(configPath),
+            write: true,
+            logLevel: 'silent',
+        })
+
+        return unwrapModuleDefault(require(outfile))
+    } finally {
+        try {
+            fs.unlinkSync(outfile)
+        } catch (e) {
+            // Ignore cleanup errors
+        }
+    }
+}
+
+function normalizeLoadedPostcssPlugin(pluginModule, pluginName) {
+    const resolved = unwrapModuleDefault(pluginModule)
+
+    if (typeof resolved === 'function') {
+        return resolved()
+    }
+
+    if (resolved && typeof resolved === 'object') {
+        return resolved
+    }
+
+    throw new Error(`[views] Invalid PostCSS plugin '${pluginName}' in postcss config`)
+}
+
+function normalizePostcssPluginEntries(plugins, configDir) {
+    const requireFromConfig = createRequire(configDir + path.sep)
+
+    if (Array.isArray(plugins)) {
+        return plugins
+    }
+
+    if (!plugins || typeof plugins !== 'object') {
+        return []
+    }
+
+    return Object.entries(plugins)
+        .filter(([, options]) => options !== false)
+        .map(([pluginName, options]) => {
+            let pluginModule
+
+            try {
+                pluginModule = requireFromConfig(pluginName)
+            } catch (error) {
+                throw new Error(`[views] Failed to resolve PostCSS plugin '${pluginName}' from ${configDir}`)
+            }
+
+            const resolved = unwrapModuleDefault(pluginModule)
+            if (typeof resolved !== 'function') {
+                return normalizeLoadedPostcssPlugin(resolved, pluginName)
+            }
+
+            if (options === true || options == null) {
+                return resolved()
+            }
+
+            return resolved(options)
+        })
+}
+
+async function loadProjectPostcssPlugins(viewPath, options = {}) {
+    const configPath = findProjectPostcssConfigPath(viewPath)
+    if (!configPath) {
+        return null
+    }
+
+    const postcssPath = resolveDependencyFrom(path.dirname(configPath), 'postcss')
+    if (!postcssPath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing PostCSS dependency\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  postcss.config.* was found in the project root but 'postcss' is not installed.\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    ${addCmd(options, ['postcss'], true)}\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    const configExport = await loadConfigModule(configPath)
+    const context = {
+        env: options.minify ? 'production' : 'development',
+        cwd: path.dirname(configPath),
+        file: {
+            dirname: viewPath,
+        },
+        options: {},
+    }
+
+    const resolvedConfig = typeof configExport === 'function' ? await configExport(context) : configExport
+    const configObject = unwrapModuleDefault(resolvedConfig)
+
+    return {
+        configPath,
+        postcssPath,
+        plugins: normalizePostcssPluginEntries(configObject?.plugins, path.dirname(configPath)),
     }
 }
 
@@ -448,6 +640,30 @@ function createTailwindPlugin(viewPath, options = {}) {
     }
 }
 
+function createPostcssPlugin(postcssPath, plugins, configPath) {
+    const postcss = require(postcssPath)
+
+    console.log(`[views] Using PostCSS config: ${path.relative(process.cwd(), configPath)}`)
+
+    return {
+        name: 'postcss-config',
+        setup(build) {
+            build.onLoad({ filter: /\.css$/ }, async (args) => {
+                const source = await fs.promises.readFile(args.path, 'utf8')
+                const result = await postcss(plugins).process(source, {
+                    from: args.path,
+                    map: false,
+                })
+
+                return {
+                    contents: result.css,
+                    loader: 'css',
+                }
+            })
+        },
+    }
+}
+
 function getSveltePlugin(options = {}) {
 
     const missing = []
@@ -767,9 +983,14 @@ async function buildViews(viewPath, outDir, options = {}) {
         plugins.push(getSassPlugin(options))
     }
 
-    const tailwindPlugin = createTailwindPlugin(viewPath, options)
-    if (tailwindPlugin) {
-        plugins.push(tailwindPlugin)
+    const postcssConfig = await loadProjectPostcssPlugins(viewPath, options)
+    if (postcssConfig) {
+        plugins.push(createPostcssPlugin(postcssConfig.postcssPath, postcssConfig.plugins, postcssConfig.configPath))
+    } else {
+        const tailwindPlugin = createTailwindPlugin(viewPath, options)
+        if (tailwindPlugin) {
+            plugins.push(tailwindPlugin)
+        }
     }
 
     const isRageMP = options.runtime === 'ragemp'

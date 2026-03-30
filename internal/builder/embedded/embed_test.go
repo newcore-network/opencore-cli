@@ -60,6 +60,8 @@ func TestEmbeddedBuildScript(t *testing.T) {
 	requiredViewsSymbols := []string{
 		"createTailwindPlugin",
 		"getTailwindInfo",
+		"findProjectPostcssConfigPath",
+		"createPostcssPlugin",
 		"forceInclude",
 		"buildAstroViews",
 		"astro.config",

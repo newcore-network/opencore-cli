@@ -198,3 +198,42 @@ Notes:
 | `external` | `string[]` | `[]` | External packages (server only) |
 
 See [FiveM Runtime](./fivem-runtime.md) for FiveM platform details.
+
+## Views PostCSS
+
+OpenCore auto-detects PostCSS config for NUI/views builds from the project root.
+
+Behavior:
+
+- The CLI walks up from the views directory until it finds `opencore.config.ts`
+- In that same directory it looks for `postcss.config.js`, `postcss.config.cjs`, `postcss.config.mjs`, or `postcss.config.ts`
+- If one exists, that PostCSS config is used for CSS processing in the views build
+- If none exists, the current built-in Tailwind fallback remains active
+
+Example with Tailwind 4:
+
+```typescript
+import { defineConfig } from '@open-core/cli'
+
+export default defineConfig({
+  name: 'my-server',
+  core: {
+    path: './core',
+    resourceName: 'core',
+    views: {
+      path: './web',
+    },
+  },
+})
+```
+
+`postcss.config.mjs` at the project root:
+
+```js
+import tailwindcss from '@tailwindcss/postcss'
+import autoprefixer from 'autoprefixer'
+
+export default {
+  plugins: [tailwindcss(), autoprefixer()],
+}
+```
