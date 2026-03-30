@@ -427,6 +427,20 @@ function createTailwindPlugin(viewPath, options = {}) {
         }
     }
 
+    const presetEnvPath = resolveDependency(viewPath, 'postcss-preset-env')
+    if (presetEnvPath) {
+        const postcssPresetEnv = require(presetEnvPath)
+        const isRageMP = options.runtime === 'ragemp'
+        plugins.push(postcssPresetEnv({
+            stage: 1,
+            browsers: isRageMP ? 'chrome 97' : 'chrome 103',
+            features: {
+                'color-mix': true,
+            },
+        }))
+        console.log(`[views] postcss-preset-env detected, applying CSS polyfills`)
+    }
+
     console.log(`[views] Tailwind detected (v${tailwindInfo.version})`)
 
     return {
