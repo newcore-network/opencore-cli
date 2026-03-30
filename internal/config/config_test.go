@@ -53,6 +53,9 @@ func TestConfigParsing(t *testing.T) {
 		},
 		"resources": {
 			"include": ["./resources/*"],
+			"views": {
+				"framework": "vite"
+			},
 			"explicit": [
 				{
 					"path": "./resources/admin",
@@ -63,6 +66,9 @@ func TestConfigParsing(t *testing.T) {
 		},
 		"standalones": {
 			"include": ["./standalones/*"],
+			"views": {
+				"framework": "vite"
+			},
 			"explicit": [
 				{
 					"path": "./standalones/legacy",
@@ -158,6 +164,9 @@ func TestConfigParsing(t *testing.T) {
 	if len(cfg.Resources.Include) != 1 {
 		t.Errorf("Expected 1 resource include pattern, got %d", len(cfg.Resources.Include))
 	}
+	if cfg.Resources.Views == nil || cfg.Resources.Views.Framework != "vite" {
+		t.Errorf("Expected resources default views framework 'vite'")
+	}
 
 	if len(cfg.Resources.Explicit) != 1 {
 		t.Errorf("Expected 1 explicit resource, got %d", len(cfg.Resources.Explicit))
@@ -172,6 +181,9 @@ func TestConfigParsing(t *testing.T) {
 	if cfg.Standalones == nil {
 		t.Error("Expected standalones config to be set")
 	} else {
+		if cfg.Standalones.Views == nil || cfg.Standalones.Views.Framework != "vite" {
+			t.Errorf("Expected standalones default views framework 'vite'")
+		}
 		if len(cfg.Standalones.Explicit) != 1 {
 			t.Errorf("Expected 1 explicit standalone, got %d", len(cfg.Standalones.Explicit))
 		} else {

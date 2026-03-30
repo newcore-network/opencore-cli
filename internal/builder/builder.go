@@ -385,6 +385,98 @@ func findViewsPath(resourcePath string) string {
 	return ""
 }
 
+func detectViewFramework(viewPath string) string {
+	if hasViteConfig(viewPath) {
+		return "vite"
+	}
+
+	return detectFramework(viewPath)
+}
+
+func hasViteConfig(viewPath string) bool {
+	configFiles := []string{
+		"vite.config.js",
+		"vite.config.ts",
+		"vite.config.mjs",
+		"vite.config.cjs",
+	}
+
+	for _, fileName := range configFiles {
+		if _, err := os.Stat(filepath.Join(viewPath, fileName)); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+func resolveViewsConfig(resourcePath string, explicit *config.ViewsConfig) *config.ViewsConfig {
+	viewsPath := ""
+	if explicit != nil {
+		viewsPath = strings.TrimSpace(explicit.Path)
+	}
+
+	if viewsPath == "" {
+		viewsPath = findViewsPath(resourcePath)
+	}
+	if viewsPath == "" {
+		return nil
+	}
+
+	relPath, err := filepath.Rel(".", viewsPath)
+	if err == nil {
+		viewsPath = "./" + filepath.ToSlash(relPath)
+	}
+
+	views := &config.ViewsConfig{Path: viewsPath}
+	if explicit == nil {
+		views.Framework = detectViewFramework(viewsPath)
+		return views
+	}
+
+	*views = *explicit
+	views.Path = viewsPath
+	if strings.TrimSpace(views.Framework) == "" {
+		views.Framework = detectViewFramework(viewsPath)
+	}
+
+	return views
+}
+
+func mergeViewsConfig(base *config.ViewsConfig, override *config.ViewsConfig) *config.ViewsConfig {
+	if base == nil {
+		return override
+	}
+	if override == nil {
+		return base
+	}
+
+	merged := *base
+	if strings.TrimSpace(override.Path) != "" {
+		merged.Path = override.Path
+	}
+	if strings.TrimSpace(override.Framework) != "" {
+		merged.Framework = override.Framework
+	}
+	if strings.TrimSpace(override.EntryPoint) != "" {
+		merged.EntryPoint = override.EntryPoint
+	}
+	if override.Ignore != nil {
+		merged.Ignore = override.Ignore
+	}
+	if override.ForceInclude != nil {
+		merged.ForceInclude = override.ForceInclude
+	}
+	if strings.TrimSpace(override.BuildCommand) != "" {
+		merged.BuildCommand = override.BuildCommand
+	}
+	if strings.TrimSpace(override.OutputDir) != "" {
+		merged.OutputDir = override.OutputDir
+	}
+
+	return &merged
+}
+
 type resourceBuildLayout struct {
 	Runtime       string
 	ManifestKind  string
@@ -602,22 +694,16 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			explicit := b.config.GetExplicitResource(match)
 
 			// Auto-discover views if not explicitly configured
+			var viewsDefaults *config.ViewsConfig
+			if b.config.Resources.Views != nil {
+				viewsDefaults = b.config.Resources.Views
+			}
+
 			var viewsConfig *config.ViewsConfig
-			if explicit != nil && explicit.Views != nil {
-				viewsConfig = explicit.Views
+			if explicit != nil {
+				viewsConfig = resolveViewsConfig(match, mergeViewsConfig(viewsDefaults, explicit.Views))
 			} else {
-				viewsPath := findViewsPath(match)
-				if viewsPath != "" {
-					// Convert to relative path if possible for consistency
-					relPath, err := filepath.Rel(".", viewsPath)
-					if err == nil {
-						viewsPath = "./" + filepath.ToSlash(relPath)
-					}
-					viewsConfig = &config.ViewsConfig{
-						Path:      viewsPath,
-						Framework: detectFramework(viewsPath),
-					}
-				}
+				viewsConfig = resolveViewsConfig(match, viewsDefaults)
 			}
 
 			// Determine log level
@@ -691,7 +777,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					// Auto-detect framework if not explicitly set
 					framework := viewsConfig.Framework
 					if framework == "" {
-						framework = detectFramework(viewsConfig.Path)
+						framework = detectViewFramework(viewsConfig.Path)
 					}
 
 					tasks = append(tasks, BuildTask{
@@ -810,22 +896,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 
 		// Resources are always compiled, so we can always check for views
-		var viewsConfig *config.ViewsConfig
-		if res.Views != nil {
-			viewsConfig = res.Views
-		} else {
-			viewsPath := findViewsPath(res.Path)
-			if viewsPath != "" {
-				relPath, err := filepath.Rel(".", viewsPath)
-				if err == nil {
-					viewsPath = "./" + filepath.ToSlash(relPath)
-				}
-				viewsConfig = &config.ViewsConfig{
-					Path:      viewsPath,
-					Framework: detectFramework(viewsPath),
-				}
-			}
+		var standaloneViewsDefaults *config.ViewsConfig
+		if b.config.Standalones != nil {
+			standaloneViewsDefaults = b.config.Standalones.Views
 		}
+
+		var viewsConfig *config.ViewsConfig
+		viewsConfig = resolveViewsConfig(res.Path, mergeViewsConfig(standaloneViewsDefaults, res.Views))
 
 		tasks = append(tasks, task)
 
@@ -834,7 +911,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			// Auto-detect framework if not explicitly set
 			framework := viewsConfig.Framework
 			if framework == "" {
-				framework = detectFramework(viewsConfig.Path)
+				framework = detectViewFramework(viewsConfig.Path)
 			}
 
 			tasks = append(tasks, BuildTask{
@@ -1301,8 +1378,10 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 		if r.Task.Type == TypeViews {
 			totalSize := getDirSize(r.Task.OutDir)
 			if totalSize > 0 {
-				// Detect framework from source path
-				framework := detectFramework(r.Task.Path)
+				framework := detectViewFramework(r.Task.Path)
+				if strings.TrimSpace(r.Task.Options.Framework) != "" {
+					framework = r.Task.Options.Framework
+				}
 				sizes = append(sizes, ResourceSize{
 					Name:      resourceName,
 					TotalSize: totalSize,

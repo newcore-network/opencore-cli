@@ -325,6 +325,15 @@ async function buildViteViews(viewPath, outDir, options = {}) {
         })
     })
 
+    const builtIndexPath = path.join(outDir, 'index.html')
+    if (fs.existsSync(builtIndexPath)) {
+        const builtIndex = await fs.promises.readFile(builtIndexPath, 'utf8')
+        const sanitizedIndex = builtIndex.replace(/\s+crossorigin(?=[\s>])/g, '')
+        if (sanitizedIndex !== builtIndex) {
+            await fs.promises.writeFile(builtIndexPath, sanitizedIndex)
+        }
+    }
+
     console.log(`[views] Vite build complete`)
 }
 
@@ -832,6 +841,9 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = [], forceIncl
     const defaultIgnore = [
         'node_modules',
         '.git',
+        '.vite',
+        'dist',
+        'build',
         'package.json',
         'package-lock.json',
         'pnpm-lock.yaml',

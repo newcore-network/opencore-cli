@@ -101,8 +101,7 @@ export interface EntryPoints {
  * @example
  * ```typescript
  * views: {
- *   path: './core/views',
- *   framework: 'react',
+ *   framework: 'vite',
  *   entryPoint: 'main.tsx',  // Optional: explicit entry point
  *   ignore: ['*.config.ts', 'test/**'],  // Optional: ignore patterns
  * }
@@ -112,17 +111,20 @@ export interface ViewsConfig {
   /**
    * Path to the views/NUI source folder.
    * This folder should contain your web application source code.
+   * If omitted, the CLI auto-detects common folders like `ui`, `views`, or `nui`
+   * inside the resource.
    * @example './core/views'
    */
-  path: string;
+  path?: string;
 
   /**
    * Frontend framework used for the views.
    * The CLI will use the appropriate build configuration for each framework.
    * Astro is supported only with static output.
-   * @default 'vanilla'
+   * Vite can be selected explicitly, and is also auto-detected from `vite.config.*`.
+   * @default auto-detected
    */
-  framework?: 'react' | 'vue' | 'svelte' | 'vanilla' | 'astro';
+  framework?: 'react' | 'vue' | 'svelte' | 'vanilla' | 'astro' | 'vite';
 
 
   /**
@@ -365,8 +367,7 @@ export interface ResourceBuildConfig {
  *       },
  *     },
  *     views: {
- *       path: './resources/admin/ui',
- *       framework: 'react',
+ *       framework: 'vite',
  *     },
  *   },
  *   {
@@ -442,6 +443,7 @@ export interface ExplicitResource {
  * ```typescript
  * resources: {
  *   include: ['./resources/*'],
+ *   views: { framework: 'vite' },
  *   explicit: [
  *     { path: './resources/admin', resourceName: 'admin-panel' },
  *   ],
@@ -455,6 +457,12 @@ export interface ResourcesConfig {
    * @example ['./resources/*', './features/*']
    */
   include?: string[];
+
+  /**
+   * Default views config applied to all matched resources.
+   * Resource-level `views` overrides these values when present.
+   */
+  views?: ViewsConfig;
 
   /**
    * Explicitly configured resources with custom settings.
@@ -472,6 +480,7 @@ export interface ResourcesConfig {
  * ```typescript
  * standalones: {
  *   include: ['./standalones/*'],
+ *   views: { framework: 'vite' },
  *   explicit: [
  *     {
  *       path: './standalones/utils',
@@ -489,6 +498,12 @@ export interface StandaloneConfig {
    * @example ['./standalones/*']
    */
   include?: string[];
+
+  /**
+   * Default views config applied to all matched standalones.
+   * Resource-level `views` overrides these values when present.
+   */
+  views?: ViewsConfig;
 
   /**
    * Explicitly configured standalone resources.

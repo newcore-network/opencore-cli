@@ -395,6 +395,150 @@ func TestCollectAllTasks_WithGlobPatterns(t *testing.T) {
 	}
 }
 
+func TestDetectViewFramework_PrefersViteConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	viewDir := filepath.Join(tmpDir, "ui")
+	if err := os.MkdirAll(filepath.Join(viewDir, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "src", "app.tsx"), []byte("export const App = () => null\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	framework := detectViewFramework(viewDir)
+	if framework != "vite" {
+		t.Fatalf("Expected framework 'vite', got '%s'", framework)
+	}
+}
+
+func TestCollectAllTasks_ViewsFrameworkWithoutPathUsesAutodiscovery(t *testing.T) {
+	tmpDir := t.TempDir()
+	resourceDir := filepath.Join(tmpDir, "resources", "auth")
+	viewDir := filepath.Join(resourceDir, "ui")
+	if err := os.MkdirAll(viewDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "core"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "main.tsx"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path:         "./resources/auth",
+					ResourceName: "auth",
+					Views: &config.ViewsConfig{
+						Framework: "vite",
+					},
+				},
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	var viewsTask *BuildTask
+	for i := range tasks {
+		if tasks[i].Type == TypeViews && tasks[i].ResourceName == "auth/ui" {
+			viewsTask = &tasks[i]
+			break
+		}
+	}
+
+	if viewsTask == nil {
+		t.Fatal("Expected auth/ui views task")
+	}
+
+	if viewsTask.Path != "./resources/auth/ui" {
+		t.Fatalf("Expected autodetected views path './resources/auth/ui', got '%s'", viewsTask.Path)
+	}
+	if viewsTask.Options.Framework != "vite" {
+		t.Fatalf("Expected views framework 'vite', got '%s'", viewsTask.Options.Framework)
+	}
+}
+
+func TestCollectAllTasks_ResourcesDefaultViewsFrameworkApplied(t *testing.T) {
+	tmpDir := t.TempDir()
+	resourceDir := filepath.Join(tmpDir, "resources", "auth")
+	viewDir := filepath.Join(resourceDir, "ui")
+	if err := os.MkdirAll(viewDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "core"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "main.tsx"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{
+			Include: []string{"./resources/*"},
+			Views: &config.ViewsConfig{
+				Framework: "vite",
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	var viewsTask *BuildTask
+	for i := range tasks {
+		if tasks[i].Type == TypeViews && tasks[i].ResourceName == "auth/ui" {
+			viewsTask = &tasks[i]
+			break
+		}
+	}
+
+	if viewsTask == nil {
+		t.Fatal("Expected auth/ui views task")
+	}
+	if viewsTask.Options.Framework != "vite" {
+		t.Fatalf("Expected views framework 'vite', got '%s'", viewsTask.Options.Framework)
+	}
+}
+
 func TestCollectAllTasks_BuildOptions(t *testing.T) {
 	serverFalse := false
 

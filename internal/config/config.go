@@ -265,6 +265,7 @@ type EntryPoints struct {
 
 type ResourcesConfig struct {
 	Include  []string           `json:"include"`
+	Views    *ViewsConfig       `json:"views,omitempty"`
 	Explicit []ExplicitResource `json:"explicit"`
 }
 
@@ -292,11 +293,12 @@ type ResourceBuildConfig struct {
 
 type StandaloneConfig struct {
 	Include  []string           `json:"include"`
+	Views    *ViewsConfig       `json:"views,omitempty"`
 	Explicit []ExplicitResource `json:"explicit,omitempty"`
 }
 
 type ViewsConfig struct {
-	Path         string   `json:"path"`
+	Path         string   `json:"path,omitempty"`
 	Framework    string   `json:"framework,omitempty"`
 	EntryPoint   string   `json:"entryPoint,omitempty"`   // Optional: explicit entry point (e.g., "main.ng.ts")
 	Ignore       []string `json:"ignore,omitempty"`       // Optional: ignore patterns (e.g., ["*.config.ts", "test/**"])
@@ -699,12 +701,26 @@ func (c *Config) GetResourceViews(path string) *ViewsConfig {
 			return res.Views
 		}
 	}
+	if c.Resources.Views != nil {
+		for _, res := range c.Resources.Explicit {
+			if res.Path == path {
+				return c.Resources.Views
+			}
+		}
+	}
 
 	// Check standalone
 	if c.Standalones != nil {
 		for _, res := range c.Standalones.Explicit {
 			if res.Path == path && res.Views != nil {
 				return res.Views
+			}
+		}
+		if c.Standalones.Views != nil {
+			for _, res := range c.Standalones.Explicit {
+				if res.Path == path {
+					return c.Standalones.Views
+				}
 			}
 		}
 	}
