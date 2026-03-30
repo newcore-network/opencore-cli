@@ -25,7 +25,7 @@ func TestEmbeddedBuildScript(t *testing.T) {
 		"preserveFiveMExportsPlugin",
 		"findProjectConfigPath",
 		"__openCoreProjectAdapter",
-		"__openCoreInitWithAdapter",
+		"__openCoreUseAdapter",
 	}
 	for _, plugin := range requiredPlugins {
 		if !strings.Contains(pluginsContent, plugin) {
