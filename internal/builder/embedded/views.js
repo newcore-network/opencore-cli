@@ -323,6 +323,7 @@ async function buildViteViews(viewPath, outDir, options = {}) {
     const absOutDir = path.resolve(outDir).replace(/\\/g, '/')
     const baseCommand = options.buildCommand || execCmd(options, 'vite', ['build'])
     const localViteConfig = findViteConfigPath(viewPath)
+    const absLocalViteConfig = localViteConfig ? path.resolve(localViteConfig).replace(/\\/g, '/') : null
     const projectRoot = findProjectRoot(viewPath)
     const rootViteConfig = projectRoot ? findViteConfigPath(projectRoot) : null
 
@@ -332,7 +333,7 @@ async function buildViteViews(viewPath, outDir, options = {}) {
 
     if (localViteConfig) {
         commandParts.push(`--outDir "${absOutDir}"`)
-        commandParts.push(`--config "${localViteConfig.replace(/\\/g, '/')}"`)
+        commandParts.push(`--config "${absLocalViteConfig}"`)
     } else if (rootViteConfig) {
         commandParts.push(`--config "${rootViteConfig.replace(/\\/g, '/')}"`)
         spawnEnv.OPENCORE_VIEW_ROOT = path.resolve(viewPath)
@@ -932,17 +933,57 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = [], forceIncl
 async function buildViews(viewPath, outDir, options = {}) {
     await fs.promises.mkdir(outDir, { recursive: true })
 
-    const isAstro = (options.framework || '').toLowerCase() === 'astro' || detectAstroFramework(viewPath)
-    if (isAstro) {
-        await buildAstroViews(viewPath, outDir, options)
-        return
+    const explicitFramework = (options.framework || '').toLowerCase()
+    const supportedFrameworks = new Set(['', 'vite', 'vanilla'])
+    const legacyFrameworks = new Set(['react', 'vue', 'svelte', 'astro'])
+    if (!supportedFrameworks.has(explicitFramework)) {
+        const recommendation = `[views] Unsupported views framework '${explicitFramework}'. Use framework: 'vite' and configure your frontend in Vite, or use framework: 'vanilla' for simple JS/TS views.`
+        console.warn(recommendation)
+        throw new Error(recommendation)
+    }
+    if (legacyFrameworks.has(explicitFramework)) {
+        const recommendation = `[views] Framework-specific CLI builders were removed for '${explicitFramework}'. Use framework: 'vite' and configure that framework in your Vite setup.`
+        console.warn(recommendation)
+        throw new Error(recommendation)
     }
 
-    const explicitFramework = (options.framework || '').toLowerCase()
     const isVite = explicitFramework === 'vite' || (explicitFramework === '' && detectViteFramework(viewPath))
     if (isVite) {
         await buildViteViews(viewPath, outDir, options)
         return
+    }
+
+    const unsupportedExtensions = new Map([
+        ['.tsx', 'TSX/React-style entry files'],
+        ['.jsx', 'JSX/React-style entry files'],
+        ['.vue', 'Vue single-file components'],
+        ['.svelte', 'Svelte components'],
+        ['.astro', 'Astro components'],
+        ['.scss', 'Sass/SCSS stylesheets'],
+        ['.sass', 'Sass stylesheets'],
+    ])
+    const foundUnsupported = new Set()
+    const stack = [viewPath]
+    while (stack.length > 0) {
+        const currentDir = stack.pop()
+        const entries = await fs.promises.readdir(currentDir, { withFileTypes: true }).catch(() => [])
+        for (const entry of entries) {
+            if (entry.name === 'node_modules' || entry.name === '.git') continue
+            const fullPath = path.join(currentDir, entry.name)
+            if (entry.isDirectory()) {
+                stack.push(fullPath)
+                continue
+            }
+            const ext = path.extname(entry.name).toLowerCase()
+            if (unsupportedExtensions.has(ext)) {
+                foundUnsupported.add(unsupportedExtensions.get(ext))
+            }
+        }
+    }
+    if (foundUnsupported.size > 0) {
+        const recommendation = `[views] Advanced frontend sources were found (${Array.from(foundUnsupported).join(', ')}). Configure this view with framework: 'vite' and manage those tools in your Vite project.`
+        console.warn(recommendation)
+        throw new Error(recommendation)
     }
 
     const esbuild = getEsbuild()
@@ -962,31 +1003,15 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     if (!entryPoint) {
         const possibleEntries = [
-            path.join(viewPath, 'index.tsx'),
-            path.join(viewPath, 'index.jsx'),
             path.join(viewPath, 'index.ts'),
             path.join(viewPath, 'index.js'),
-            path.join(viewPath, 'main.tsx'),
-            path.join(viewPath, 'main.jsx'),
             path.join(viewPath, 'main.ts'),
             path.join(viewPath, 'main.js'),
-            path.join(viewPath, 'app.tsx'),
-            path.join(viewPath, 'app.jsx'),
             path.join(viewPath, 'app.ts'),
             path.join(viewPath, 'app.js'),
-            path.join(viewPath, 'src/index.tsx'),
             path.join(viewPath, 'src/index.ts'),
-            path.join(viewPath, 'src/main.tsx'),
             path.join(viewPath, 'src/main.ts'),
-            path.join(viewPath, 'src/app.tsx'),
             path.join(viewPath, 'src/app.ts'),
-            // Svelte entry points
-            path.join(viewPath, 'index.svelte'),
-            path.join(viewPath, 'main.svelte'),
-            path.join(viewPath, 'App.svelte'),
-            path.join(viewPath, 'src/index.svelte'),
-            path.join(viewPath, 'src/main.svelte'),
-            path.join(viewPath, 'src/App.svelte'),
         ]
 
         for (const entry of possibleEntries) {
@@ -1005,39 +1030,7 @@ async function buildViews(viewPath, outDir, options = {}) {
         console.log(`[views] Auto-detected entry point: ${path.relative(viewPath, entryPoint)}`)
     }
 
-    // Load framework plugins based on file detection
     const plugins = []
-    const isReact = hasReactFiles(viewPath)
-
-    if (isReact) {
-        console.log(`[views] React files detected, checking dependencies...`)
-        checkReactDependencies(viewPath, options)
-    }
-    if (hasAstroFiles(viewPath)) {
-        console.log(`[views] Astro files detected, running static build...`)
-    }
-    if (hasSvelteFiles(viewPath)) {
-        console.log(`[views] Svelte files detected, loading svelte plugin...`)
-        plugins.push(getSveltePlugin(options))
-    }
-    if (hasVueFiles(viewPath)) {
-        console.log(`[views] Vue files detected, loading vue plugin...`)
-        plugins.push(getVuePlugin(options))
-    }
-    if (hasSassFiles(viewPath)) {
-        console.log(`[views] SASS/SCSS files detected, loading sass plugin...`)
-        plugins.push(getSassPlugin(options))
-    }
-
-    const postcssConfig = await loadProjectPostcssPlugins(viewPath, options)
-    if (postcssConfig) {
-        plugins.push(createPostcssPlugin(postcssConfig.postcssPath, postcssConfig.plugins, postcssConfig.configPath))
-    } else {
-        const tailwindPlugin = createTailwindPlugin(viewPath, options)
-        if (tailwindPlugin) {
-            plugins.push(tailwindPlugin)
-        }
-    }
 
     const isRageMP = options.runtime === 'ragemp'
 
@@ -1056,11 +1049,8 @@ async function buildViews(viewPath, outDir, options = {}) {
         chunkNames: 'chunks/[name]-[hash]',
         assetNames: 'assets/[name]-[hash]',
         plugins,
-        ...(isReact ? { jsx: 'automatic', jsxImportSource: 'react' } : {}),
         loader: {
             // JavaScript/TypeScript
-            '.tsx': 'tsx',
-            '.jsx': 'jsx',
             // Styles
             '.css': 'css',
             // Images
@@ -1111,7 +1101,7 @@ async function buildViews(viewPath, outDir, options = {}) {
         const entryBase = path.basename(entryPoint, path.extname(entryPoint))
 
         html = html.replace(
-            /(<script[^>]*\ssrc=["'])([^"']+\.(ts|tsx|jsx|js|svelte|vue))(['"][^>]*>)/gi,
+            /(<script[^>]*\ssrc=["'])([^"']+\.(ts|js))(['"][^>]*>)/gi,
             (match, prefix, src, ext, suffix) => {
                 if (src.includes(entryBase)) {
                     return prefix + entryBase + '.js' + suffix

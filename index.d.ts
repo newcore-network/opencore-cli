@@ -119,12 +119,16 @@ export interface ViewsConfig {
 
   /**
    * Frontend framework used for the views.
-   * The CLI will use the appropriate build configuration for each framework.
-   * Astro is supported only with static output.
+   * OpenCore only manages two view modes:
+   * - `vite`: recommended for any modern frontend framework or advanced CSS pipeline
+   * - `vanilla`: minimal JS/TS + HTML/CSS views handled directly by the CLI
+   *
+   * Framework-specific CLI builders were removed. React, Vue, Svelte, Astro,
+   * Tailwind/PostCSS, Sass, and similar tooling should now be configured in Vite.
    * Vite can be selected explicitly, and is also auto-detected from `vite.config.*`.
    * @default auto-detected
    */
-  framework?: 'react' | 'vue' | 'svelte' | 'vanilla' | 'astro' | 'vite';
+  framework?: 'vanilla' | 'vite';
 
 
   /**
@@ -157,14 +161,14 @@ export interface ViewsConfig {
   forceInclude?: string[];
 
   /**
-   * Custom build command for static frameworks like Astro.
-   * Defaults to `pnpm astro build` when framework is `astro`.
+   * Custom build command for Vite views.
+   * Useful when your workspace needs a custom package manager invocation.
    */
   buildCommand?: string;
 
   /**
-   * Output directory for static frameworks like Astro.
-   * Defaults to `dist` when framework is `astro`.
+   * Output directory for the built view files.
+   * Vite projects usually control this in `vite.config.*`; vanilla views can override it here.
    */
   outputDir?: string;
 }

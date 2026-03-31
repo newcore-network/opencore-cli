@@ -22,6 +22,14 @@ type Config struct {
 	Dev         DevConfig         `json:"dev"`
 }
 
+func normalizedConfigPath(p string) string {
+	if p == "" {
+		return ""
+	}
+
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(p)))
+}
+
 type AdapterConfig struct {
 	Server *AdapterBinding `json:"server,omitempty"`
 	Client *AdapterBinding `json:"client,omitempty"`
@@ -730,8 +738,9 @@ func (c *Config) GetResourceViews(path string) *ViewsConfig {
 
 // GetExplicitResource returns the explicit resource config for a path, if any
 func (c *Config) GetExplicitResource(path string) *ExplicitResource {
+	normalizedPath := normalizedConfigPath(path)
 	for i := range c.Resources.Explicit {
-		if c.Resources.Explicit[i].Path == path {
+		if normalizedConfigPath(c.Resources.Explicit[i].Path) == normalizedPath {
 			return &c.Resources.Explicit[i]
 		}
 	}
@@ -743,8 +752,9 @@ func (c *Config) GetExplicitStandalone(path string) *ExplicitResource {
 	if c.Standalones == nil {
 		return nil
 	}
+	normalizedPath := normalizedConfigPath(path)
 	for i := range c.Standalones.Explicit {
-		if c.Standalones.Explicit[i].Path == path {
+		if normalizedConfigPath(c.Standalones.Explicit[i].Path) == normalizedPath {
 			return &c.Standalones.Explicit[i]
 		}
 	}

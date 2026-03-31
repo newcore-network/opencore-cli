@@ -58,15 +58,11 @@ func TestEmbeddedBuildScript(t *testing.T) {
 	viewsScript, _ := BuildFS.ReadFile("views.js")
 	viewsContent := string(viewsScript)
 	requiredViewsSymbols := []string{
-		"createTailwindPlugin",
-		"getTailwindInfo",
-		"findProjectPostcssConfigPath",
-		"createPostcssPlugin",
 		"forceInclude",
-		"buildAstroViews",
-		"astro.config",
 		"buildViteViews",
 		"detectViteFramework",
+		"supportedFrameworks = new Set(['', 'vite', 'vanilla'])",
+		"Framework-specific CLI builders were removed",
 	}
 	for _, symbol := range requiredViewsSymbols {
 		if !strings.Contains(viewsContent, symbol) {
@@ -78,6 +74,12 @@ func TestEmbeddedBuildScript(t *testing.T) {
 	}
 	if !strings.Contains(viewsContent, "const isVite = explicitFramework === 'vite' || (explicitFramework === '' && detectViteFramework(viewPath))") {
 		t.Error("views.js missing the guarded Vite detection condition")
+	}
+	if !strings.Contains(viewsContent, "const absLocalViteConfig = localViteConfig ? path.resolve(localViteConfig).replace(/\\\\/g, '/') : null") {
+		t.Error("views.js should normalize local vite config to an absolute path")
+	}
+	if !strings.Contains(viewsContent, "commandParts.push(`--config \"${absLocalViteConfig}\"`)") {
+		t.Error("views.js should pass the absolute local vite config path to vite")
 	}
 }
 

@@ -53,8 +53,8 @@ func TestGenerateStarterProjectWithFiveMAdapter(t *testing.T) {
 	if !strings.Contains(string(packageContent), "\"vite\": \"^7.1.0\"") {
 		t.Fatal("expected generated package.json to include vite")
 	}
-	if !strings.Contains(string(packageContent), "\"postcss\": \"^8.5.6\"") {
-		t.Fatal("expected generated package.json to include postcss")
+	if strings.Contains(string(packageContent), "\"postcss\":") {
+		t.Fatal("did not expect generated package.json to include postcss by default")
 	}
 
 	if _, err := os.Stat(filepath.Join(targetPath, "core", "src", "features")); err != nil {
@@ -69,8 +69,19 @@ func TestGenerateStarterProjectWithFiveMAdapter(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(targetPath, "vite.config.ts")); err != nil {
 		t.Fatalf("expected root vite.config.ts: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(targetPath, "postcss.config.mjs")); err != nil {
-		t.Fatalf("expected root postcss.config.mjs: %v", err)
+	viteConfigContent, err := os.ReadFile(filepath.Join(targetPath, "vite.config.ts"))
+	if err != nil {
+		t.Fatalf("failed to read vite.config.ts: %v", err)
+	}
+	viteConfigText := string(viteConfigContent)
+	if !strings.Contains(viteConfigText, "@open-core/cli/vite") {
+		t.Fatal("expected starter vite.config.ts to use the public @open-core/cli/vite helper")
+	}
+	if !strings.Contains(viteConfigText, "createOpenCoreViteConfig({})") {
+		t.Fatal("expected starter vite.config.ts to use the minimal helper call")
+	}
+	if _, err := os.Stat(filepath.Join(targetPath, "postcss.config.mjs")); !os.IsNotExist(err) {
+		t.Fatal("did not expect root postcss.config.mjs by default")
 	}
 }
 

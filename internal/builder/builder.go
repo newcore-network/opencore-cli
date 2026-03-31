@@ -27,6 +27,14 @@ type Builder struct {
 	deployer        *Deployer
 }
 
+func normalizedBuildPath(p string) string {
+	if p == "" {
+		return ""
+	}
+
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(p)))
+}
+
 type OutputMode string
 
 const (
@@ -867,8 +875,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	for _, res := range b.config.Resources.Explicit {
 		// Skip if already added via glob
 		alreadyAdded := false
+		normalizedExplicitPath := normalizedBuildPath(res.Path)
 		for _, t := range tasks {
-			if t.Path == res.Path {
+			if normalizedBuildPath(t.Path) == normalizedExplicitPath {
 				alreadyAdded = true
 				break
 			}
@@ -935,13 +944,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 
 		// Resources are always compiled, so we can always check for views
-		var standaloneViewsDefaults *config.ViewsConfig
-		if b.config.Standalones != nil {
-			standaloneViewsDefaults = b.config.Standalones.Views
+		var resourceViewsDefaults *config.ViewsConfig
+		if b.config.Resources.Views != nil {
+			resourceViewsDefaults = b.config.Resources.Views
 		}
 
 		var viewsConfig *config.ViewsConfig
-		viewsConfig = resolveViewsConfig(res.Path, mergeViewsConfig(standaloneViewsDefaults, res.Views))
+		viewsConfig = resolveViewsConfig(res.Path, mergeViewsConfig(resourceViewsDefaults, res.Views))
 
 		tasks = append(tasks, task)
 
@@ -1319,50 +1328,13 @@ type ResourceSize struct {
 	ClientSize int64
 	TotalSize  int64
 	IsViews    bool   // true if this is a views/UI bundle
-	Framework  string // framework used (react, vue, svelte, vanilla) - only for views
+	Framework  string // framework used (vite or vanilla) - only for views
 }
 
-// detectFramework detects the framework used in a views directory
+// detectFramework resolves the CLI-managed views mode.
 func detectFramework(viewPath string) string {
-	// Check for framework-specific files
-	hasReact := false
-	hasVue := false
-	hasSvelte := false
-	hasAstro := false
-
-	_ = filepath.WalkDir(viewPath, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			if d != nil && d.Name() == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		ext := filepath.Ext(d.Name())
-		switch ext {
-		case ".astro":
-			hasAstro = true
-		case ".tsx", ".jsx":
-			hasReact = true
-		case ".vue":
-			hasVue = true
-		case ".svelte":
-			hasSvelte = true
-		}
-		return nil
-	})
-
-	// Return detected framework (prioritize by specificity)
-	if hasAstro {
-		return "astro"
-	}
-	if hasSvelte {
-		return "svelte"
-	}
-	if hasVue {
-		return "vue"
-	}
-	if hasReact {
-		return "react"
+	if hasViteConfig(viewPath) {
+		return "vite"
 	}
 	return "vanilla"
 }

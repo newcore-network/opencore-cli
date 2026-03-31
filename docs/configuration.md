@@ -199,52 +199,51 @@ Notes:
 
 See [FiveM Runtime](./fivem-runtime.md) for FiveM platform details.
 
-## Views PostCSS
+## Views Vite Configuration
 
-OpenCore auto-detects PostCSS config for NUI/views builds from the project root.
+OpenCore now supports only two view build modes:
 
-Behavior:
+- `vite`: recommended for React, Vue, Svelte, Astro, Tailwind, PostCSS, Sass, and any modern frontend stack
+- `vanilla`: minimal HTML/CSS/JS/TS views built directly by the CLI
 
-- The CLI walks up from the views directory until it finds `opencore.config.ts`
-- In that same directory it looks for `postcss.config.js`, `postcss.config.cjs`, `postcss.config.mjs`, or `postcss.config.ts`
-- If one exists, that PostCSS config is used for CSS processing in the views build
-- If none exists, the current built-in Tailwind fallback remains active
+Resolution order:
 
-Example with Tailwind 4:
+- `views.framework: 'vite'` forces Vite
+- `views.framework: 'vanilla'` forces the minimal CLI runner
+- Without an explicit framework, OpenCore uses Vite when it finds `vite.config.*` in the view directory or in the project root next to `opencore.config.ts`
+- Otherwise, OpenCore falls back to `vanilla`
 
-```typescript
-import { defineConfig } from '@open-core/cli'
+Recommended setup:
 
-export default defineConfig({
-  name: 'my-server',
-  core: {
-    path: './core',
-    resourceName: 'core',
-    views: {
-      path: './web',
-    },
+- Keep a shared root `vite.config.ts` next to `opencore.config.ts`
+- Let each project configure its own framework plugins, CSS pipeline, and browser targets in Vite
+- Add PostCSS only when your frontend needs it, especially for older runtimes such as RageMP CEF
+
+Helper:
+
+- OpenCore exposes `createOpenCoreViteConfig` from `@open-core/cli/vite` for shared root configs
+- The helper auto-resolves `OPENCORE_VIEW_ROOT`, `OPENCORE_VIEW_OUTDIR`, and `postcss.config.*` from the OpenCore project root
+
+Example:
+
+```ts
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { createOpenCoreViteConfig } from '@open-core/cli/vite'
+
+export default createOpenCoreViteConfig({
+  plugins: [react(), tailwindcss()],
+  build: {
+    target: 'chrome97',
   },
 })
 ```
 
-`postcss.config.mjs` at the project root:
+Per-view `package.json` scripts are optional. They are useful for local development, but `opencore build` does not require them.
 
-```js
-import tailwindcss from '@tailwindcss/postcss'
-import autoprefixer from 'autoprefixer'
+Removed support:
 
-export default {
-  plugins: [tailwindcss(), autoprefixer()],
-}
-```
+- The CLI no longer provides dedicated React, Vue, Svelte, or Astro builders
+- The CLI no longer auto-manages Tailwind/PostCSS/Sass for views
 
-## Views Vite Configuration
-
-OpenCore treats Vite as the primary frontend build system for views:
-
-- The recommended setup is a shared `vite.config.ts` in the same root where `opencore.config.ts` exists.
-- View folders (for example `resources/chat/view`) do not need a local `vite.config.ts` by default.
-- During build, OpenCore first checks for a local `vite.config.*` in the view directory.
-- If local config is missing, OpenCore falls back to the root `vite.config.*` and builds the target view with that shared config.
-
-For advanced cases, keep local config files as override layers that extend shared root defaults with `mergeConfig`.
+If you need any of those features, switch the view to `framework: 'vite'` and configure them in your Vite project.
