@@ -11,6 +11,7 @@ export function createOpenCoreViteConfig(options: OpenCoreViteConfigOptions): Us
 
   return defineConfig({
     root,
+    base: './',
     resolve: {
       alias: {
         '@': path.join(root, 'src'),

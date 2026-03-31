@@ -326,15 +326,20 @@ async function buildViteViews(viewPath, outDir, options = {}) {
     const projectRoot = findProjectRoot(viewPath)
     const rootViteConfig = projectRoot ? findViteConfigPath(projectRoot) : null
 
-    let commandParts = [`${baseCommand} --outDir "${absOutDir}"`]
+    let commandParts = [baseCommand]
     let runCwd = viewPath
+    const spawnEnv = { ...process.env }
 
     if (localViteConfig) {
+        commandParts.push(`--outDir "${absOutDir}"`)
         commandParts.push(`--config "${localViteConfig.replace(/\\/g, '/')}"`)
     } else if (rootViteConfig) {
         commandParts.push(`--config "${rootViteConfig.replace(/\\/g, '/')}"`)
-        commandParts.push(`--root "${path.resolve(viewPath).replace(/\\/g, '/')}"`)
+        spawnEnv.OPENCORE_VIEW_ROOT = path.resolve(viewPath)
+        spawnEnv.OPENCORE_VIEW_OUTDIR = absOutDir
         runCwd = projectRoot
+    } else {
+        commandParts.push(`--outDir "${absOutDir}"`)
     }
 
     const buildCommand = commandParts.join(' ')
@@ -344,7 +349,7 @@ async function buildViteViews(viewPath, outDir, options = {}) {
     const spawn = require('child_process').spawn
 
     await new Promise((resolve, reject) => {
-        const proc = spawn(buildCommand, { cwd: runCwd, stdio: 'inherit', shell: true })
+        const proc = spawn(buildCommand, { cwd: runCwd, stdio: 'inherit', shell: true, env: spawnEnv })
         proc.on('close', code => {
             if (code === 0) {
                 resolve()
