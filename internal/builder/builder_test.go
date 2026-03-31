@@ -414,6 +414,28 @@ func TestDetectViewFramework_PrefersViteConfig(t *testing.T) {
 	}
 }
 
+func TestDetectViewFramework_UsesProjectRootViteConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	viewDir := filepath.Join(tmpDir, "resources", "chat", "view")
+	if err := os.MkdirAll(filepath.Join(viewDir, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "opencore.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "src", "main.ts"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	framework := detectViewFramework(viewDir)
+	if framework != "vite" {
+		t.Fatalf("Expected framework 'vite', got '%s'", framework)
+	}
+}
+
 func TestCollectAllTasks_ViewsFrameworkWithoutPathUsesAutodiscovery(t *testing.T) {
 	tmpDir := t.TempDir()
 	resourceDir := filepath.Join(tmpDir, "resources", "auth")

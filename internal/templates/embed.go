@@ -205,6 +205,8 @@ func GenerateStarterProject(targetPath, projectName string, installIdentity bool
 		"package.json":        filepath.Join(targetPath, "package.json"),
 		"opencore.config.ts":  filepath.Join(targetPath, "opencore.config.ts"),
 		"pnpm-workspace.yaml": filepath.Join(targetPath, "pnpm-workspace.yaml"),
+		"vite.config.ts":      filepath.Join(targetPath, "vite.config.ts"),
+		"postcss.config.mjs":  filepath.Join(targetPath, "postcss.config.mjs"),
 		"core/package.json":   filepath.Join(targetPath, "core", "package.json"),
 		"tsconfig.json":       filepath.Join(targetPath, "tsconfig.json"),
 		".gitignore":          filepath.Join(targetPath, ".gitignore"),
