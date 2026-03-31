@@ -507,31 +507,15 @@ function createReflectMetadataPlugin(optionsOrPackageManager) {
                     }
 
                     if (adapterModulePath && !contents.includes(adapterModulePath)) {
-                        lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
-                        lines.push(`const __openCoreInitWithAdapter = (runtimeApi, adapter, options = {}) => {
-  if (!adapter) {
-    return runtimeApi.init(options);
-  }
-  if (options && typeof options === 'object' && !Array.isArray(options) && 'adapter' in options && options.adapter) {
-    return runtimeApi.init(options);
-  }
-  const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options)
-    ? { ...options, adapter }
-    : { adapter };
-  return runtimeApi.init(normalizedOptions);
-};`)
+                        const runtimeModulePath = target === 'server'
+                            ? '@open-core/framework/server'
+                            : '@open-core/framework/client'
 
-                        if (target === 'server') {
-                            transformedContents = transformedContents.replace(
-                                /\bServer\.init\s*\(/g,
-                                '__openCoreInitWithAdapter(Server, __openCoreProjectAdapter, '
-                            )
-                        } else {
-                            transformedContents = transformedContents.replace(
-                                /\bClient\.init\s*\(/g,
-                                '__openCoreInitWithAdapter(Client, __openCoreProjectAdapter, '
-                            )
-                        }
+                        lines.push(`import { __openCoreProjectAdapter } from ${JSON.stringify(adapterModulePath)};`)
+                        lines.push(`import { useAdapter as __openCoreUseAdapter } from ${JSON.stringify(runtimeModulePath)};`)
+                        lines.push(`if (__openCoreProjectAdapter) {
+  __openCoreUseAdapter(__openCoreProjectAdapter);
+}`)
                     }
 
                     if (lines.length === 0) return null

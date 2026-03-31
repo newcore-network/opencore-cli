@@ -1,5 +1,8 @@
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
+const { pathToFileURL } = require('url')
+const { createRequire } = require('module')
 const { getEsbuild } = require('./plugins')
 const { getSharedConfig } = require('./config')
 
@@ -76,7 +79,209 @@ function resolveDependency(viewPath, name) {
     }
 }
 
+function resolveDependencyFrom(basePath, name) {
+    try {
+        return require.resolve(name, { paths: [basePath, process.cwd()] })
+    } catch (e) {
+        return null
+    }
+}
+
+function findProjectRoot(viewPath) {
+    let currentDir = path.resolve(viewPath)
+    const rootDir = path.parse(currentDir).root
+
+    while (true) {
+        if (fs.existsSync(path.join(currentDir, 'opencore.config.ts'))) {
+            return currentDir
+        }
+
+        if (currentDir === rootDir) {
+            return null
+        }
+
+        currentDir = path.dirname(currentDir)
+    }
+}
+
+function findProjectPostcssConfigPath(viewPath) {
+    const projectRoot = findProjectRoot(viewPath)
+    if (!projectRoot) {
+        return null
+    }
+
+    const configFiles = [
+        'postcss.config.js',
+        'postcss.config.cjs',
+        'postcss.config.mjs',
+        'postcss.config.ts',
+    ]
+
+    for (const fileName of configFiles) {
+        const candidate = path.join(projectRoot, fileName)
+        if (fs.existsSync(candidate)) {
+            return candidate
+        }
+    }
+
+    return null
+}
+
+function unwrapModuleDefault(value) {
+    if (value && typeof value === 'object' && 'default' in value) {
+        return value.default
+    }
+    return value
+}
+
+async function loadConfigModule(configPath) {
+    const ext = path.extname(configPath).toLowerCase()
+
+    if (ext === '.mjs') {
+        const mod = await import(pathToFileURL(configPath).href)
+        return unwrapModuleDefault(mod)
+    }
+
+    if (ext === '.js' || ext === '.cjs') {
+        return unwrapModuleDefault(require(configPath))
+    }
+
+    const esbuild = getEsbuild()
+    const outfile = path.join(
+        os.tmpdir(),
+        `opencore-postcss-config-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.cjs`
+    )
+
+    try {
+        await esbuild.build({
+            entryPoints: [configPath],
+            outfile,
+            bundle: true,
+            platform: 'node',
+            format: 'cjs',
+            target: ['node18'],
+            absWorkingDir: path.dirname(configPath),
+            write: true,
+            logLevel: 'silent',
+        })
+
+        return unwrapModuleDefault(require(outfile))
+    } finally {
+        try {
+            fs.unlinkSync(outfile)
+        } catch (e) {
+            // Ignore cleanup errors
+        }
+    }
+}
+
+function normalizeLoadedPostcssPlugin(pluginModule, pluginName) {
+    const resolved = unwrapModuleDefault(pluginModule)
+
+    if (typeof resolved === 'function') {
+        return resolved()
+    }
+
+    if (resolved && typeof resolved === 'object') {
+        return resolved
+    }
+
+    throw new Error(`[views] Invalid PostCSS plugin '${pluginName}' in postcss config`)
+}
+
+function normalizePostcssPluginEntries(plugins, configDir) {
+    const requireFromConfig = createRequire(configDir + path.sep)
+
+    if (Array.isArray(plugins)) {
+        return plugins
+    }
+
+    if (!plugins || typeof plugins !== 'object') {
+        return []
+    }
+
+    return Object.entries(plugins)
+        .filter(([, options]) => options !== false)
+        .map(([pluginName, options]) => {
+            let pluginModule
+
+            try {
+                pluginModule = requireFromConfig(pluginName)
+            } catch (error) {
+                throw new Error(`[views] Failed to resolve PostCSS plugin '${pluginName}' from ${configDir}`)
+            }
+
+            const resolved = unwrapModuleDefault(pluginModule)
+            if (typeof resolved !== 'function') {
+                return normalizeLoadedPostcssPlugin(resolved, pluginName)
+            }
+
+            if (options === true || options == null) {
+                return resolved()
+            }
+
+            return resolved(options)
+        })
+}
+
+async function loadProjectPostcssPlugins(viewPath, options = {}) {
+    const configPath = findProjectPostcssConfigPath(viewPath)
+    if (!configPath) {
+        return null
+    }
+
+    const postcssPath = resolveDependencyFrom(path.dirname(configPath), 'postcss')
+    if (!postcssPath) {
+        throw new Error(
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `  [views] Missing PostCSS dependency\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `\n` +
+            `  postcss.config.* was found in the project root but 'postcss' is not installed.\n` +
+            `\n` +
+            `  Run this command to install:\n` +
+            `\n` +
+            `    ${addCmd(options, ['postcss'], true)}\n` +
+            `\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+        )
+    }
+
+    const configExport = await loadConfigModule(configPath)
+    const context = {
+        env: options.minify ? 'production' : 'development',
+        cwd: path.dirname(configPath),
+        file: {
+            dirname: viewPath,
+        },
+        options: {},
+    }
+
+    const resolvedConfig = typeof configExport === 'function' ? await configExport(context) : configExport
+    const configObject = unwrapModuleDefault(resolvedConfig)
+
+    return {
+        configPath,
+        postcssPath,
+        plugins: normalizePostcssPluginEntries(configObject?.plugins, path.dirname(configPath)),
+    }
+}
+
 function detectViteFramework(viewPath) {
+    if (findViteConfigPath(viewPath)) {
+        return true
+    }
+
+    const projectRoot = findProjectRoot(viewPath)
+    if (projectRoot && findViteConfigPath(projectRoot)) {
+        return true
+    }
+
+    return false
+}
+
+function findViteConfigPath(dirPath) {
     const configFiles = [
         'vite.config.js',
         'vite.config.ts',
@@ -85,12 +290,13 @@ function detectViteFramework(viewPath) {
     ]
 
     for (const fileName of configFiles) {
-        if (fs.existsSync(path.join(viewPath, fileName))) {
-            return true
+        const candidate = path.join(dirPath, fileName)
+        if (fs.existsSync(candidate)) {
+            return candidate
         }
     }
 
-    return false
+    return null
 }
 
 async function buildViteViews(viewPath, outDir, options = {}) {
@@ -116,14 +322,35 @@ async function buildViteViews(viewPath, outDir, options = {}) {
 
     const absOutDir = path.resolve(outDir).replace(/\\/g, '/')
     const baseCommand = options.buildCommand || execCmd(options, 'vite', ['build'])
-    const buildCommand = `${baseCommand} --outDir "${absOutDir}"`
+    const localViteConfig = findViteConfigPath(viewPath)
+    const absLocalViteConfig = localViteConfig ? path.resolve(localViteConfig).replace(/\\/g, '/') : null
+    const projectRoot = findProjectRoot(viewPath)
+    const rootViteConfig = projectRoot ? findViteConfigPath(projectRoot) : null
+
+    let commandParts = [baseCommand]
+    let runCwd = viewPath
+    const spawnEnv = { ...process.env }
+
+    if (localViteConfig) {
+        commandParts.push(`--outDir "${absOutDir}"`)
+        commandParts.push(`--config "${absLocalViteConfig}"`)
+    } else if (rootViteConfig) {
+        commandParts.push(`--config "${rootViteConfig.replace(/\\/g, '/')}"`)
+        spawnEnv.OPENCORE_VIEW_ROOT = path.resolve(viewPath)
+        spawnEnv.OPENCORE_VIEW_OUTDIR = absOutDir
+        runCwd = projectRoot
+    } else {
+        commandParts.push(`--outDir "${absOutDir}"`)
+    }
+
+    const buildCommand = commandParts.join(' ')
 
     console.log(`[views] Vite detected, running: ${buildCommand}`)
 
     const spawn = require('child_process').spawn
 
     await new Promise((resolve, reject) => {
-        const proc = spawn(buildCommand, { cwd: viewPath, stdio: 'inherit', shell: true })
+        const proc = spawn(buildCommand, { cwd: runCwd, stdio: 'inherit', shell: true, env: spawnEnv })
         proc.on('close', code => {
             if (code === 0) {
                 resolve()
@@ -132,6 +359,15 @@ async function buildViteViews(viewPath, outDir, options = {}) {
             }
         })
     })
+
+    const builtIndexPath = path.join(outDir, 'index.html')
+    if (fs.existsSync(builtIndexPath)) {
+        const builtIndex = await fs.promises.readFile(builtIndexPath, 'utf8')
+        const sanitizedIndex = builtIndex.replace(/\s+crossorigin(?=[\s>])/g, '')
+        if (sanitizedIndex !== builtIndex) {
+            await fs.promises.writeFile(builtIndexPath, sanitizedIndex)
+        }
+    }
 
     console.log(`[views] Vite build complete`)
 }
@@ -448,6 +684,30 @@ function createTailwindPlugin(viewPath, options = {}) {
     }
 }
 
+function createPostcssPlugin(postcssPath, plugins, configPath) {
+    const postcss = require(postcssPath)
+
+    console.log(`[views] Using PostCSS config: ${path.relative(process.cwd(), configPath)}`)
+
+    return {
+        name: 'postcss-config',
+        setup(build) {
+            build.onLoad({ filter: /\.css$/ }, async (args) => {
+                const source = await fs.promises.readFile(args.path, 'utf8')
+                const result = await postcss(plugins).process(source, {
+                    from: args.path,
+                    map: false,
+                })
+
+                return {
+                    contents: result.css,
+                    loader: 'css',
+                }
+            })
+        },
+    }
+}
+
 function getSveltePlugin(options = {}) {
 
     const missing = []
@@ -616,6 +876,9 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = [], forceIncl
     const defaultIgnore = [
         'node_modules',
         '.git',
+        '.vite',
+        'dist',
+        'build',
         'package.json',
         'package-lock.json',
         'pnpm-lock.yaml',
@@ -670,17 +933,57 @@ async function copyStaticAssets(viewPath, outDir, ignorePatterns = [], forceIncl
 async function buildViews(viewPath, outDir, options = {}) {
     await fs.promises.mkdir(outDir, { recursive: true })
 
-    const isAstro = (options.framework || '').toLowerCase() === 'astro' || detectAstroFramework(viewPath)
-    if (isAstro) {
-        await buildAstroViews(viewPath, outDir, options)
-        return
+    const explicitFramework = (options.framework || '').toLowerCase()
+    const supportedFrameworks = new Set(['', 'vite', 'vanilla'])
+    const legacyFrameworks = new Set(['react', 'vue', 'svelte', 'astro'])
+    if (!supportedFrameworks.has(explicitFramework)) {
+        const recommendation = `[views] Unsupported views framework '${explicitFramework}'. Use framework: 'vite' and configure your frontend in Vite, or use framework: 'vanilla' for simple JS/TS views.`
+        console.warn(recommendation)
+        throw new Error(recommendation)
+    }
+    if (legacyFrameworks.has(explicitFramework)) {
+        const recommendation = `[views] Framework-specific CLI builders were removed for '${explicitFramework}'. Use framework: 'vite' and configure that framework in your Vite setup.`
+        console.warn(recommendation)
+        throw new Error(recommendation)
     }
 
-    const explicitFramework = (options.framework || '').toLowerCase()
     const isVite = explicitFramework === 'vite' || (explicitFramework === '' && detectViteFramework(viewPath))
     if (isVite) {
         await buildViteViews(viewPath, outDir, options)
         return
+    }
+
+    const unsupportedExtensions = new Map([
+        ['.tsx', 'TSX/React-style entry files'],
+        ['.jsx', 'JSX/React-style entry files'],
+        ['.vue', 'Vue single-file components'],
+        ['.svelte', 'Svelte components'],
+        ['.astro', 'Astro components'],
+        ['.scss', 'Sass/SCSS stylesheets'],
+        ['.sass', 'Sass stylesheets'],
+    ])
+    const foundUnsupported = new Set()
+    const stack = [viewPath]
+    while (stack.length > 0) {
+        const currentDir = stack.pop()
+        const entries = await fs.promises.readdir(currentDir, { withFileTypes: true }).catch(() => [])
+        for (const entry of entries) {
+            if (entry.name === 'node_modules' || entry.name === '.git') continue
+            const fullPath = path.join(currentDir, entry.name)
+            if (entry.isDirectory()) {
+                stack.push(fullPath)
+                continue
+            }
+            const ext = path.extname(entry.name).toLowerCase()
+            if (unsupportedExtensions.has(ext)) {
+                foundUnsupported.add(unsupportedExtensions.get(ext))
+            }
+        }
+    }
+    if (foundUnsupported.size > 0) {
+        const recommendation = `[views] Advanced frontend sources were found (${Array.from(foundUnsupported).join(', ')}). Configure this view with framework: 'vite' and manage those tools in your Vite project.`
+        console.warn(recommendation)
+        throw new Error(recommendation)
     }
 
     const esbuild = getEsbuild()
@@ -700,31 +1003,15 @@ async function buildViews(viewPath, outDir, options = {}) {
 
     if (!entryPoint) {
         const possibleEntries = [
-            path.join(viewPath, 'index.tsx'),
-            path.join(viewPath, 'index.jsx'),
             path.join(viewPath, 'index.ts'),
             path.join(viewPath, 'index.js'),
-            path.join(viewPath, 'main.tsx'),
-            path.join(viewPath, 'main.jsx'),
             path.join(viewPath, 'main.ts'),
             path.join(viewPath, 'main.js'),
-            path.join(viewPath, 'app.tsx'),
-            path.join(viewPath, 'app.jsx'),
             path.join(viewPath, 'app.ts'),
             path.join(viewPath, 'app.js'),
-            path.join(viewPath, 'src/index.tsx'),
             path.join(viewPath, 'src/index.ts'),
-            path.join(viewPath, 'src/main.tsx'),
             path.join(viewPath, 'src/main.ts'),
-            path.join(viewPath, 'src/app.tsx'),
             path.join(viewPath, 'src/app.ts'),
-            // Svelte entry points
-            path.join(viewPath, 'index.svelte'),
-            path.join(viewPath, 'main.svelte'),
-            path.join(viewPath, 'App.svelte'),
-            path.join(viewPath, 'src/index.svelte'),
-            path.join(viewPath, 'src/main.svelte'),
-            path.join(viewPath, 'src/App.svelte'),
         ]
 
         for (const entry of possibleEntries) {
@@ -743,34 +1030,7 @@ async function buildViews(viewPath, outDir, options = {}) {
         console.log(`[views] Auto-detected entry point: ${path.relative(viewPath, entryPoint)}`)
     }
 
-    // Load framework plugins based on file detection
     const plugins = []
-    const isReact = hasReactFiles(viewPath)
-
-    if (isReact) {
-        console.log(`[views] React files detected, checking dependencies...`)
-        checkReactDependencies(viewPath, options)
-    }
-    if (hasAstroFiles(viewPath)) {
-        console.log(`[views] Astro files detected, running static build...`)
-    }
-    if (hasSvelteFiles(viewPath)) {
-        console.log(`[views] Svelte files detected, loading svelte plugin...`)
-        plugins.push(getSveltePlugin(options))
-    }
-    if (hasVueFiles(viewPath)) {
-        console.log(`[views] Vue files detected, loading vue plugin...`)
-        plugins.push(getVuePlugin(options))
-    }
-    if (hasSassFiles(viewPath)) {
-        console.log(`[views] SASS/SCSS files detected, loading sass plugin...`)
-        plugins.push(getSassPlugin(options))
-    }
-
-    const tailwindPlugin = createTailwindPlugin(viewPath, options)
-    if (tailwindPlugin) {
-        plugins.push(tailwindPlugin)
-    }
 
     const isRageMP = options.runtime === 'ragemp'
 
@@ -789,11 +1049,8 @@ async function buildViews(viewPath, outDir, options = {}) {
         chunkNames: 'chunks/[name]-[hash]',
         assetNames: 'assets/[name]-[hash]',
         plugins,
-        ...(isReact ? { jsx: 'automatic', jsxImportSource: 'react' } : {}),
         loader: {
             // JavaScript/TypeScript
-            '.tsx': 'tsx',
-            '.jsx': 'jsx',
             // Styles
             '.css': 'css',
             // Images
@@ -844,7 +1101,7 @@ async function buildViews(viewPath, outDir, options = {}) {
         const entryBase = path.basename(entryPoint, path.extname(entryPoint))
 
         html = html.replace(
-            /(<script[^>]*\ssrc=["'])([^"']+\.(ts|tsx|jsx|js|svelte|vue))(['"][^>]*>)/gi,
+            /(<script[^>]*\ssrc=["'])([^"']+\.(ts|js))(['"][^>]*>)/gi,
             (match, prefix, src, ext, suffix) => {
                 if (src.includes(entryBase)) {
                     return prefix + entryBase + '.js' + suffix

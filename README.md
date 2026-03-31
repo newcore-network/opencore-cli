@@ -1,6 +1,6 @@
 # OpenCore CLI
 
-> Modern build system for FiveM TypeScript projects with full decorator support
+> Modern build system for OpenCore Framework TypeScript projects with full decorator support (FiveM, RedM and RageMP)
 
 [![License](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://go.dev/)
@@ -291,6 +291,33 @@ The adapter is the central runtime switch:
 - `FiveM` keeps the standard resource layout and `fxmanifest.lua`
 - `RageMP` builds server output for Node 14 and splits output into `packages/` and `client_packages/`
 - `opencore doctor` shows the configured runtime and adapter status
+
+### Views and Vite
+
+Views are now handled in one of two modes:
+
+- `vite`: recommended for React, Vue, Svelte, Astro, Tailwind, PostCSS, Sass, and any modern frontend stack
+- `vanilla`: minimal HTML/CSS/JS/TS views compiled directly by the CLI
+
+The CLI also exposes `createOpenCoreViteConfig` from `@open-core/cli/vite` so shared root Vite configs stay small.
+
+Example:
+
+```typescript
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { createOpenCoreViteConfig } from '@open-core/cli/vite'
+
+export default createOpenCoreViteConfig({
+  plugins: [react(), tailwindcss()],
+  build: {
+    target: 'chrome97',
+  },
+})
+```
+
+Per-view `package.json` scripts are optional and useful only for local development. `opencore build` does not depend on them.
+For older Chromium targets, keep PostCSS in the project root and let the helper auto-resolve it.
 
 ### Configuration Reference
 

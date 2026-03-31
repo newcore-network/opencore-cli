@@ -111,7 +111,7 @@ Views are built separately using web bundlers:
 ```typescript
 views: {
   path: './core/views',
-  framework: 'react',  // or 'vue', 'svelte', 'solid', 'vanilla'
+  framework: 'vite',  // or use 'vanilla' only for simple JS/TS views
 }
 ```
 

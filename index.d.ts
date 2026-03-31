@@ -101,8 +101,7 @@ export interface EntryPoints {
  * @example
  * ```typescript
  * views: {
- *   path: './core/views',
- *   framework: 'react',
+ *   framework: 'vite',
  *   entryPoint: 'main.tsx',  // Optional: explicit entry point
  *   ignore: ['*.config.ts', 'test/**'],  // Optional: ignore patterns
  * }
@@ -112,17 +111,24 @@ export interface ViewsConfig {
   /**
    * Path to the views/NUI source folder.
    * This folder should contain your web application source code.
+   * If omitted, the CLI auto-detects common folders like `ui`, `views`, or `nui`
+   * inside the resource.
    * @example './core/views'
    */
-  path: string;
+  path?: string;
 
   /**
    * Frontend framework used for the views.
-   * The CLI will use the appropriate build configuration for each framework.
-   * Astro is supported only with static output.
-   * @default 'vanilla'
+   * OpenCore only manages two view modes:
+   * - `vite`: recommended for any modern frontend framework or advanced CSS pipeline
+   * - `vanilla`: minimal JS/TS + HTML/CSS views handled directly by the CLI
+   *
+   * Framework-specific CLI builders were removed. React, Vue, Svelte, Astro,
+   * Tailwind/PostCSS, Sass, and similar tooling should now be configured in Vite.
+   * Vite can be selected explicitly, and is also auto-detected from `vite.config.*`.
+   * @default auto-detected
    */
-  framework?: 'react' | 'vue' | 'svelte' | 'vanilla' | 'astro';
+  framework?: 'vanilla' | 'vite';
 
 
   /**
@@ -155,14 +161,14 @@ export interface ViewsConfig {
   forceInclude?: string[];
 
   /**
-   * Custom build command for static frameworks like Astro.
-   * Defaults to `pnpm astro build` when framework is `astro`.
+   * Custom build command for Vite views.
+   * Useful when your workspace needs a custom package manager invocation.
    */
   buildCommand?: string;
 
   /**
-   * Output directory for static frameworks like Astro.
-   * Defaults to `dist` when framework is `astro`.
+   * Output directory for the built view files.
+   * Vite projects usually control this in `vite.config.*`; vanilla views can override it here.
    */
   outputDir?: string;
 }
@@ -365,8 +371,7 @@ export interface ResourceBuildConfig {
  *       },
  *     },
  *     views: {
- *       path: './resources/admin/ui',
- *       framework: 'react',
+ *       framework: 'vite',
  *     },
  *   },
  *   {
@@ -442,6 +447,7 @@ export interface ExplicitResource {
  * ```typescript
  * resources: {
  *   include: ['./resources/*'],
+ *   views: { framework: 'vite' },
  *   explicit: [
  *     { path: './resources/admin', resourceName: 'admin-panel' },
  *   ],
@@ -455,6 +461,12 @@ export interface ResourcesConfig {
    * @example ['./resources/*', './features/*']
    */
   include?: string[];
+
+  /**
+   * Default views config applied to all matched resources.
+   * Resource-level `views` overrides these values when present.
+   */
+  views?: ViewsConfig;
 
   /**
    * Explicitly configured resources with custom settings.
@@ -472,6 +484,7 @@ export interface ResourcesConfig {
  * ```typescript
  * standalones: {
  *   include: ['./standalones/*'],
+ *   views: { framework: 'vite' },
  *   explicit: [
  *     {
  *       path: './standalones/utils',
@@ -489,6 +502,12 @@ export interface StandaloneConfig {
    * @example ['./standalones/*']
    */
   include?: string[];
+
+  /**
+   * Default views config applied to all matched standalones.
+   * Resource-level `views` overrides these values when present.
+   */
+  views?: ViewsConfig;
 
   /**
    * Explicitly configured standalone resources.
@@ -726,8 +745,9 @@ export interface BuildConfig {
  * Central adapter configuration applied by the OpenCore compiler.
  *
  * When present, the compiler injects these adapters into the generated
- * server/client bundles so `Server.init()` and `Client.init()` can reuse them
- * without repeating adapter setup in every entry point.
+ * server/client bundles so `Server.init()`, `Client.init()`, and direct
+ * `init()` imports can reuse them without repeating adapter setup in every
+ * entry point.
  */
 export interface OpenCoreAdapterConfig {
   /**
