@@ -27,6 +27,14 @@ type Builder struct {
 	deployer        *Deployer
 }
 
+func normalizedBuildPath(p string) string {
+	if p == "" {
+		return ""
+	}
+
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(p)))
+}
+
 type OutputMode string
 
 const (
@@ -385,6 +393,137 @@ func findViewsPath(resourcePath string) string {
 	return ""
 }
 
+func detectViewFramework(viewPath string) string {
+	if hasViteConfig(viewPath) {
+		return "vite"
+	}
+
+	return detectFramework(viewPath)
+}
+
+func hasViteConfig(viewPath string) bool {
+	if findViteConfigPath(viewPath) != "" {
+		return true
+	}
+
+	projectRoot := findProjectRootFromPath(viewPath)
+	if projectRoot != "" && findViteConfigPath(projectRoot) != "" {
+		return true
+	}
+
+	return false
+}
+
+func findViteConfigPath(dir string) string {
+	configFiles := []string{
+		"vite.config.js",
+		"vite.config.ts",
+		"vite.config.mjs",
+		"vite.config.cjs",
+	}
+
+	for _, fileName := range configFiles {
+		candidate := filepath.Join(dir, fileName)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+
+	return ""
+}
+
+func findProjectRootFromPath(startPath string) string {
+	currentPath, err := filepath.Abs(startPath)
+	if err != nil {
+		return ""
+	}
+
+	info, err := os.Stat(currentPath)
+	if err == nil && !info.IsDir() {
+		currentPath = filepath.Dir(currentPath)
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(currentPath, "opencore.config.ts")); err == nil {
+			return currentPath
+		}
+
+		parent := filepath.Dir(currentPath)
+		if parent == currentPath {
+			return ""
+		}
+
+		currentPath = parent
+	}
+}
+
+func resolveViewsConfig(resourcePath string, explicit *config.ViewsConfig) *config.ViewsConfig {
+	viewsPath := ""
+	if explicit != nil {
+		viewsPath = strings.TrimSpace(explicit.Path)
+	}
+
+	if viewsPath == "" {
+		viewsPath = findViewsPath(resourcePath)
+	}
+	if viewsPath == "" {
+		return nil
+	}
+
+	relPath, err := filepath.Rel(".", viewsPath)
+	if err == nil {
+		viewsPath = "./" + filepath.ToSlash(relPath)
+	}
+
+	views := &config.ViewsConfig{Path: viewsPath}
+	if explicit == nil {
+		views.Framework = detectViewFramework(viewsPath)
+		return views
+	}
+
+	*views = *explicit
+	views.Path = viewsPath
+	if strings.TrimSpace(views.Framework) == "" {
+		views.Framework = detectViewFramework(viewsPath)
+	}
+
+	return views
+}
+
+func mergeViewsConfig(base *config.ViewsConfig, override *config.ViewsConfig) *config.ViewsConfig {
+	if base == nil {
+		return override
+	}
+	if override == nil {
+		return base
+	}
+
+	merged := *base
+	if strings.TrimSpace(override.Path) != "" {
+		merged.Path = override.Path
+	}
+	if strings.TrimSpace(override.Framework) != "" {
+		merged.Framework = override.Framework
+	}
+	if strings.TrimSpace(override.EntryPoint) != "" {
+		merged.EntryPoint = override.EntryPoint
+	}
+	if override.Ignore != nil {
+		merged.Ignore = override.Ignore
+	}
+	if override.ForceInclude != nil {
+		merged.ForceInclude = override.ForceInclude
+	}
+	if strings.TrimSpace(override.BuildCommand) != "" {
+		merged.BuildCommand = override.BuildCommand
+	}
+	if strings.TrimSpace(override.OutputDir) != "" {
+		merged.OutputDir = override.OutputDir
+	}
+
+	return &merged
+}
+
 type resourceBuildLayout struct {
 	Runtime       string
 	ManifestKind  string
@@ -602,22 +741,16 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			explicit := b.config.GetExplicitResource(match)
 
 			// Auto-discover views if not explicitly configured
+			var viewsDefaults *config.ViewsConfig
+			if b.config.Resources.Views != nil {
+				viewsDefaults = b.config.Resources.Views
+			}
+
 			var viewsConfig *config.ViewsConfig
-			if explicit != nil && explicit.Views != nil {
-				viewsConfig = explicit.Views
+			if explicit != nil {
+				viewsConfig = resolveViewsConfig(match, mergeViewsConfig(viewsDefaults, explicit.Views))
 			} else {
-				viewsPath := findViewsPath(match)
-				if viewsPath != "" {
-					// Convert to relative path if possible for consistency
-					relPath, err := filepath.Rel(".", viewsPath)
-					if err == nil {
-						viewsPath = "./" + filepath.ToSlash(relPath)
-					}
-					viewsConfig = &config.ViewsConfig{
-						Path:      viewsPath,
-						Framework: detectFramework(viewsPath),
-					}
-				}
+				viewsConfig = resolveViewsConfig(match, viewsDefaults)
 			}
 
 			// Determine log level
@@ -691,7 +824,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					// Auto-detect framework if not explicitly set
 					framework := viewsConfig.Framework
 					if framework == "" {
-						framework = detectFramework(viewsConfig.Path)
+						framework = detectViewFramework(viewsConfig.Path)
 					}
 
 					tasks = append(tasks, BuildTask{
@@ -742,8 +875,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	for _, res := range b.config.Resources.Explicit {
 		// Skip if already added via glob
 		alreadyAdded := false
+		normalizedExplicitPath := normalizedBuildPath(res.Path)
 		for _, t := range tasks {
-			if t.Path == res.Path {
+			if normalizedBuildPath(t.Path) == normalizedExplicitPath {
 				alreadyAdded = true
 				break
 			}
@@ -810,22 +944,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 
 		// Resources are always compiled, so we can always check for views
-		var viewsConfig *config.ViewsConfig
-		if res.Views != nil {
-			viewsConfig = res.Views
-		} else {
-			viewsPath := findViewsPath(res.Path)
-			if viewsPath != "" {
-				relPath, err := filepath.Rel(".", viewsPath)
-				if err == nil {
-					viewsPath = "./" + filepath.ToSlash(relPath)
-				}
-				viewsConfig = &config.ViewsConfig{
-					Path:      viewsPath,
-					Framework: detectFramework(viewsPath),
-				}
-			}
+		var resourceViewsDefaults *config.ViewsConfig
+		if b.config.Resources.Views != nil {
+			resourceViewsDefaults = b.config.Resources.Views
 		}
+
+		var viewsConfig *config.ViewsConfig
+		viewsConfig = resolveViewsConfig(res.Path, mergeViewsConfig(resourceViewsDefaults, res.Views))
 
 		tasks = append(tasks, task)
 
@@ -834,7 +959,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			// Auto-detect framework if not explicitly set
 			framework := viewsConfig.Framework
 			if framework == "" {
-				framework = detectFramework(viewsConfig.Path)
+				framework = detectViewFramework(viewsConfig.Path)
 			}
 
 			tasks = append(tasks, BuildTask{
@@ -1203,50 +1328,13 @@ type ResourceSize struct {
 	ClientSize int64
 	TotalSize  int64
 	IsViews    bool   // true if this is a views/UI bundle
-	Framework  string // framework used (react, vue, svelte, vanilla) - only for views
+	Framework  string // framework used (vite or vanilla) - only for views
 }
 
-// detectFramework detects the framework used in a views directory
+// detectFramework resolves the CLI-managed views mode.
 func detectFramework(viewPath string) string {
-	// Check for framework-specific files
-	hasReact := false
-	hasVue := false
-	hasSvelte := false
-	hasAstro := false
-
-	_ = filepath.WalkDir(viewPath, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			if d != nil && d.Name() == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		ext := filepath.Ext(d.Name())
-		switch ext {
-		case ".astro":
-			hasAstro = true
-		case ".tsx", ".jsx":
-			hasReact = true
-		case ".vue":
-			hasVue = true
-		case ".svelte":
-			hasSvelte = true
-		}
-		return nil
-	})
-
-	// Return detected framework (prioritize by specificity)
-	if hasAstro {
-		return "astro"
-	}
-	if hasSvelte {
-		return "svelte"
-	}
-	if hasVue {
-		return "vue"
-	}
-	if hasReact {
-		return "react"
+	if hasViteConfig(viewPath) {
+		return "vite"
 	}
 	return "vanilla"
 }
@@ -1301,8 +1389,10 @@ func (b *Builder) getResourceSizes(results []BuildResult) []ResourceSize {
 		if r.Task.Type == TypeViews {
 			totalSize := getDirSize(r.Task.OutDir)
 			if totalSize > 0 {
-				// Detect framework from source path
-				framework := detectFramework(r.Task.Path)
+				framework := detectViewFramework(r.Task.Path)
+				if strings.TrimSpace(r.Task.Options.Framework) != "" {
+					framework = r.Task.Options.Framework
+				}
 				sizes = append(sizes, ResourceSize{
 					Name:      resourceName,
 					TotalSize: totalSize,

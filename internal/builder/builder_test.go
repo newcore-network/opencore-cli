@@ -64,8 +64,8 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 			CustomCompiler: "./scripts/core-build.js",
 			Views: &config.ViewsConfig{
 				Path:         "./core/views",
-				Framework:    "react",
-				BuildCommand: "pnpm astro build",
+				Framework:    "vite",
+				BuildCommand: "pnpm vite build",
 				OutputDir:    "dist",
 			},
 			Build: &config.BuildConfig{
@@ -97,12 +97,12 @@ func TestCollectAllTasks_WithCoreViews(t *testing.T) {
 		t.Fatal("Expected views task")
 	}
 
-	if viewsTask.Options.Framework != "react" {
-		t.Errorf("Expected framework 'react', got '%s'", viewsTask.Options.Framework)
+	if viewsTask.Options.Framework != "vite" {
+		t.Errorf("Expected framework 'vite', got '%s'", viewsTask.Options.Framework)
 	}
 
-	if viewsTask.Options.BuildCommand != "pnpm astro build" {
-		t.Errorf("Expected buildCommand 'pnpm astro build', got '%s'", viewsTask.Options.BuildCommand)
+	if viewsTask.Options.BuildCommand != "pnpm vite build" {
+		t.Errorf("Expected buildCommand 'pnpm vite build', got '%s'", viewsTask.Options.BuildCommand)
 	}
 
 	if viewsTask.Options.OutputDir != "dist" {
@@ -133,7 +133,7 @@ func TestCollectAllTasks_WithViewsForceInclude(t *testing.T) {
 			ResourceName: "[core]",
 			Views: &config.ViewsConfig{
 				Path:         "./core/views",
-				Framework:    "react",
+				Framework:    "vite",
 				ForceInclude: []string{"favicon.ico", "*.mp3"},
 			},
 		},
@@ -144,7 +144,7 @@ func TestCollectAllTasks_WithViewsForceInclude(t *testing.T) {
 					ResourceName: "admin-panel",
 					Views: &config.ViewsConfig{
 						Path:         "./resources/admin/ui",
-						Framework:    "vue",
+						Framework:    "vanilla",
 						ForceInclude: []string{"robots.txt"},
 					},
 				},
@@ -205,7 +205,7 @@ func TestCollectAllTasks_WithExplicitResources(t *testing.T) {
 					CustomCompiler: "./scripts/admin-build.js",
 					Views: &config.ViewsConfig{
 						Path:      "./resources/admin/ui",
-						Framework: "vue",
+						Framework: "vanilla",
 					},
 				},
 			},
@@ -255,8 +255,8 @@ func TestCollectAllTasks_WithExplicitResources(t *testing.T) {
 		t.Fatal("Expected admin-panel/ui task")
 	}
 
-	if adminViewsTask.Options.Framework != "vue" {
-		t.Errorf("Expected framework 'vue', got '%s'", adminViewsTask.Options.Framework)
+	if adminViewsTask.Options.Framework != "vanilla" {
+		t.Errorf("Expected framework 'vanilla', got '%s'", adminViewsTask.Options.Framework)
 	}
 }
 
@@ -393,6 +393,296 @@ func TestCollectAllTasks_WithGlobPatterns(t *testing.T) {
 	if resourceCount != 2 {
 		t.Errorf("Expected 2 resource tasks, got %d", resourceCount)
 	}
+}
+
+func TestDetectViewFramework_PrefersViteConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	viewDir := filepath.Join(tmpDir, "ui")
+	if err := os.MkdirAll(filepath.Join(viewDir, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "src", "app.tsx"), []byte("export const App = () => null\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	framework := detectViewFramework(viewDir)
+	if framework != "vite" {
+		t.Fatalf("Expected framework 'vite', got '%s'", framework)
+	}
+}
+
+func TestDetectViewFramework_UsesProjectRootViteConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	viewDir := filepath.Join(tmpDir, "resources", "chat", "view")
+	if err := os.MkdirAll(filepath.Join(viewDir, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "opencore.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "src", "main.ts"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	framework := detectViewFramework(viewDir)
+	if framework != "vite" {
+		t.Fatalf("Expected framework 'vite', got '%s'", framework)
+	}
+}
+
+func TestCollectAllTasks_ViewsFrameworkWithoutPathUsesAutodiscovery(t *testing.T) {
+	tmpDir := t.TempDir()
+	resourceDir := filepath.Join(tmpDir, "resources", "auth")
+	viewDir := filepath.Join(resourceDir, "ui")
+	if err := os.MkdirAll(viewDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "core"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "main.tsx"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path:         "./resources/auth",
+					ResourceName: "auth",
+					Views: &config.ViewsConfig{
+						Framework: "vite",
+					},
+				},
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	var viewsTask *BuildTask
+	for i := range tasks {
+		if tasks[i].Type == TypeViews && tasks[i].ResourceName == "auth/ui" {
+			viewsTask = &tasks[i]
+			break
+		}
+	}
+
+	if viewsTask == nil {
+		t.Fatal("Expected auth/ui views task")
+	}
+
+	if viewsTask.Path != "./resources/auth/ui" {
+		t.Fatalf("Expected autodetected views path './resources/auth/ui', got '%s'", viewsTask.Path)
+	}
+	if viewsTask.Options.Framework != "vite" {
+		t.Fatalf("Expected views framework 'vite', got '%s'", viewsTask.Options.Framework)
+	}
+}
+
+func TestCollectAllTasks_ResourcesDefaultViewsFrameworkApplied(t *testing.T) {
+	tmpDir := t.TempDir()
+	resourceDir := filepath.Join(tmpDir, "resources", "auth")
+	viewDir := filepath.Join(resourceDir, "ui")
+	if err := os.MkdirAll(viewDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "core"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "vite.config.ts"), []byte("export default {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "main.tsx"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{
+			Include: []string{"./resources/*"},
+			Views: &config.ViewsConfig{
+				Framework: "vite",
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	var viewsTask *BuildTask
+	for i := range tasks {
+		if tasks[i].Type == TypeViews && tasks[i].ResourceName == "auth/ui" {
+			viewsTask = &tasks[i]
+			break
+		}
+	}
+
+	if viewsTask == nil {
+		t.Fatal("Expected auth/ui views task")
+	}
+	if viewsTask.Options.Framework != "vite" {
+		t.Fatalf("Expected views framework 'vite', got '%s'", viewsTask.Options.Framework)
+	}
+}
+
+func TestCollectAllTasks_ExplicitResourceSkipsGlobDuplicateWithPathNormalization(t *testing.T) {
+	tmpDir := t.TempDir()
+	resourceDir := filepath.Join(tmpDir, "resources", "xchat")
+	viewDir := filepath.Join(resourceDir, "ui")
+	if err := os.MkdirAll(viewDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "core"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "index.ts"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{
+			Include: []string{"./resources/*"},
+			Explicit: []config.ExplicitResource{
+				{
+					Path: "./resources/xchat",
+					Views: &config.ViewsConfig{
+						Framework: "vanilla",
+					},
+				},
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	resourceCount := 0
+	viewsCount := 0
+	for _, task := range tasks {
+		if task.ResourceName == "xchat" && task.Type == TypeResource {
+			resourceCount++
+		}
+		if task.ResourceName == "xchat/ui" && task.Type == TypeViews {
+			viewsCount++
+		}
+	}
+
+	if resourceCount != 1 {
+		t.Fatalf("Expected xchat resource to be collected once, got %d", resourceCount)
+	}
+	if viewsCount != 1 {
+		t.Fatalf("Expected xchat views to be collected once, got %d", viewsCount)
+	}
+	for _, task := range tasks {
+		if task.ResourceName == "xchat/ui" && task.Options.Framework != "vanilla" {
+			t.Fatalf("Expected explicit xchat views framework 'vanilla', got '%s'", task.Options.Framework)
+		}
+	}
+}
+
+func TestCollectAllTasks_ExplicitResourceViewsInheritResourceDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	resourceDir := filepath.Join(tmpDir, "resources", "xchat")
+	viewDir := filepath.Join(resourceDir, "ui")
+	if err := os.MkdirAll(viewDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "core"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "index.ts"), []byte("export {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "core",
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{{Path: "./resources/xchat"}},
+			Views: &config.ViewsConfig{
+				Framework: "vite",
+			},
+		},
+		Standalones: &config.StandaloneConfig{
+			Views: &config.ViewsConfig{
+				Framework: "vanilla",
+			},
+		},
+		Build: config.BuildConfig{},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	for _, task := range tasks {
+		if task.ResourceName == "xchat/ui" && task.Type == TypeViews {
+			if task.Options.Framework != "vite" {
+				t.Fatalf("Expected explicit resource views to inherit resource defaults 'vite', got '%s'", task.Options.Framework)
+			}
+			return
+		}
+	}
+
+	t.Fatal("Expected xchat/ui views task")
 }
 
 func TestCollectAllTasks_BuildOptions(t *testing.T) {

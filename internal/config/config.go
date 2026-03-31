@@ -22,6 +22,14 @@ type Config struct {
 	Dev         DevConfig         `json:"dev"`
 }
 
+func normalizedConfigPath(p string) string {
+	if p == "" {
+		return ""
+	}
+
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(p)))
+}
+
 type AdapterConfig struct {
 	Server *AdapterBinding `json:"server,omitempty"`
 	Client *AdapterBinding `json:"client,omitempty"`
@@ -265,6 +273,7 @@ type EntryPoints struct {
 
 type ResourcesConfig struct {
 	Include  []string           `json:"include"`
+	Views    *ViewsConfig       `json:"views,omitempty"`
 	Explicit []ExplicitResource `json:"explicit"`
 }
 
@@ -292,11 +301,12 @@ type ResourceBuildConfig struct {
 
 type StandaloneConfig struct {
 	Include  []string           `json:"include"`
+	Views    *ViewsConfig       `json:"views,omitempty"`
 	Explicit []ExplicitResource `json:"explicit,omitempty"`
 }
 
 type ViewsConfig struct {
-	Path         string   `json:"path"`
+	Path         string   `json:"path,omitempty"`
 	Framework    string   `json:"framework,omitempty"`
 	EntryPoint   string   `json:"entryPoint,omitempty"`   // Optional: explicit entry point (e.g., "main.ng.ts")
 	Ignore       []string `json:"ignore,omitempty"`       // Optional: ignore patterns (e.g., ["*.config.ts", "test/**"])
@@ -699,12 +709,26 @@ func (c *Config) GetResourceViews(path string) *ViewsConfig {
 			return res.Views
 		}
 	}
+	if c.Resources.Views != nil {
+		for _, res := range c.Resources.Explicit {
+			if res.Path == path {
+				return c.Resources.Views
+			}
+		}
+	}
 
 	// Check standalone
 	if c.Standalones != nil {
 		for _, res := range c.Standalones.Explicit {
 			if res.Path == path && res.Views != nil {
 				return res.Views
+			}
+		}
+		if c.Standalones.Views != nil {
+			for _, res := range c.Standalones.Explicit {
+				if res.Path == path {
+					return c.Standalones.Views
+				}
 			}
 		}
 	}
@@ -714,8 +738,9 @@ func (c *Config) GetResourceViews(path string) *ViewsConfig {
 
 // GetExplicitResource returns the explicit resource config for a path, if any
 func (c *Config) GetExplicitResource(path string) *ExplicitResource {
+	normalizedPath := normalizedConfigPath(path)
 	for i := range c.Resources.Explicit {
-		if c.Resources.Explicit[i].Path == path {
+		if normalizedConfigPath(c.Resources.Explicit[i].Path) == normalizedPath {
 			return &c.Resources.Explicit[i]
 		}
 	}
@@ -727,8 +752,9 @@ func (c *Config) GetExplicitStandalone(path string) *ExplicitResource {
 	if c.Standalones == nil {
 		return nil
 	}
+	normalizedPath := normalizedConfigPath(path)
 	for i := range c.Standalones.Explicit {
-		if c.Standalones.Explicit[i].Path == path {
+		if normalizedConfigPath(c.Standalones.Explicit[i].Path) == normalizedPath {
 			return &c.Standalones.Explicit[i]
 		}
 	}

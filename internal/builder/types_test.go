@@ -72,7 +72,7 @@ func TestBuildOptionsJSON(t *testing.T) {
 		SourceMaps:           false,
 		Target:               "ES2020",
 		ForceInclude:         []string{"favicon.ico"},
-		BuildCommand:         "pnpm astro build",
+		BuildCommand:         "pnpm vite build",
 		OutputDir:            "dist",
 		ServerBinaries:       []string{"bin"},
 		ServerBinaryPlatform: "linux",
@@ -80,7 +80,7 @@ func TestBuildOptionsJSON(t *testing.T) {
 			Server: "./src/server.ts",
 			Client: "./src/client.ts",
 		},
-		Framework: "react",
+		Framework: "vite",
 		Compile:   true,
 	}
 

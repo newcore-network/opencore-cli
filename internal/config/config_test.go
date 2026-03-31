@@ -41,9 +41,9 @@ func TestConfigParsing(t *testing.T) {
 			},
 			"views": {
 				"path": "./core/views",
-				"framework": "react",
+				"framework": "vite",
 				"forceInclude": ["favicon.ico"],
-				"buildCommand": "pnpm astro build",
+				"buildCommand": "pnpm vite build",
 				"outputDir": "dist"
 			},
 			"build": {
@@ -53,6 +53,9 @@ func TestConfigParsing(t *testing.T) {
 		},
 		"resources": {
 			"include": ["./resources/*"],
+			"views": {
+				"framework": "vite"
+			},
 			"explicit": [
 				{
 					"path": "./resources/admin",
@@ -63,6 +66,9 @@ func TestConfigParsing(t *testing.T) {
 		},
 		"standalones": {
 			"include": ["./standalones/*"],
+			"views": {
+				"framework": "vite"
+			},
 			"explicit": [
 				{
 					"path": "./standalones/legacy",
@@ -136,8 +142,8 @@ func TestConfigParsing(t *testing.T) {
 		if len(cfg.Core.Views.ForceInclude) != 1 || cfg.Core.Views.ForceInclude[0] != "favicon.ico" {
 			t.Errorf("Expected forceInclude to contain 'favicon.ico'")
 		}
-		if cfg.Core.Views.BuildCommand != "pnpm astro build" {
-			t.Errorf("Expected buildCommand 'pnpm astro build', got '%s'", cfg.Core.Views.BuildCommand)
+		if cfg.Core.Views.BuildCommand != "pnpm vite build" {
+			t.Errorf("Expected buildCommand 'pnpm vite build', got '%s'", cfg.Core.Views.BuildCommand)
 		}
 		if cfg.Core.Views.OutputDir != "dist" {
 			t.Errorf("Expected outputDir 'dist', got '%s'", cfg.Core.Views.OutputDir)
@@ -158,6 +164,9 @@ func TestConfigParsing(t *testing.T) {
 	if len(cfg.Resources.Include) != 1 {
 		t.Errorf("Expected 1 resource include pattern, got %d", len(cfg.Resources.Include))
 	}
+	if cfg.Resources.Views == nil || cfg.Resources.Views.Framework != "vite" {
+		t.Errorf("Expected resources default views framework 'vite'")
+	}
 
 	if len(cfg.Resources.Explicit) != 1 {
 		t.Errorf("Expected 1 explicit resource, got %d", len(cfg.Resources.Explicit))
@@ -172,6 +181,9 @@ func TestConfigParsing(t *testing.T) {
 	if cfg.Standalones == nil {
 		t.Error("Expected standalones config to be set")
 	} else {
+		if cfg.Standalones.Views == nil || cfg.Standalones.Views.Framework != "vite" {
+			t.Errorf("Expected standalones default views framework 'vite'")
+		}
 		if len(cfg.Standalones.Explicit) != 1 {
 			t.Errorf("Expected 1 explicit standalone, got %d", len(cfg.Standalones.Explicit))
 		} else {
@@ -390,6 +402,13 @@ func TestGetExplicitResource(t *testing.T) {
 		t.Errorf("Expected resourceName 'admin-panel', got '%s'", res.ResourceName)
 	}
 
+	res = cfg.GetExplicitResource("resources/admin")
+	if res == nil {
+		t.Error("Expected normalized resource path to match explicit resource")
+	} else if res.ResourceName != "admin-panel" {
+		t.Errorf("Expected resourceName 'admin-panel', got '%s'", res.ResourceName)
+	}
+
 	// Test non-existing resource
 	res = cfg.GetExplicitResource("./resources/unknown")
 	if res != nil {
@@ -419,6 +438,13 @@ func TestGetExplicitStandalone(t *testing.T) {
 		t.Error("Expected compile to be false")
 	}
 
+	res = cfg.GetExplicitStandalone("standalones/legacy")
+	if res == nil {
+		t.Error("Expected normalized standalone path to match explicit standalone")
+	} else if res.Compile == nil || *res.Compile != false {
+		t.Error("Expected compile to be false")
+	}
+
 	// Test non-existing standalone
 	res = cfg.GetExplicitStandalone("./standalones/unknown")
 	if res != nil {
@@ -439,7 +465,7 @@ func TestGetResourceViews(t *testing.T) {
 			Path: "./core",
 			Views: &ViewsConfig{
 				Path:      "./core/views",
-				Framework: "react",
+				Framework: "vite",
 			},
 		},
 		Resources: ResourcesConfig{
@@ -448,7 +474,7 @@ func TestGetResourceViews(t *testing.T) {
 					Path: "./resources/admin",
 					Views: &ViewsConfig{
 						Path:      "./resources/admin/ui",
-						Framework: "vue",
+						Framework: "vanilla",
 					},
 				},
 			},
@@ -460,8 +486,8 @@ func TestGetResourceViews(t *testing.T) {
 	if views == nil {
 		t.Error("Expected views for ./core")
 	} else {
-		if views.Framework != "react" {
-			t.Errorf("Expected framework 'react', got '%s'", views.Framework)
+		if views.Framework != "vite" {
+			t.Errorf("Expected framework 'vite', got '%s'", views.Framework)
 		}
 	}
 
@@ -470,8 +496,8 @@ func TestGetResourceViews(t *testing.T) {
 	if views == nil {
 		t.Error("Expected views for ./resources/admin")
 	} else {
-		if views.Framework != "vue" {
-			t.Errorf("Expected framework 'vue', got '%s'", views.Framework)
+		if views.Framework != "vanilla" {
+			t.Errorf("Expected framework 'vanilla', got '%s'", views.Framework)
 		}
 	}
 

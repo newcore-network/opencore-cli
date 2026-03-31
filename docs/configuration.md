@@ -198,3 +198,58 @@ Notes:
 | `external` | `string[]` | `[]` | External packages (server only) |
 
 See [FiveM Runtime](./fivem-runtime.md) for FiveM platform details.
+
+## Views Vite Configuration
+
+OpenCore now supports only two view build modes:
+
+- `vite`: recommended for React, Vue, Svelte, Astro, Tailwind, PostCSS, Sass, and any modern frontend stack
+- `vanilla`: minimal HTML/CSS/JS/TS views built directly by the CLI
+
+Resolution order:
+
+- `views.framework: 'vite'` forces Vite
+- `views.framework: 'vanilla'` forces the minimal CLI runner
+- Without an explicit framework, OpenCore uses Vite when it finds `vite.config.*` in the view directory or in the project root next to `opencore.config.ts`
+- Otherwise, OpenCore falls back to `vanilla`
+
+Recommended setup:
+
+- Keep a shared root `vite.config.ts` next to `opencore.config.ts`
+- Let each project configure its own framework plugins, CSS pipeline, and browser targets in Vite
+- Add PostCSS only when your frontend needs it, especially for older runtimes such as RageMP CEF
+
+Helper:
+
+- OpenCore exposes `createOpenCoreViteConfig` from `@open-core/cli/vite` for shared root configs
+- The helper auto-resolves `OPENCORE_VIEW_ROOT`, `OPENCORE_VIEW_OUTDIR`, and `postcss.config.*` from the OpenCore project root
+
+Example:
+
+```ts
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { createOpenCoreViteConfig } from '@open-core/cli/vite'
+
+export default createOpenCoreViteConfig({
+  plugins: [react(), tailwindcss()],
+  build: {
+    target: 'chrome97',
+  },
+})
+```
+
+Per-view `package.json` scripts are optional. They are useful for local development, but `opencore build` does not require them.
+
+Migration notes:
+
+- `views.framework: 'react' | 'vue' | 'svelte' | 'astro'` should now become `views.framework: 'vite'`
+- `views.framework: 'vanilla'` is the only non-Vite mode
+- Shared root `vite.config.*` is the preferred place for framework-specific plugins and CSS setup
+
+Removed support:
+
+- The CLI no longer provides dedicated React, Vue, Svelte, or Astro builders
+- The CLI no longer auto-manages Tailwind/PostCSS/Sass for views
+
+If you need any of those features, switch the view to `framework: 'vite'` and configure them in your Vite project.
