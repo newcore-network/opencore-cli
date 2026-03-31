@@ -269,6 +269,19 @@ async function loadProjectPostcssPlugins(viewPath, options = {}) {
 }
 
 function detectViteFramework(viewPath) {
+    if (findViteConfigPath(viewPath)) {
+        return true
+    }
+
+    const projectRoot = findProjectRoot(viewPath)
+    if (projectRoot && findViteConfigPath(projectRoot)) {
+        return true
+    }
+
+    return false
+}
+
+function findViteConfigPath(dirPath) {
     const configFiles = [
         'vite.config.js',
         'vite.config.ts',
@@ -277,12 +290,13 @@ function detectViteFramework(viewPath) {
     ]
 
     for (const fileName of configFiles) {
-        if (fs.existsSync(path.join(viewPath, fileName))) {
-            return true
+        const candidate = path.join(dirPath, fileName)
+        if (fs.existsSync(candidate)) {
+            return candidate
         }
     }
 
-    return false
+    return null
 }
 
 async function buildViteViews(viewPath, outDir, options = {}) {
@@ -308,14 +322,29 @@ async function buildViteViews(viewPath, outDir, options = {}) {
 
     const absOutDir = path.resolve(outDir).replace(/\\/g, '/')
     const baseCommand = options.buildCommand || execCmd(options, 'vite', ['build'])
-    const buildCommand = `${baseCommand} --outDir "${absOutDir}"`
+    const localViteConfig = findViteConfigPath(viewPath)
+    const projectRoot = findProjectRoot(viewPath)
+    const rootViteConfig = projectRoot ? findViteConfigPath(projectRoot) : null
+
+    let commandParts = [`${baseCommand} --outDir "${absOutDir}"`]
+    let runCwd = viewPath
+
+    if (localViteConfig) {
+        commandParts.push(`--config "${localViteConfig.replace(/\\/g, '/')}"`)
+    } else if (rootViteConfig) {
+        commandParts.push(`--config "${rootViteConfig.replace(/\\/g, '/')}"`)
+        commandParts.push(`--root "${path.resolve(viewPath).replace(/\\/g, '/')}"`)
+        runCwd = projectRoot
+    }
+
+    const buildCommand = commandParts.join(' ')
 
     console.log(`[views] Vite detected, running: ${buildCommand}`)
 
     const spawn = require('child_process').spawn
 
     await new Promise((resolve, reject) => {
-        const proc = spawn(buildCommand, { cwd: viewPath, stdio: 'inherit', shell: true })
+        const proc = spawn(buildCommand, { cwd: runCwd, stdio: 'inherit', shell: true })
         proc.on('close', code => {
             if (code === 0) {
                 resolve()
