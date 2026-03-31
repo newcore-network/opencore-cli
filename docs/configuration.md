@@ -241,6 +241,12 @@ export default createOpenCoreViteConfig({
 
 Per-view `package.json` scripts are optional. They are useful for local development, but `opencore build` does not require them.
 
+Migration notes:
+
+- `views.framework: 'react' | 'vue' | 'svelte' | 'astro'` should now become `views.framework: 'vite'`
+- `views.framework: 'vanilla'` is the only non-Vite mode
+- Shared root `vite.config.*` is the preferred place for framework-specific plugins and CSS setup
+
 Removed support:
 
 - The CLI no longer provides dedicated React, Vue, Svelte, or Astro builders
