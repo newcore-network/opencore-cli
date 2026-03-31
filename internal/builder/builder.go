@@ -394,6 +394,19 @@ func detectViewFramework(viewPath string) string {
 }
 
 func hasViteConfig(viewPath string) bool {
+	if findViteConfigPath(viewPath) != "" {
+		return true
+	}
+
+	projectRoot := findProjectRootFromPath(viewPath)
+	if projectRoot != "" && findViteConfigPath(projectRoot) != "" {
+		return true
+	}
+
+	return false
+}
+
+func findViteConfigPath(dir string) string {
 	configFiles := []string{
 		"vite.config.js",
 		"vite.config.ts",
@@ -402,12 +415,38 @@ func hasViteConfig(viewPath string) bool {
 	}
 
 	for _, fileName := range configFiles {
-		if _, err := os.Stat(filepath.Join(viewPath, fileName)); err == nil {
-			return true
+		candidate := filepath.Join(dir, fileName)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
 		}
 	}
 
-	return false
+	return ""
+}
+
+func findProjectRootFromPath(startPath string) string {
+	currentPath, err := filepath.Abs(startPath)
+	if err != nil {
+		return ""
+	}
+
+	info, err := os.Stat(currentPath)
+	if err == nil && !info.IsDir() {
+		currentPath = filepath.Dir(currentPath)
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(currentPath, "opencore.config.ts")); err == nil {
+			return currentPath
+		}
+
+		parent := filepath.Dir(currentPath)
+		if parent == currentPath {
+			return ""
+		}
+
+		currentPath = parent
+	}
 }
 
 func resolveViewsConfig(resourcePath string, explicit *config.ViewsConfig) *config.ViewsConfig {

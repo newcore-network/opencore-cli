@@ -237,3 +237,14 @@ export default {
   plugins: [tailwindcss(), autoprefixer()],
 }
 ```
+
+## Views Vite Configuration
+
+OpenCore treats Vite as the primary frontend build system for views:
+
+- The recommended setup is a shared `vite.config.ts` in the same root where `opencore.config.ts` exists.
+- View folders (for example `resources/chat/view`) do not need a local `vite.config.ts` by default.
+- During build, OpenCore first checks for a local `vite.config.*` in the view directory.
+- If local config is missing, OpenCore falls back to the root `vite.config.*` and builds the target view with that shared config.
+
+For advanced cases, keep local config files as override layers that extend shared root defaults with `mergeConfig`.
