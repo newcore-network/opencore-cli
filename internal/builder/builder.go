@@ -122,6 +122,16 @@ func buildSideValue(enabled bool, cfg *config.BuildSideConfig) SideConfigValue {
 	return SideConfigValue{Enabled: true, Options: buildSideOptionsFromConfig(cfg)}
 }
 
+func buildResourceSideValue(side *config.ResourceBuildSideConfig, base *config.BuildSideConfig) SideConfigValue {
+	if side == nil {
+		return buildSideValue(true, base)
+	}
+	if !side.Enabled {
+		return SideConfigValue{Enabled: false, Options: nil}
+	}
+	return buildSideValue(true, mergeBuildSideConfig(base, side.Options))
+}
+
 func New(cfg *config.Config) *Builder {
 	return &Builder{
 		config:          cfg,
@@ -797,10 +807,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				}
 				if explicit.Build != nil {
 					if explicit.Build.Server != nil {
-						task.Options.Server = buildSideValue(*explicit.Build.Server, b.config.Build.Server)
+						task.Options.Server = buildResourceSideValue(explicit.Build.Server, b.config.Build.Server)
 					}
 					if explicit.Build.Client != nil {
-						task.Options.Client = buildSideValue(*explicit.Build.Client, b.config.Build.Client)
+						task.Options.Client = buildResourceSideValue(explicit.Build.Client, b.config.Build.Client)
 					}
 					if explicit.Build.NUI != nil {
 						task.Options.NUI = *explicit.Build.NUI
@@ -927,10 +937,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 
 		if res.Build != nil {
 			if res.Build.Server != nil {
-				task.Options.Server = buildSideValue(*res.Build.Server, b.config.Build.Server)
+				task.Options.Server = buildResourceSideValue(res.Build.Server, b.config.Build.Server)
 			}
 			if res.Build.Client != nil {
-				task.Options.Client = buildSideValue(*res.Build.Client, b.config.Build.Client)
+				task.Options.Client = buildResourceSideValue(res.Build.Client, b.config.Build.Client)
 			}
 			if res.Build.NUI != nil {
 				task.Options.NUI = *res.Build.NUI

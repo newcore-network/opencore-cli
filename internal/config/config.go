@@ -289,14 +289,38 @@ type ExplicitResource struct {
 }
 
 type ResourceBuildConfig struct {
-	Server               *bool    `json:"server,omitempty"`
-	Client               *bool    `json:"client,omitempty"`
-	NUI                  *bool    `json:"nui,omitempty"`
-	Minify               *bool    `json:"minify,omitempty"`
-	SourceMaps           *bool    `json:"sourceMaps,omitempty"`
-	ServerBinaries       []string `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string   `json:"serverBinaryPlatform,omitempty"`
-	LogLevel             string   `json:"logLevel,omitempty"`
+	Server               *ResourceBuildSideConfig `json:"server,omitempty"`
+	Client               *ResourceBuildSideConfig `json:"client,omitempty"`
+	NUI                  *bool                    `json:"nui,omitempty"`
+	Minify               *bool                    `json:"minify,omitempty"`
+	SourceMaps           *bool                    `json:"sourceMaps,omitempty"`
+	ServerBinaries       []string                 `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string                   `json:"serverBinaryPlatform,omitempty"`
+	LogLevel             string                   `json:"logLevel,omitempty"`
+}
+
+type ResourceBuildSideConfig struct {
+	Enabled bool
+	Options *BuildSideConfig
+}
+
+func (s *ResourceBuildSideConfig) UnmarshalJSON(data []byte) error {
+	var enabled bool
+	if err := json.Unmarshal(data, &enabled); err == nil {
+		s.Enabled = enabled
+		s.Options = nil
+		return nil
+	}
+
+	var opts BuildSideConfig
+	if err := json.Unmarshal(data, &opts); err != nil {
+		return err
+	}
+
+	// An object means the side is enabled with per-resource overrides.
+	s.Enabled = true
+	s.Options = &opts
+	return nil
 }
 
 type StandaloneConfig struct {
