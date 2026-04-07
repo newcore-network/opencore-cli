@@ -60,6 +60,12 @@ func TestConfigParsing(t *testing.T) {
 				{
 					"path": "./resources/admin",
 					"resourceName": "admin-panel",
+					"build": {
+						"server": {
+							"external": ["pg", "typeorm"],
+							"target": "node20"
+						}
+					},
 					"customCompiler": "./scripts/admin-build.js"
 				}
 			]
@@ -175,6 +181,21 @@ func TestConfigParsing(t *testing.T) {
 		if res.CustomCompiler != "./scripts/admin-build.js" {
 			t.Errorf("Expected resource customCompiler './scripts/admin-build.js', got '%s'", res.CustomCompiler)
 		}
+		if res.Build == nil || res.Build.Server == nil {
+			t.Fatal("Expected resource build server override to be set")
+		}
+		if !res.Build.Server.Enabled {
+			t.Fatal("Expected resource build server override to be enabled")
+		}
+		if res.Build.Server.Options == nil {
+			t.Fatal("Expected resource build server options to be set")
+		}
+		if res.Build.Server.Options.Target != "node20" {
+			t.Errorf("Expected resource build server target 'node20', got '%s'", res.Build.Server.Options.Target)
+		}
+		if len(res.Build.Server.Options.External) != 2 || res.Build.Server.Options.External[0] != "pg" || res.Build.Server.Options.External[1] != "typeorm" {
+			t.Errorf("Expected resource build server externals [pg typeorm], got %#v", res.Build.Server.Options.External)
+		}
 	}
 
 	// Test standalone config
@@ -212,6 +233,19 @@ func TestConfigParsing(t *testing.T) {
 	}
 	if cfg.Build.ServerBinaryPlatform != "linux" {
 		t.Errorf("Expected serverBinaryPlatform 'linux'")
+	}
+}
+
+func TestResourceBuildSideConfigUnmarshalBool(t *testing.T) {
+	var side ResourceBuildSideConfig
+	if err := json.Unmarshal([]byte(`false`), &side); err != nil {
+		t.Fatalf("Failed to parse bool side config: %v", err)
+	}
+	if side.Enabled {
+		t.Fatal("Expected side config to be disabled")
+	}
+	if side.Options != nil {
+		t.Fatal("Expected side config options to be nil")
 	}
 }
 

@@ -686,7 +686,7 @@ func TestCollectAllTasks_ExplicitResourceViewsInheritResourceDefaults(t *testing
 }
 
 func TestCollectAllTasks_BuildOptions(t *testing.T) {
-	serverFalse := false
+	serverFalse := &config.ResourceBuildSideConfig{Enabled: false}
 
 	cfg := &config.Config{
 		Name:        "test-project",
@@ -701,7 +701,7 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 				{
 					Path: "./resources/client-only",
 					Build: &config.ResourceBuildConfig{
-						Server: &serverFalse,
+						Server: serverFalse,
 					},
 				},
 			},
@@ -748,6 +748,68 @@ func TestCollectAllTasks_BuildOptions(t *testing.T) {
 	}
 	if clientOnlyTask.Options.Client.Options != nil && clientOnlyTask.Options.Client.Options.Target != "ES2021" {
 		t.Errorf("Expected client target 'ES2021', got '%s'", clientOnlyTask.Options.Client.Options.Target)
+	}
+}
+
+func TestCollectAllTasks_ResourceSideOverrides(t *testing.T) {
+	cfg := &config.Config{
+		Name:        "test-project",
+		Destination: "./dist",
+		OutDir:      "./dist",
+		Core: config.CoreConfig{
+			Path:         "./core",
+			ResourceName: "[core]",
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path: "./resources/database",
+					Build: &config.ResourceBuildConfig{
+						Server: &config.ResourceBuildSideConfig{
+							Enabled: true,
+							Options: &config.BuildSideConfig{
+								External: []string{"pg", "typeorm"},
+							},
+						},
+					},
+				},
+			},
+		},
+		Build: config.BuildConfig{
+			Server: &config.BuildSideConfig{Target: "node14"},
+			Client: &config.BuildSideConfig{Target: "ES2020"},
+		},
+	}
+
+	builder := New(cfg)
+	tasks := builder.collectAllTasks()
+
+	var databaseTask *BuildTask
+	for i := range tasks {
+		if tasks[i].Path == "./resources/database" {
+			databaseTask = &tasks[i]
+			break
+		}
+	}
+
+	if databaseTask == nil {
+		t.Fatal("Expected database task")
+	}
+
+	if !databaseTask.Options.Server.Enabled {
+		t.Fatal("Expected Server to be enabled")
+	}
+	if databaseTask.Options.Server.Options == nil {
+		t.Fatal("Expected Server options to be present")
+	}
+	if databaseTask.Options.Server.Options.Target != "node14" {
+		t.Errorf("Expected server target 'node14', got '%s'", databaseTask.Options.Server.Options.Target)
+	}
+	if len(databaseTask.Options.Server.Options.External) != 2 {
+		t.Fatalf("Expected 2 server externals, got %d", len(databaseTask.Options.Server.Options.External))
+	}
+	if databaseTask.Options.Server.Options.External[0] != "pg" || databaseTask.Options.Server.Options.External[1] != "typeorm" {
+		t.Errorf("Expected server externals [pg typeorm], got %#v", databaseTask.Options.Server.Options.External)
 	}
 }
 
