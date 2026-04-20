@@ -11,6 +11,9 @@
         "skipLibCheck": true,
         "strict": true,
         "baseUrl": ".",
+        "paths": {
+            "@opencore/environment": ["./environments/environment.development.ts"]
+        },
         "esModuleInterop": true,
         "experimentalDecorators": true,
         "emitDecoratorMetadata": true,

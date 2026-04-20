@@ -174,6 +174,12 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
 
+	b.applyEnvironmentOverrides()
+
+	if err := b.validateEnvironment(); err != nil {
+		return err
+	}
+
 	// Collect all build tasks
 	tasks := b.collectAllTasks()
 
@@ -267,6 +273,12 @@ func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]B
 
 	// Cleanup embedded script on exit
 	defer b.resourceBuilder.Cleanup()
+
+	b.applyEnvironmentOverrides()
+
+	if err := b.validateEnvironment(); err != nil {
+		return nil, err
+	}
 
 	if err := b.validateTaskSources(tasks); err != nil {
 		return nil, err
@@ -1142,11 +1154,127 @@ func (b *Builder) collectAllTasks() []BuildTask {
 		}
 	}
 
+	envAliases := b.collectEnvironmentAliases()
 	for i := range tasks {
 		tasks[i].Options.PackageManager = pm
 		tasks[i].Options.ResourceName = tasks[i].ResourceName
+		if len(envAliases) > 0 {
+			tasks[i].Options.EnvironmentAliases = envAliases
+		}
 	}
 	return tasks
+}
+
+// applyEnvironmentOverrides merges the active environment's build overrides
+// (minify, sourceMaps, logLevel) onto b.config.Build before tasks are collected.
+func (b *Builder) applyEnvironmentOverrides() {
+	envName := b.config.Build.Environment
+	if envName == "" {
+		return
+	}
+	override, ok := b.config.Build.Environments[envName]
+	if !ok {
+		return
+	}
+	if override.Minify != nil {
+		b.config.Build.Minify = *override.Minify
+	}
+	if override.SourceMaps != nil {
+		b.config.Build.SourceMaps = *override.SourceMaps
+	}
+	if override.LogLevel != "" {
+		b.config.Build.LogLevel = override.LogLevel
+	}
+}
+
+// collectEnvironmentAliases builds the esbuild alias map for the active environment:
+// - @opencore/environment → environments/environment.<name>.ts (if exists)
+// - each fileReplacement from the environment override (if any)
+func (b *Builder) collectEnvironmentAliases() map[string]string {
+	aliases := map[string]string{}
+	envName := b.config.Build.Environment
+	if envName == "" {
+		envName = "development"
+	}
+
+	envFile := filepath.Join("environments", fmt.Sprintf("environment.%s.ts", envName))
+	if abs, err := filepath.Abs(envFile); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			aliases["@opencore/environment"] = filepath.ToSlash(abs)
+		}
+	}
+
+	if override, ok := b.config.Build.Environments[envName]; ok {
+		for _, fr := range override.FileReplacements {
+			replaceKey := fr.Replace
+			withPath := fr.With
+
+			if isRelativePath(fr.Replace) {
+				if abs, err := filepath.Abs(fr.Replace); err == nil {
+					replaceKey = filepath.ToSlash(abs)
+				}
+			}
+			if isRelativePath(fr.With) {
+				if abs, err := filepath.Abs(fr.With); err == nil {
+					withPath = filepath.ToSlash(abs)
+				}
+			}
+
+			aliases[replaceKey] = withPath
+		}
+	}
+
+	return aliases
+}
+
+func isRelativePath(s string) bool {
+	return strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../")
+}
+
+// validateEnvironment checks that the active environment file exists when the
+// environments/ directory is present. Returns a descriptive error with available
+// environment names if the requested one is missing.
+func (b *Builder) validateEnvironment() error {
+	envDir := "environments"
+	if _, err := os.Stat(envDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	envName := b.config.Build.Environment
+	if envName == "" {
+		envName = "development"
+	}
+
+	envFile := filepath.Join(envDir, fmt.Sprintf("environment.%s.ts", envName))
+	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		available := b.findAvailableEnvironments()
+		if len(available) > 0 {
+			return fmt.Errorf(
+				"environment %q not found (%s)\n  Available environments: %s",
+				envName, envFile, strings.Join(available, ", "),
+			)
+		}
+		return fmt.Errorf("environment %q not found (%s)", envName, envFile)
+	}
+
+	return nil
+}
+
+// findAvailableEnvironments scans environments/ for environment.<name>.ts files
+// and returns the list of defined environment names.
+func (b *Builder) findAvailableEnvironments() []string {
+	matches, _ := filepath.Glob(filepath.Join("environments", "environment.*.ts"))
+	var names []string
+	for _, match := range matches {
+		base := filepath.Base(match)
+		name := strings.TrimPrefix(base, "environment.")
+		name = strings.TrimSuffix(name, ".ts")
+		if name != "" && name != "model" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // buildParallelTUI executes builds in parallel using worker pool with TUI

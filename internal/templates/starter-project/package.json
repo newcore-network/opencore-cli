@@ -15,7 +15,8 @@
   ],
   "scripts": {
     "dev": "opencore dev",
-    "build": "opencore build"
+    "build": "opencore build",
+    "build:production": "opencore build --environment production"
   },
   "devDependencies": {
     "@open-core/cli": "latest",

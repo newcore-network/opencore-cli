@@ -739,6 +739,68 @@ export interface BuildConfig {
    * ```
    */
   client?: SideBuildConfig;
+
+  /**
+   * Per-environment build overrides. The active environment is selected via the
+   * `--environment` CLI flag, the `OPENCORE_ENVIRONMENT` env var, or this field.
+   *
+   * When a build runs, the matching environment's options are merged over the
+   * global build config. The environment file at
+   * `environments/environment.<name>.ts` is aliased to `@opencore/environment`.
+   *
+   * @example
+   * ```typescript
+   * environments: {
+   *   development: {
+   *     minify: false,
+   *     sourceMaps: true,
+   *   },
+   *   production: {
+   *     minify: true,
+   *     sourceMaps: false,
+   *     logLevel: 'ERROR',
+   *     fileReplacements: [
+   *       { replace: './src/config/api.config.ts', with: './src/config/api.config.prod.ts' },
+   *     ],
+   *   },
+   * }
+   * ```
+   */
+  environments?: Record<string, EnvironmentOverride>;
+
+  /**
+   * The default environment to use when no `--environment` flag is provided.
+   * Can also be set via the `OPENCORE_ENVIRONMENT` environment variable.
+   * @default 'development'
+   */
+  environment?: string;
+}
+
+/**
+ * Per-environment build overrides applied when that environment is active.
+ */
+export interface EnvironmentOverride {
+  /** Override global minify setting for this environment. */
+  minify?: boolean;
+  /** Override global sourceMaps setting for this environment. */
+  sourceMaps?: boolean;
+  /** Override global logLevel setting for this environment. */
+  logLevel?: LogLevel;
+  /**
+   * File replacements applied at build time via esbuild aliases.
+   * Useful for swapping config files or mocks without touching source.
+   */
+  fileReplacements?: FileReplacement[];
+}
+
+/**
+ * Instructs esbuild to substitute one module/file for another at build time.
+ */
+export interface FileReplacement {
+  /** The module specifier or file path to replace. */
+  replace: string;
+  /** The module specifier or file path to use instead. */
+  with: string;
 }
 
 /**
