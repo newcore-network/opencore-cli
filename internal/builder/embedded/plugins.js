@@ -624,6 +624,24 @@ function createAutoloadControllersRedirectPlugin(resourcePath) {
     }
 }
 
+function createEnvironmentAliasPlugin(aliases) {
+    if (!aliases || Object.keys(aliases).length === 0) {
+        return null
+    }
+    return {
+        name: 'opencore-environment-aliases',
+        setup(build) {
+            build.onResolve({ filter: /.*/ }, (args) => {
+                const replacement = aliases[args.path]
+                if (replacement != null) {
+                    return { path: replacement }
+                }
+                return null
+            })
+        }
+    }
+}
+
 module.exports = {
     getEsbuild,
     createSwcPlugin,
@@ -634,5 +652,6 @@ module.exports = {
     createTsconfigPathsPlugin,
     createReflectMetadataPlugin,
     createAutoloadDynamicImportShimPlugin,
-    createAutoloadControllersRedirectPlugin
+    createAutoloadControllersRedirectPlugin,
+    createEnvironmentAliasPlugin,
 }

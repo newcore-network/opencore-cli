@@ -19,6 +19,8 @@ func NewDevCommand() *cobra.Command {
 		RunE:  runDev,
 	}
 
+	cmd.Flags().StringP("environment", "e", "", "Environment to use during development (e.g. development, production)")
+
 	return cmd
 }
 
@@ -33,6 +35,10 @@ func runDev(cmd *cobra.Command, args []string) error {
 	}
 	if err := os.Chdir(root); err != nil {
 		return fmt.Errorf("failed to switch to project root: %w", err)
+	}
+
+	if env, _ := cmd.Flags().GetString("environment"); env != "" {
+		cfg.Build.Environment = env
 	}
 
 	// Create watcher

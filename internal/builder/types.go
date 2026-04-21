@@ -78,31 +78,32 @@ func (s *SideConfigValue) UnmarshalJSON(data []byte) error {
 
 // BuildOptions contains build configuration for a resource
 type BuildOptions struct {
-	PackageManager       string          `json:"packageManager,omitempty"`
-	Server               SideConfigValue `json:"server"`
-	Client               SideConfigValue `json:"client"`
-	NUI                  bool            `json:"nui"`
-	Minify               bool            `json:"minify"`
-	SourceMaps           bool            `json:"sourceMaps"`
-	LogLevel             string          `json:"logLevel"`
-	Target               string          `json:"target"`
-	Runtime              string          `json:"runtime,omitempty"`
-	ManifestKind         string          `json:"manifestKind,omitempty"`
-	ServerOutDir         string          `json:"serverOutDir,omitempty"`
-	ClientOutDir         string          `json:"clientOutDir,omitempty"`
-	ServerOutFile        string          `json:"serverOutFile,omitempty"`
-	ClientOutFile        string          `json:"clientOutFile,omitempty"`
-	EntryPoints          *EntryPoints    `json:"entryPoints,omitempty"`
-	Framework            string          `json:"framework,omitempty"`
-	Compile              bool            `json:"compile"`
-	ViewEntry            string          `json:"viewEntry,omitempty"`
-	Ignore               []string        `json:"ignore,omitempty"`
-	ForceInclude         []string        `json:"forceInclude,omitempty"`
-	BuildCommand         string          `json:"buildCommand,omitempty"`
-	OutputDir            string          `json:"outputDir,omitempty"`
-	ResourceName         string          `json:"resourceName,omitempty"`
-	ServerBinaries       []string        `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string          `json:"serverBinaryPlatform,omitempty"`
+	PackageManager       string            `json:"packageManager,omitempty"`
+	Server               SideConfigValue   `json:"server"`
+	Client               SideConfigValue   `json:"client"`
+	NUI                  bool              `json:"nui"`
+	Minify               bool              `json:"minify"`
+	SourceMaps           bool              `json:"sourceMaps"`
+	LogLevel             string            `json:"logLevel"`
+	Target               string            `json:"target"`
+	Runtime              string            `json:"runtime,omitempty"`
+	ManifestKind         string            `json:"manifestKind,omitempty"`
+	ServerOutDir         string            `json:"serverOutDir,omitempty"`
+	ClientOutDir         string            `json:"clientOutDir,omitempty"`
+	ServerOutFile        string            `json:"serverOutFile,omitempty"`
+	ClientOutFile        string            `json:"clientOutFile,omitempty"`
+	EntryPoints          *EntryPoints      `json:"entryPoints,omitempty"`
+	Framework            string            `json:"framework,omitempty"`
+	Compile              bool              `json:"compile"`
+	ViewEntry            string            `json:"viewEntry,omitempty"`
+	Ignore               []string          `json:"ignore,omitempty"`
+	ForceInclude         []string          `json:"forceInclude,omitempty"`
+	BuildCommand         string            `json:"buildCommand,omitempty"`
+	OutputDir            string            `json:"outputDir,omitempty"`
+	ResourceName         string            `json:"resourceName,omitempty"`
+	ServerBinaries       []string          `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string            `json:"serverBinaryPlatform,omitempty"`
+	EnvironmentAliases   map[string]string `json:"environmentAliases,omitempty"`
 }
 
 // EntryPoints defines entry points for core builds

@@ -349,16 +349,33 @@ type BuildSideConfig struct {
 }
 
 type BuildConfig struct {
-	Minify               bool             `json:"minify"`
-	SourceMaps           bool             `json:"sourceMaps"`
-	LogLevel             string           `json:"logLevel,omitempty"`
-	Target               string           `json:"target,omitempty"`
-	Parallel             bool             `json:"parallel"`
-	MaxWorkers           int              `json:"maxWorkers,omitempty"`
-	ServerBinaries       []string         `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string           `json:"serverBinaryPlatform,omitempty"`
-	Server               *BuildSideConfig `json:"server,omitempty"`
-	Client               *BuildSideConfig `json:"client,omitempty"`
+	Minify               bool                           `json:"minify"`
+	SourceMaps           bool                           `json:"sourceMaps"`
+	LogLevel             string                         `json:"logLevel,omitempty"`
+	Target               string                         `json:"target,omitempty"`
+	Parallel             bool                           `json:"parallel"`
+	MaxWorkers           int                            `json:"maxWorkers,omitempty"`
+	ServerBinaries       []string                       `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string                         `json:"serverBinaryPlatform,omitempty"`
+	Server               *BuildSideConfig               `json:"server,omitempty"`
+	Client               *BuildSideConfig               `json:"client,omitempty"`
+	Environment          string                         `json:"environment,omitempty"`
+	Environments         map[string]EnvironmentOverride `json:"environments,omitempty"`
+}
+
+// EnvironmentOverride holds per-environment build overrides
+type EnvironmentOverride struct {
+	Minify           *bool             `json:"minify,omitempty"`
+	SourceMaps       *bool             `json:"sourceMaps,omitempty"`
+	LogLevel         string            `json:"logLevel,omitempty"`
+	FileReplacements []FileReplacement `json:"fileReplacements,omitempty"`
+}
+
+// FileReplacement instructs esbuild to substitute one module/file for another
+// at build time, without touching the source files on disk.
+type FileReplacement struct {
+	Replace string `json:"replace"`
+	With    string `json:"with"`
 }
 
 func isBracketFolderName(name string) bool {
@@ -613,6 +630,12 @@ async function loadConfig(configPath) {
 	}
 	if envPass := os.Getenv("OPENCORE_TXADMIN_PASSWORD"); envPass != "" {
 		config.Dev.TxAdmin.Password = envPass
+	}
+	if envName := os.Getenv("OPENCORE_ENVIRONMENT"); envName != "" {
+		config.Build.Environment = envName
+	}
+	if config.Build.Environment == "" {
+		config.Build.Environment = "development"
 	}
 	config.Dev.Normalize()
 

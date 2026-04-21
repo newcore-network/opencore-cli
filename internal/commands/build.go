@@ -19,6 +19,7 @@ func NewBuildCommand() *cobra.Command {
 	}
 
 	cmd.Flags().String("output", "auto", "Output mode (auto|tui|plain)")
+	cmd.Flags().StringP("environment", "e", "", "Environment to build for (e.g. development, production)")
 
 	return cmd
 }
@@ -31,6 +32,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	if err := os.Chdir(root); err != nil {
 		return fmt.Errorf("failed to switch to project root: %w", err)
+	}
+
+	if env, _ := cmd.Flags().GetString("environment"); env != "" {
+		cfg.Build.Environment = env
 	}
 
 	outputModeValue, _ := cmd.Flags().GetString("output")
