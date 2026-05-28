@@ -155,6 +155,9 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
+			if w.shouldIgnorePath(event.Name) {
+				continue
+			}
 
 			if event.Op&fsnotify.Write == fsnotify.Write {
 				// Debounce using timer - wait for 500ms of silence before processing
@@ -272,6 +275,9 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				info, err := os.Stat(event.Name)
 				if err == nil && info.IsDir() {
+					if w.shouldIgnorePath(event.Name) {
+						continue
+					}
 					// Automatically watch new directories
 					w.watcher.Add(event.Name)
 
@@ -332,7 +338,7 @@ func (w *Watcher) registerPaths() {
 			if d.IsDir() {
 				// Skip node_modules and other common non-source directories
 				name := d.Name()
-				if name == "node_modules" || name == "dist" || name == ".git" {
+				if name == "node_modules" || name == "dist" || name == ".git" || name == ".opencore" {
 					return filepath.SkipDir
 				}
 
@@ -358,6 +364,10 @@ func (w *Watcher) registerPaths() {
 }
 
 func (w *Watcher) tasksForChangedFile(all []builder.BuildTask, changedFile string) []builder.BuildTask {
+	if w.shouldIgnorePath(changedFile) {
+		return nil
+	}
+
 	changedAbs, err := filepath.Abs(changedFile)
 	if err != nil {
 		changedAbs = changedFile
@@ -404,6 +414,61 @@ func (w *Watcher) tasksForChangedFile(all []builder.BuildTask, changedFile strin
 		}
 	}
 	return affected
+}
+
+func (w *Watcher) shouldIgnorePath(path string) bool {
+	cleanPath := filepath.Clean(path)
+	slashPath := filepath.ToSlash(cleanPath)
+
+	if strings.Contains(slashPath, "/node_modules/") ||
+		strings.Contains(slashPath, "/dist/") ||
+		strings.Contains(slashPath, "/.git/") ||
+		strings.Contains(slashPath, "/.opencore/") ||
+		strings.HasSuffix(slashPath, "/node_modules") ||
+		strings.HasSuffix(slashPath, "/dist") ||
+		strings.HasSuffix(slashPath, "/.git") ||
+		strings.HasSuffix(slashPath, "/.opencore") {
+		return true
+	}
+
+	if w == nil || w.config == nil {
+		return false
+	}
+
+	if isPathWithin(cleanPath, w.config.OutDir) {
+		return true
+	}
+
+	if isPathWithin(cleanPath, w.config.Destination) {
+		return true
+	}
+
+	return false
+}
+
+func isPathWithin(path string, root string) bool {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false
+	}
+
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+
+	pathAbs = filepath.Clean(pathAbs)
+	rootAbs = filepath.Clean(rootAbs)
+
+	if pathAbs == rootAbs {
+		return true
+	}
+
+	return strings.HasPrefix(pathAbs, rootAbs+string(os.PathSeparator))
 }
 
 func (w *Watcher) Close() error {
