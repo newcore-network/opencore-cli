@@ -1468,7 +1468,31 @@ func (b *Builder) cleanResourceOutputDir(resourceName string) error {
 		if _, err := os.Stat(resourceDir); os.IsNotExist(err) {
 			continue
 		}
-		if err := os.RemoveAll(resourceDir); err != nil {
+		if err := cleanResourceDir(resourceDir); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func cleanResourceDir(resourceDir string) error {
+	markerPath := filepath.Join(resourceDir, ".opencore-deps.json")
+	if _, err := os.Stat(markerPath); err != nil {
+		return os.RemoveAll(resourceDir)
+	}
+
+	entries, err := os.ReadDir(resourceDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "node_modules" || name == ".opencore-deps.json" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(resourceDir, name)); err != nil {
 			return err
 		}
 	}

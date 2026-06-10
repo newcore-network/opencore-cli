@@ -56,6 +56,12 @@ func (d *Deployer) DeployResource(resourceName string) error {
 
 // copyDir recursively copies a directory
 func (d *Deployer) copyDir(src, dst string) error {
+	absSrc, srcErr := filepath.Abs(src)
+	absDst, dstErr := filepath.Abs(dst)
+	if srcErr == nil && dstErr == nil && absSrc == absDst {
+		return nil
+	}
+
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return fmt.Errorf("source directory not found: %w", err)
@@ -95,6 +101,12 @@ func (d *Deployer) copyDir(src, dst string) error {
 
 // copyFile copies a single file
 func (d *Deployer) copyFile(src, dst string) error {
+	if srcInfo, err := os.Stat(src); err == nil {
+		if dstInfo, err := os.Stat(dst); err == nil && dstInfo.Size() == srcInfo.Size() && !dstInfo.ModTime().Before(srcInfo.ModTime()) {
+			return nil
+		}
+	}
+
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
