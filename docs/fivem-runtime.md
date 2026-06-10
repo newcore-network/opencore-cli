@@ -44,6 +44,26 @@ server: {
 }
 ```
 
+When `server.external` is used, OpenCore defaults to sandbox-safe isolated dependency installation for FiveM/RedM:
+
+```typescript
+build: {
+  dependencyResolution: {
+    mode: 'isolated',
+    packageManager: 'auto',
+    verifySandboxPaths: true,
+    allowInstallScripts: false,
+  },
+  server: {
+    external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+  },
+}
+```
+
+The built resource gets its own physical `node_modules` and minimal `package.json`. OpenCore resolves dependency versions from the resource `package.json`, then the root `package.json`, then installed package metadata. It refuses to install `latest` silently.
+
+Legacy `dependencyResolution.mode: 'symlink'` remains available as explicit opt-in, but it may fail under the FXServer Node.js 22 filesystem sandbox.
+
 ---
 
 ## Client Runtime

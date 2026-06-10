@@ -39,6 +39,15 @@ type BuildSideOptions struct {
 	SourceMaps *bool    `json:"sourceMaps,omitempty"`
 }
 
+type DependencyResolutionConfig struct {
+	Mode                string `json:"mode,omitempty"`
+	PackageManager      string `json:"packageManager,omitempty"`
+	SharedResourceName  string `json:"sharedResourceName,omitempty"`
+	VerifySandboxPaths  *bool  `json:"verifySandboxPaths,omitempty"`
+	AllowInstallScripts *bool  `json:"allowInstallScripts,omitempty"`
+	Cache               *bool  `json:"cache,omitempty"`
+}
+
 // SideConfigValue marshals as either:
 // - false (to skip building that side)
 // - an object with BuildSideOptions (to configure that side)
@@ -78,31 +87,32 @@ func (s *SideConfigValue) UnmarshalJSON(data []byte) error {
 
 // BuildOptions contains build configuration for a resource
 type BuildOptions struct {
-	PackageManager       string          `json:"packageManager,omitempty"`
-	Server               SideConfigValue `json:"server"`
-	Client               SideConfigValue `json:"client"`
-	NUI                  bool            `json:"nui"`
-	Minify               bool            `json:"minify"`
-	SourceMaps           bool            `json:"sourceMaps"`
-	LogLevel             string          `json:"logLevel"`
-	Target               string          `json:"target"`
-	Runtime              string          `json:"runtime,omitempty"`
-	ManifestKind         string          `json:"manifestKind,omitempty"`
-	ServerOutDir         string          `json:"serverOutDir,omitempty"`
-	ClientOutDir         string          `json:"clientOutDir,omitempty"`
-	ServerOutFile        string          `json:"serverOutFile,omitempty"`
-	ClientOutFile        string          `json:"clientOutFile,omitempty"`
-	EntryPoints          *EntryPoints    `json:"entryPoints,omitempty"`
-	Framework            string          `json:"framework,omitempty"`
-	Compile              bool            `json:"compile"`
-	ViewEntry            string          `json:"viewEntry,omitempty"`
-	Ignore               []string        `json:"ignore,omitempty"`
-	ForceInclude         []string        `json:"forceInclude,omitempty"`
-	BuildCommand         string          `json:"buildCommand,omitempty"`
-	OutputDir            string          `json:"outputDir,omitempty"`
-	ResourceName         string          `json:"resourceName,omitempty"`
-	ServerBinaries       []string        `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string          `json:"serverBinaryPlatform,omitempty"`
+	PackageManager       string                      `json:"packageManager,omitempty"`
+	Server               SideConfigValue             `json:"server"`
+	Client               SideConfigValue             `json:"client"`
+	NUI                  bool                        `json:"nui"`
+	Minify               bool                        `json:"minify"`
+	SourceMaps           bool                        `json:"sourceMaps"`
+	LogLevel             string                      `json:"logLevel"`
+	Target               string                      `json:"target"`
+	Runtime              string                      `json:"runtime,omitempty"`
+	ManifestKind         string                      `json:"manifestKind,omitempty"`
+	ServerOutDir         string                      `json:"serverOutDir,omitempty"`
+	ClientOutDir         string                      `json:"clientOutDir,omitempty"`
+	ServerOutFile        string                      `json:"serverOutFile,omitempty"`
+	ClientOutFile        string                      `json:"clientOutFile,omitempty"`
+	EntryPoints          *EntryPoints                `json:"entryPoints,omitempty"`
+	Framework            string                      `json:"framework,omitempty"`
+	Compile              bool                        `json:"compile"`
+	ViewEntry            string                      `json:"viewEntry,omitempty"`
+	Ignore               []string                    `json:"ignore,omitempty"`
+	ForceInclude         []string                    `json:"forceInclude,omitempty"`
+	BuildCommand         string                      `json:"buildCommand,omitempty"`
+	OutputDir            string                      `json:"outputDir,omitempty"`
+	ResourceName         string                      `json:"resourceName,omitempty"`
+	ServerBinaries       []string                    `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string                      `json:"serverBinaryPlatform,omitempty"`
+	DependencyResolution *DependencyResolutionConfig `json:"dependencyResolution,omitempty"`
 }
 
 // EntryPoints defines entry points for core builds

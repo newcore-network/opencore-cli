@@ -90,7 +90,14 @@ func TestConfigParsing(t *testing.T) {
 			"parallel": true,
 			"maxWorkers": 4,
 			"serverBinaries": ["bin"],
-			"serverBinaryPlatform": "linux"
+			"serverBinaryPlatform": "linux",
+			"dependencyResolution": {
+				"mode": "isolated",
+				"packageManager": "auto",
+				"verifySandboxPaths": true,
+				"allowInstallScripts": false,
+				"cache": true
+			}
 		}
 	}`
 
@@ -233,6 +240,12 @@ func TestConfigParsing(t *testing.T) {
 	}
 	if cfg.Build.ServerBinaryPlatform != "linux" {
 		t.Errorf("Expected serverBinaryPlatform 'linux'")
+	}
+	if cfg.Build.DependencyResolution == nil || cfg.Build.DependencyResolution.Mode != "isolated" {
+		t.Errorf("Expected dependencyResolution mode isolated, got %#v", cfg.Build.DependencyResolution)
+	}
+	if cfg.Build.DependencyResolution.VerifySandboxPaths == nil || !*cfg.Build.DependencyResolution.VerifySandboxPaths {
+		t.Errorf("Expected dependencyResolution verifySandboxPaths true")
 	}
 }
 

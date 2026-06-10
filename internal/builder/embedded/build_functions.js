@@ -270,7 +270,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, layout.serverOutDir)
+        await handleDependencies(resourcePath, layout.serverOutDir, options)
     }
 
     await Promise.all(builds)
@@ -340,7 +340,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, layout.serverOutDir)
+        await handleDependencies(resourcePath, layout.serverOutDir, options)
     }
 
     if (builds.length > 0) await Promise.all(builds)
@@ -409,7 +409,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, layout.serverOutDir)
+        await handleDependencies(resourcePath, layout.serverOutDir, options)
     }
 
     if (builds.length > 0) await Promise.all(builds)
@@ -424,7 +424,7 @@ async function copyResource(resourcePath, outDir, options = {}) {
 
     if (absSrcPath === absOutDir) {
         if (shouldHandleDependencies(options)) {
-            await handleDependencies(resourcePath, outDir)
+            await handleDependencies(resourcePath, outDir, options)
         }
         return
     }
@@ -453,7 +453,7 @@ async function copyResource(resourcePath, outDir, options = {}) {
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, outDir)
+        await handleDependencies(resourcePath, outDir, options)
     }
 
     const copyServerEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)

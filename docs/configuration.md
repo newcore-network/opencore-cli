@@ -185,8 +185,39 @@ Notes:
 | `sourceMaps` | `boolean` | `false` | Generate source maps |
 | `parallel` | `boolean` | `false` | Parallel compilation |
 | `maxWorkers` | `number` | CPU cores | Max parallel workers |
+| `dependencyResolution` | `DependencyResolutionConfig` | `{ mode: 'auto' }` | Runtime dependency strategy for `server.external` packages |
 | `server` | `SideBuildConfig` | - | Server build config |
 | `client` | `SideBuildConfig` | - | Client build config |
+
+### Dependency Resolution Options
+
+`auto` resolves to `isolated` for FiveM/RedM. In isolated mode, OpenCore writes a minimal `package.json`, installs only normalized `server.external` runtime packages into the built resource, and rejects symlinks that escape the resource folder. `symlink` is legacy opt-in and may fail under the FXServer Node.js 22 filesystem sandbox.
+
+```ts
+export default defineConfig({
+  build: {
+    dependencyResolution: {
+      mode: 'isolated',
+      packageManager: 'auto',
+      verifySandboxPaths: true,
+      allowInstallScripts: false,
+      cache: true,
+    },
+    server: {
+      external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+    },
+  },
+})
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `mode` | `'auto' \| 'isolated' \| 'symlink' \| 'shared-resource' \| 'bundle'` | `'auto'` | Dependency strategy. `shared-resource` and `bundle` are reserved experimental modes. |
+| `packageManager` | `'auto' \| 'npm' \| 'pnpm' \| 'yarn'` | `'auto'` | Package manager for isolated installs |
+| `verifySandboxPaths` | `boolean` | `true` | Reject symlinks resolving outside the resource |
+| `allowInstallScripts` | `boolean` | `false` | Allow dependency lifecycle scripts during install |
+| `cache` | `boolean` | `true` | Allow package-manager cache usage |
+| `sharedResourceName` | `string` | `'__opencore_deps'` | Reserved for future shared-resource mode |
 
 ### Side Build Options
 

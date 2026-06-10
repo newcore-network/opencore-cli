@@ -71,6 +71,20 @@ func buildSideOptionsFromConfig(cfg *config.BuildSideConfig) *BuildSideOptions {
 	}
 }
 
+func dependencyResolutionFromConfig(cfg *config.DependencyResolutionConfig) *DependencyResolutionConfig {
+	if cfg == nil {
+		return nil
+	}
+	return &DependencyResolutionConfig{
+		Mode:                cfg.Mode,
+		PackageManager:      cfg.PackageManager,
+		SharedResourceName:  cfg.SharedResourceName,
+		VerifySandboxPaths:  cfg.VerifySandboxPaths,
+		AllowInstallScripts: cfg.AllowInstallScripts,
+		Cache:               cfg.Cache,
+	}
+}
+
 func mergeBuildSideConfig(base *config.BuildSideConfig, override *config.BuildSideConfig) *config.BuildSideConfig {
 	if base == nil {
 		return override
@@ -649,6 +663,20 @@ func buildOptionsWithLayout(layout resourceBuildLayout, opts BuildOptions) Build
 	return opts
 }
 
+func (b *Builder) applyDependencyResolution(opts *BuildOptions, buildCfg *config.BuildConfig, resourceBuildCfg *config.ResourceBuildConfig) {
+	if opts == nil {
+		return
+	}
+	if buildCfg != nil && buildCfg.DependencyResolution != nil {
+		opts.DependencyResolution = dependencyResolutionFromConfig(buildCfg.DependencyResolution)
+	} else if b.config.Build.DependencyResolution != nil {
+		opts.DependencyResolution = dependencyResolutionFromConfig(b.config.Build.DependencyResolution)
+	}
+	if resourceBuildCfg != nil && resourceBuildCfg.DependencyResolution != nil {
+		opts.DependencyResolution = dependencyResolutionFromConfig(resourceBuildCfg.DependencyResolution)
+	}
+}
+
 // collectAllTasks gathers all build tasks from config
 func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
@@ -706,6 +734,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	if coreBuildCfg.ServerBinaryPlatform != "" {
 		coreTask.Options.ServerBinaryPlatform = coreBuildCfg.ServerBinaryPlatform
 	}
+	b.applyDependencyResolution(&coreTask.Options, coreBuildCfg, nil)
 
 	tasks = append(tasks, coreTask)
 
@@ -787,6 +816,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					ServerBinaries: nil,
 				}),
 			}
+			b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 
 			// Apply explicit overrides
 			if explicit != nil {
@@ -827,6 +857,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					if explicit.Build.ServerBinaryPlatform != "" {
 						task.Options.ServerBinaryPlatform = explicit.Build.ServerBinaryPlatform
 					}
+					b.applyDependencyResolution(&task.Options, &b.config.Build, explicit.Build)
 				}
 
 				// Add views task if configured or discovered
@@ -951,6 +982,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			if res.Build.ServerBinaryPlatform != "" {
 				task.Options.ServerBinaryPlatform = res.Build.ServerBinaryPlatform
 			}
+			b.applyDependencyResolution(&task.Options, &b.config.Build, res.Build)
+		} else {
+			b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 		}
 
 		// Resources are always compiled, so we can always check for views
@@ -1037,7 +1071,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					standaloneLogLevel = "INFO"
 				}
 
-				tasks = append(tasks, BuildTask{
+				task := BuildTask{
 					Path:           match,
 					ResourceName:   resourceName,
 					Type:           taskType,
@@ -1052,7 +1086,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Compile:     shouldCompile,
 						EntryPoints: entryPoints,
 					}),
-				})
+				}
+				if explicit != nil && explicit.Build != nil {
+					b.applyDependencyResolution(&task.Options, &b.config.Build, explicit.Build)
+				} else {
+					b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
+				}
+				tasks = append(tasks, task)
 			}
 		}
 
@@ -1114,6 +1154,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				if res.Build.ServerBinaryPlatform != "" {
 					task.Options.ServerBinaryPlatform = res.Build.ServerBinaryPlatform
 				}
+				b.applyDependencyResolution(&task.Options, &b.config.Build, res.Build)
+			} else {
+				b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 			}
 
 			tasks = append(tasks, task)

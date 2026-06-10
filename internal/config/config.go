@@ -289,14 +289,24 @@ type ExplicitResource struct {
 }
 
 type ResourceBuildConfig struct {
-	Server               *ResourceBuildSideConfig `json:"server,omitempty"`
-	Client               *ResourceBuildSideConfig `json:"client,omitempty"`
-	NUI                  *bool                    `json:"nui,omitempty"`
-	Minify               *bool                    `json:"minify,omitempty"`
-	SourceMaps           *bool                    `json:"sourceMaps,omitempty"`
-	ServerBinaries       []string                 `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string                   `json:"serverBinaryPlatform,omitempty"`
-	LogLevel             string                   `json:"logLevel,omitempty"`
+	Server               *ResourceBuildSideConfig    `json:"server,omitempty"`
+	Client               *ResourceBuildSideConfig    `json:"client,omitempty"`
+	NUI                  *bool                       `json:"nui,omitempty"`
+	Minify               *bool                       `json:"minify,omitempty"`
+	SourceMaps           *bool                       `json:"sourceMaps,omitempty"`
+	ServerBinaries       []string                    `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string                      `json:"serverBinaryPlatform,omitempty"`
+	LogLevel             string                      `json:"logLevel,omitempty"`
+	DependencyResolution *DependencyResolutionConfig `json:"dependencyResolution,omitempty"`
+}
+
+type DependencyResolutionConfig struct {
+	Mode                string `json:"mode,omitempty"`
+	PackageManager      string `json:"packageManager,omitempty"`
+	SharedResourceName  string `json:"sharedResourceName,omitempty"`
+	VerifySandboxPaths  *bool  `json:"verifySandboxPaths,omitempty"`
+	AllowInstallScripts *bool  `json:"allowInstallScripts,omitempty"`
+	Cache               *bool  `json:"cache,omitempty"`
 }
 
 type ResourceBuildSideConfig struct {
@@ -349,16 +359,17 @@ type BuildSideConfig struct {
 }
 
 type BuildConfig struct {
-	Minify               bool             `json:"minify"`
-	SourceMaps           bool             `json:"sourceMaps"`
-	LogLevel             string           `json:"logLevel,omitempty"`
-	Target               string           `json:"target,omitempty"`
-	Parallel             bool             `json:"parallel"`
-	MaxWorkers           int              `json:"maxWorkers,omitempty"`
-	ServerBinaries       []string         `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string           `json:"serverBinaryPlatform,omitempty"`
-	Server               *BuildSideConfig `json:"server,omitempty"`
-	Client               *BuildSideConfig `json:"client,omitempty"`
+	Minify               bool                        `json:"minify"`
+	SourceMaps           bool                        `json:"sourceMaps"`
+	LogLevel             string                      `json:"logLevel,omitempty"`
+	Target               string                      `json:"target,omitempty"`
+	Parallel             bool                        `json:"parallel"`
+	MaxWorkers           int                         `json:"maxWorkers,omitempty"`
+	ServerBinaries       []string                    `json:"serverBinaries,omitempty"`
+	ServerBinaryPlatform string                      `json:"serverBinaryPlatform,omitempty"`
+	DependencyResolution *DependencyResolutionConfig `json:"dependencyResolution,omitempty"`
+	Server               *BuildSideConfig            `json:"server,omitempty"`
+	Client               *BuildSideConfig            `json:"client,omitempty"`
 }
 
 func isBracketFolderName(name string) bool {
