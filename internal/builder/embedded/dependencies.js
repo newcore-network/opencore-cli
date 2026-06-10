@@ -135,8 +135,8 @@ function dependencyConfig(options = {}) {
 function dependencyMode(options = {}) {
     const mode = (dependencyConfig(options).mode || 'auto').toLowerCase()
     if (mode === 'auto') return 'isolated'
-    if (mode === 'isolated' || mode === 'symlink') return mode
-    if (mode === 'shared-resource' || mode === 'bundle') {
+    if (mode === 'isolated' || mode === 'symlink' || mode === 'shared-resource') return mode
+    if (mode === 'bundle') {
         throw new Error(`[deps] dependencyResolution.mode "${mode}" is experimental and is not implemented in this release.`)
     }
     throw new Error(`[deps] Invalid dependencyResolution.mode "${mode}". Expected auto, isolated, symlink, shared-resource, or bundle.`)
@@ -306,6 +306,76 @@ async function installIsolatedDependencies(resourcePath, outDir, options = {}) {
     }
 }
 
+async function aggregateSharedDependencies(entries = []) {
+    const dependencies = {}
+    const owners = {}
+
+    for (const entry of entries) {
+        const resourcePath = path.resolve(entry.resourcePath)
+        const packageNames = []
+        const seen = new Set()
+        for (const external of entry.externals || []) {
+            const normalized = normalizeExternalImport(external)
+            if (normalized && !seen.has(normalized)) {
+                seen.add(normalized)
+                packageNames.push(normalized)
+            }
+        }
+
+        const resolved = await resolveDependencyVersions(resourcePath, packageNames)
+        for (const [name, spec] of Object.entries(resolved)) {
+            if (dependencies[name] && dependencies[name] !== spec) {
+                throw new Error(`[deps] Shared dependency conflict for "${name}": ${owners[name]} requires "${dependencies[name]}", ${entry.resourcePath} requires "${spec}".`)
+            }
+            dependencies[name] = spec
+            owners[name] = entry.resourcePath
+        }
+    }
+
+    return dependencies
+}
+
+async function generateSharedDependencyResource(outDir, options = {}) {
+    const sharedResourceName = options.sharedResourceName || '__opencore_deps'
+    const absOutDir = path.resolve(outDir)
+    await fs.promises.mkdir(absOutDir, { recursive: true })
+
+    const dependencies = await aggregateSharedDependencies(options.dependencies || [])
+    const pkg = {
+        name: sharedResourceName,
+        version: '0.0.0',
+        private: true,
+        dependencies,
+    }
+
+    await fs.promises.writeFile(path.join(absOutDir, 'package.json'), JSON.stringify(pkg, null, 2))
+    await fs.promises.writeFile(path.join(absOutDir, 'noop.js'), '// OpenCore shared dependency resource.\n')
+    await fs.promises.writeFile(path.join(absOutDir, 'fxmanifest.lua'), [
+        "fx_version 'cerulean'",
+        "game 'gta5'",
+        "node_version '22'",
+        "server_script 'noop.js'",
+        '',
+    ].join('\n'))
+
+    const nodeModules = path.join(absOutDir, 'node_modules')
+    if (fs.existsSync(nodeModules)) await fs.promises.rm(nodeModules, { recursive: true, force: true })
+
+    if (Object.keys(dependencies).length > 0) {
+        const pm = getInstallPackageManager({ packageManager: options.packageManager, dependencyResolution: options })
+        const { command, args } = installCommand(pm, { dependencyResolution: options })
+        try {
+            await execFileAsync(command, args, { cwd: absOutDir, env: process.env, maxBuffer: 1024 * 1024 * 10 })
+        } catch (error) {
+            const output = [error.stdout, error.stderr].filter(Boolean).join('\n')
+            throw new Error(`[deps] Failed to install shared dependencies with ${pm}: ${error.message}${output ? `\n${output}` : ''}`)
+        }
+    }
+
+    if (options.verifySandboxPaths !== false) await validateSandboxPaths(absOutDir)
+    console.log(`[deps] Generated shared dependency resource ${sharedResourceName}`)
+}
+
 async function handleDependencies(resourcePath, outDir, options = {}) {
     const absSrcPath = path.resolve(resourcePath)
     const absOutDir = path.resolve(outDir)
@@ -324,6 +394,10 @@ async function handleDependencies(resourcePath, outDir, options = {}) {
         return
     }
 
+    if (mode === 'shared-resource') {
+        return
+    }
+
     await installIsolatedDependencies(absSrcPath, absOutDir, options)
 }
 
@@ -339,6 +413,7 @@ module.exports = {
     normalizeExternalImport,
     resolveDependencyVersions,
     validateSandboxPaths,
+    generateSharedDependencyResource,
     detectNativePackages,
     printNativePackageWarnings
 }

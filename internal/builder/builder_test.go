@@ -813,6 +813,71 @@ func TestCollectAllTasks_ResourceSideOverrides(t *testing.T) {
 	}
 }
 
+func TestSharedDependencyOptions(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core:   config.CoreConfig{Path: "./core", ResourceName: "core"},
+		Build: config.BuildConfig{
+			DependencyResolution: &config.DependencyResolutionConfig{Mode: "shared-resource", SharedResourceName: "__deps", PackageManager: "npm"},
+			Server:               &config.BuildSideConfig{External: []string{"pg"}},
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path:  "./resources/database",
+					Build: &config.ResourceBuildConfig{Server: &config.ResourceBuildSideConfig{Enabled: true, Options: &config.BuildSideConfig{External: []string{"typeorm", "@prisma/adapter-pg"}}}},
+				},
+			},
+		},
+	}
+
+	b := New(cfg)
+	tasks := b.collectAllTasks()
+	options, name, err := b.sharedDependencyOptions(tasks)
+	if err != nil {
+		t.Fatalf("sharedDependencyOptions failed: %v", err)
+	}
+	if name != "__deps" {
+		t.Fatalf("expected shared resource name __deps, got %q", name)
+	}
+	if options == nil || options.PackageManager != "npm" {
+		t.Fatalf("expected shared dependency options with npm, got %#v", options)
+	}
+	if len(options.Dependencies) != 2 {
+		t.Fatalf("expected core and database dependency entries, got %d", len(options.Dependencies))
+	}
+}
+
+func TestSharedDependencyOptionsRejectsNameConflict(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core:   config.CoreConfig{Path: "./core", ResourceName: "core"},
+		Build: config.BuildConfig{
+			DependencyResolution: &config.DependencyResolutionConfig{Mode: "shared-resource", SharedResourceName: "__deps_a"},
+			Server:               &config.BuildSideConfig{External: []string{"pg"}},
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path: "./resources/database",
+					Build: &config.ResourceBuildConfig{
+						DependencyResolution: &config.DependencyResolutionConfig{Mode: "shared-resource", SharedResourceName: "__deps_b"},
+						Server:               &config.ResourceBuildSideConfig{Enabled: true, Options: &config.BuildSideConfig{External: []string{"typeorm"}}},
+					},
+				},
+			},
+		},
+	}
+
+	b := New(cfg)
+	_, _, err := b.sharedDependencyOptions(b.collectAllTasks())
+	if err == nil {
+		t.Fatal("expected shared resource name conflict")
+	}
+}
+
 func TestCollectAllTasks_RageMPLayout(t *testing.T) {
 	cfg := &config.Config{
 		Name:   "test-project",

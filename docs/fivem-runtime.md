@@ -64,6 +64,23 @@ The built resource gets its own physical `node_modules` and minimal `package.jso
 
 Legacy `dependencyResolution.mode: 'symlink'` remains available as explicit opt-in, but it may fail under the FXServer Node.js 22 filesystem sandbox.
 
+Experimental shared dependency mode is available when you want all resources to read runtime packages from one generated resource:
+
+```typescript
+build: {
+  dependencyResolution: {
+    mode: 'shared-resource',
+    sharedResourceName: '__opencore_deps',
+    verifySandboxPaths: true,
+  },
+  server: {
+    external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+  },
+}
+```
+
+OpenCore generates `__opencore_deps` and rewrites external imports at bundle time through an esbuild virtual module that uses `GetResourcePath('__opencore_deps')`. This mode is experimental because FXServer sandbox rules may still restrict cross-resource reads under Node.js 22.
+
 ---
 
 ## Client Runtime

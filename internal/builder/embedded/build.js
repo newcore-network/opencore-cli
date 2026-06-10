@@ -1,6 +1,7 @@
 const path = require('path')
 const { buildCore, buildResource, buildStandalone, copyResource } = require('./build_functions')
 const { buildViews } = require('./views')
+const { generateSharedDependencyResource } = require('./dependencies')
 
 /**
  * Check if a dependency is installed
@@ -107,6 +108,17 @@ async function main() {
             checkBaseDependencies(options)
 
             await buildSingle(type, resourcePath, outDir, options)
+            console.log(JSON.stringify({ success: true }))
+        } catch (error) {
+            console.error(error.message)
+            process.exit(1)
+        }
+    } else if (mode === 'shared-deps') {
+        const outDir = args[1]
+        const options = args[2] ? JSON.parse(args[2]) : {}
+
+        try {
+            await generateSharedDependencyResource(outDir, options)
             console.log(JSON.stringify({ success: true }))
         } catch (error) {
             console.error(error.message)

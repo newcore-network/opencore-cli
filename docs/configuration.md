@@ -191,7 +191,7 @@ Notes:
 
 ### Dependency Resolution Options
 
-`auto` resolves to `isolated` for FiveM/RedM. In isolated mode, OpenCore writes a minimal `package.json`, installs only normalized `server.external` runtime packages into the built resource, and rejects symlinks that escape the resource folder. `symlink` is legacy opt-in and may fail under the FXServer Node.js 22 filesystem sandbox.
+`auto` resolves to `isolated` for FiveM/RedM. In isolated mode, OpenCore writes a minimal `package.json`, installs only normalized `server.external` runtime packages into the built resource, and rejects symlinks that escape the resource folder. `shared-resource` is experimental: it generates one dependency resource and proxies external imports through `GetResourcePath(...)`. Validate it with a real FXServer Node.js 22 server before production use. `symlink` is legacy opt-in and may fail under the FXServer Node.js 22 filesystem sandbox.
 
 ```ts
 export default defineConfig({
@@ -212,12 +212,32 @@ export default defineConfig({
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `mode` | `'auto' \| 'isolated' \| 'symlink' \| 'shared-resource' \| 'bundle'` | `'auto'` | Dependency strategy. `shared-resource` and `bundle` are reserved experimental modes. |
+| `mode` | `'auto' \| 'isolated' \| 'symlink' \| 'shared-resource' \| 'bundle'` | `'auto'` | Dependency strategy. `shared-resource` is experimental; `bundle` is reserved for a future mode. |
 | `packageManager` | `'auto' \| 'npm' \| 'pnpm' \| 'yarn'` | `'auto'` | Package manager for isolated installs |
 | `verifySandboxPaths` | `boolean` | `true` | Reject symlinks resolving outside the resource |
 | `allowInstallScripts` | `boolean` | `false` | Allow dependency lifecycle scripts during install |
 | `cache` | `boolean` | `true` | Allow package-manager cache usage |
-| `sharedResourceName` | `string` | `'__opencore_deps'` | Reserved for future shared-resource mode |
+| `sharedResourceName` | `string` | `'__opencore_deps'` | Generated dependency resource name for shared-resource mode |
+
+Shared dependency resource example:
+
+```ts
+export default defineConfig({
+  build: {
+    dependencyResolution: {
+      mode: 'shared-resource',
+      sharedResourceName: '__opencore_deps',
+      packageManager: 'auto',
+      verifySandboxPaths: true,
+    },
+    server: {
+      external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+    },
+  },
+})
+```
+
+This produces `__opencore_deps/package.json`, `__opencore_deps/node_modules`, and a minimal `fxmanifest.lua`. If two resources require different version specs for the same package, the build fails with a dependency conflict instead of choosing one silently.
 
 ### Side Build Options
 

@@ -645,7 +645,8 @@ export interface DependencyResolutionConfig {
   /**
    * Runtime dependency strategy for server.external packages.
    * `auto` resolves to `isolated` for FiveM/RedM sandbox compatibility.
-   * `shared-resource` and `bundle` are reserved experimental modes.
+   * `shared-resource` is experimental and generates one dependency resource.
+   * `bundle` is reserved for a future compatibility-checked bundling mode.
    * @default 'auto'
    */
   mode?: DependencyResolutionMode;
@@ -653,7 +654,7 @@ export interface DependencyResolutionConfig {
   /** Package manager used to install isolated runtime dependencies. */
   packageManager?: 'auto' | 'npm' | 'pnpm' | 'yarn';
 
-  /** Resource name used by the future shared-resource strategy. */
+  /** Resource name used by the shared-resource strategy. */
   sharedResourceName?: string;
 
   /** Reject symlinks that resolve outside the generated resource. */
