@@ -2,7 +2,7 @@ const path = require('path')
 const fs = require('fs')
 const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, createSharedResourceDependencyPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
-const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
+const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings, checkBundleCompatibility } = require('./dependencies')
 
 function normalizeServerBinaryPlatform(platform) {
     if (!platform) return null
@@ -97,7 +97,15 @@ function dependencyPlugin(isServerBuild, externals, dependencyResolution = {}) {
     if (isServerBuild && dependencyResolution?.mode === 'shared-resource') {
         return createSharedResourceDependencyPlugin(externals, dependencyResolution.sharedResourceName || '__opencore_deps')
     }
+    if (isServerBuild && dependencyResolution?.mode === 'bundle') {
+        return createExternalPackagesPlugin([])
+    }
     return createExternalPackagesPlugin(externals)
+}
+
+function esbuildExternals(serverExternals, dependencyResolution = {}) {
+    if (dependencyResolution?.mode === 'shared-resource' || dependencyResolution?.mode === 'bundle') return []
+    return serverExternals
 }
 
 function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}) {
@@ -226,6 +234,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
     await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
     await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
+    await checkBundleCompatibility(resourcePath, options)
     const builds = []
 
     const serverBuildOptions = getBuildOptions('server', options)
@@ -240,7 +249,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
             plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution),
-            external: options.dependencyResolution?.mode === 'shared-resource' ? [] : serverExternals,
+            external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"server"',
@@ -293,6 +302,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
     await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
     await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
+    await checkBundleCompatibility(resourcePath, options)
     const builds = []
 
     const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
@@ -308,7 +318,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
             plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution),
-            external: options.dependencyResolution?.mode === 'shared-resource' ? [] : serverExternals,
+            external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -363,6 +373,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
     await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
+    await checkBundleCompatibility(resourcePath, options)
     const builds = []
 
     const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
@@ -377,7 +388,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
             plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution),
-            external: options.dependencyResolution?.mode === 'shared-resource' ? [] : serverExternals,
+            external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),

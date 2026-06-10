@@ -878,6 +878,13 @@ func TestSharedDependencyOptionsRejectsNameConflict(t *testing.T) {
 	}
 }
 
+func TestDependencyResolutionModeBundle(t *testing.T) {
+	task := BuildTask{Options: BuildOptions{DependencyResolution: &DependencyResolutionConfig{Mode: "bundle"}}}
+	if got := dependencyResolutionMode(task.Options); got != "bundle" {
+		t.Fatalf("expected bundle dependency resolution mode, got %q", got)
+	}
+}
+
 func TestCollectAllTasks_RageMPLayout(t *testing.T) {
 	cfg := &config.Config{
 		Name:   "test-project",

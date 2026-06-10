@@ -646,7 +646,7 @@ export interface DependencyResolutionConfig {
    * Runtime dependency strategy for server.external packages.
    * `auto` resolves to `isolated` for FiveM/RedM sandbox compatibility.
    * `shared-resource` is experimental and generates one dependency resource.
-   * `bundle` is reserved for a future compatibility-checked bundling mode.
+   * `bundle` is experimental and bundles configured server externals when compatible.
    * @default 'auto'
    */
   mode?: DependencyResolutionMode;

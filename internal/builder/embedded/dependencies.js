@@ -135,10 +135,7 @@ function dependencyConfig(options = {}) {
 function dependencyMode(options = {}) {
     const mode = (dependencyConfig(options).mode || 'auto').toLowerCase()
     if (mode === 'auto') return 'isolated'
-    if (mode === 'isolated' || mode === 'symlink' || mode === 'shared-resource') return mode
-    if (mode === 'bundle') {
-        throw new Error(`[deps] dependencyResolution.mode "${mode}" is experimental and is not implemented in this release.`)
-    }
+    if (mode === 'isolated' || mode === 'symlink' || mode === 'shared-resource' || mode === 'bundle') return mode
     throw new Error(`[deps] Invalid dependencyResolution.mode "${mode}". Expected auto, isolated, symlink, shared-resource, or bundle.`)
 }
 
@@ -198,6 +195,63 @@ function installedPackageJsonPath(name, resourcePath) {
         } catch (e) {}
     }
     return null
+}
+
+function installedPackagePath(name, resourcePath) {
+    const pkgJsonPath = installedPackageJsonPath(name, resourcePath)
+    return pkgJsonPath ? path.dirname(pkgJsonPath) : null
+}
+
+async function scanDynamicRequires(packagePath) {
+    const warnings = []
+    const maxWarnings = 10
+    const dynamicRequirePattern = /\brequire\s*\(\s*(?!['"`])[^)]*\)/
+
+    async function walk(current) {
+        if (warnings.length >= maxWarnings) return
+        const entries = await fs.promises.readdir(current, { withFileTypes: true }).catch(() => [])
+        for (const entry of entries) {
+            if (warnings.length >= maxWarnings) return
+            const entryPath = path.join(current, entry.name)
+            if (entry.isDirectory()) {
+                if (entry.name === 'node_modules' || entry.name === '.git') continue
+                await walk(entryPath)
+                continue
+            }
+            if (!/\.(js|cjs|mjs)$/.test(entry.name)) continue
+            const contents = await fs.promises.readFile(entryPath, 'utf8').catch(() => '')
+            if (dynamicRequirePattern.test(contents)) warnings.push(entryPath)
+        }
+    }
+
+    await walk(packagePath)
+    return warnings
+}
+
+async function checkBundleCompatibility(resourcePath, options = {}) {
+    if (dependencyMode(options) !== 'bundle') return
+
+    const packageNames = normalizedExternals(options)
+    if (packageNames.length === 0) return
+
+    for (const name of packageNames) {
+        const packagePath = installedPackagePath(name, resourcePath)
+        if (!packagePath) {
+            throw new Error(`[deps] Cannot bundle "${name}" because it is not installed. Install it in the resource or root project first.`)
+        }
+
+        const native = await isNativePackage(packagePath)
+        if (native.isNative) {
+            throw new Error(`[deps] Cannot bundle "${name}" in dependencyResolution.mode "bundle": ${native.reason}. Use "isolated" for packages with native bindings or runtime assets.`)
+        }
+
+        const dynamicRequires = await scanDynamicRequires(packagePath)
+        if (dynamicRequires.length > 0) {
+            console.warn(`[deps] Warning: "${name}" contains dynamic require() calls that may not bundle reliably:`)
+            for (const file of dynamicRequires.slice(0, 5)) console.warn(`[deps]   ${path.relative(packagePath, file)}`)
+            if (dynamicRequires.length > 5) console.warn(`[deps]   ...and ${dynamicRequires.length - 5} more`)
+        }
+    }
 }
 
 async function resolveDependencyVersions(resourcePath, packageNames) {
@@ -398,10 +452,15 @@ async function handleDependencies(resourcePath, outDir, options = {}) {
         return
     }
 
+    if (mode === 'bundle') {
+        return
+    }
+
     await installIsolatedDependencies(absSrcPath, absOutDir, options)
 }
 
 function shouldHandleDependencies(options = {}) {
+    if (dependencyMode(options) === 'bundle') return false
     const serverBuildOptions = getBuildOptions('server', options)
     const serverExternals = serverBuildOptions !== null ? normalizedExternals(options) : []
     return Array.isArray(serverExternals) && serverExternals.length > 0
@@ -413,6 +472,7 @@ module.exports = {
     normalizeExternalImport,
     resolveDependencyVersions,
     validateSandboxPaths,
+    checkBundleCompatibility,
     generateSharedDependencyResource,
     detectNativePackages,
     printNativePackageWarnings

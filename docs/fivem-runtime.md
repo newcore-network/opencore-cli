@@ -81,6 +81,21 @@ build: {
 
 OpenCore generates `__opencore_deps` and rewrites external imports at bundle time through an esbuild virtual module that uses `GetResourcePath('__opencore_deps')`. This mode is experimental because FXServer sandbox rules may still restrict cross-resource reads under Node.js 22.
 
+Experimental bundle mode is available for pure JavaScript packages:
+
+```typescript
+build: {
+  dependencyResolution: {
+    mode: 'bundle',
+  },
+  server: {
+    external: ['nanoid'],
+  },
+}
+```
+
+In this mode, `server.external` marks packages that should be compatibility-checked and then bundled into each resource. OpenCore rejects native packages and warns about dynamic `require()` usage. Do not use bundle mode for Prisma, native modules, packages that load runtime assets, or packages that depend on dynamic loading.
+
 ---
 
 ## Client Runtime
