@@ -1,8 +1,8 @@
 const path = require('path')
 const fs = require('fs')
-const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin, createEnvironmentAliasPlugin } = require('./plugins')
+const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, createSharedResourceDependencyPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin, createEnvironmentAliasPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
-const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings } = require('./dependencies')
+const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings, checkBundleCompatibility, cleanupDependencyArtifacts } = require('./dependencies')
 
 function normalizeServerBinaryPlatform(platform) {
     if (!platform) return null
@@ -93,17 +93,45 @@ async function copyDirContents(srcDir, destDir) {
     }
 }
 
-function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, environmentAliases = null) {
+function dependencyPlugin(isServerBuild, externals, dependencyResolution = {}, usedExternals = null) {
+    if (isServerBuild && dependencyResolution?.mode === 'shared-resource') {
+        return createSharedResourceDependencyPlugin(externals, dependencyResolution.sharedResourceName || '__opencore_deps', usedExternals)
+    }
+    if (isServerBuild && dependencyResolution?.mode === 'bundle') {
+        return createExternalPackagesPlugin([])
+    }
+    return createExternalPackagesPlugin(externals, usedExternals)
+}
+
+function esbuildExternals(serverExternals, dependencyResolution = {}) {
+    if (dependencyResolution?.mode === 'shared-resource' || dependencyResolution?.mode === 'bundle') return []
+    return serverExternals
+}
+
+function optionsWithServerExternals(options = {}, externals = []) {
+    return {
+        ...options,
+        server: {
+            ...(options.server && typeof options.server === 'object' ? options.server : {}),
+            external: externals,
+        },
+    }
+}
+
+function buildPlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null, environmentAliases = null, includeFiveMExports = true) {
     const plugins = [
         createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
         createAutoloadControllersRedirectPlugin(resourcePath),
-        createExternalPackagesPlugin(externals),
+        dependencyPlugin(isServerBuild, externals, dependencyResolution, usedExternals),
         createSwcPlugin(target),
         createExcludeNodeAdaptersPlugin(isServerBuild),
-        preserveFiveMExportsPlugin,
         createNodeGlobalsShimPlugin(format)
     ]
+
+    if (includeFiveMExports) {
+        plugins.splice(6, 0, preserveFiveMExportsPlugin)
+    }
 
     if (resourcePath) {
         const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
@@ -121,57 +149,16 @@ function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020'
     return plugins
 }
 
-function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, environmentAliases = null) {
-    const plugins = [
-        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
-        createAutoloadDynamicImportShimPlugin(),
-        createAutoloadControllersRedirectPlugin(resourcePath),
-        createExternalPackagesPlugin(externals),
-        createSwcPlugin(target),
-        createExcludeNodeAdaptersPlugin(isServerBuild),
-        preserveFiveMExportsPlugin,
-        createNodeGlobalsShimPlugin(format)
-    ]
-
-    if (resourcePath) {
-        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
-        if (tsconfigPlugin) {
-            plugins.unshift(tsconfigPlugin)
-        }
-    }
-
-    const envPlugin = createEnvironmentAliasPlugin(environmentAliases)
-    if (envPlugin) {
-        plugins.unshift(envPlugin)
-    }
-
-    return plugins
+function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null, environmentAliases = null) {
+    return buildPlugins(isServerBuild, externals, target, format, resourcePath, packageManager, dependencyResolution, usedExternals, environmentAliases, true)
 }
 
-function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, environmentAliases = null) {
-    const plugins = [
-        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
-        createAutoloadDynamicImportShimPlugin(),
-        createAutoloadControllersRedirectPlugin(resourcePath),
-        createExternalPackagesPlugin(externals),
-        createSwcPlugin(target),
-        createExcludeNodeAdaptersPlugin(isServerBuild),
-        createNodeGlobalsShimPlugin(format)
-    ]
+function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null, environmentAliases = null) {
+    return buildPlugins(isServerBuild, externals, target, format, resourcePath, packageManager, dependencyResolution, usedExternals, environmentAliases, true)
+}
 
-    if (resourcePath) {
-        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
-        if (tsconfigPlugin) {
-            plugins.unshift(tsconfigPlugin)
-        }
-    }
-
-    const envPlugin = createEnvironmentAliasPlugin(environmentAliases)
-    if (envPlugin) {
-        plugins.unshift(envPlugin)
-    }
-
-    return plugins
+function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null, environmentAliases = null) {
+    return buildPlugins(isServerBuild, externals, target, format, resourcePath, packageManager, dependencyResolution, usedExternals, environmentAliases, false)
 }
 
 /**
@@ -234,7 +221,9 @@ async function buildCore(resourcePath, outDir, options = {}) {
     await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
     await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
+    await checkBundleCompatibility(resourcePath, options)
     const builds = []
+    const usedServerExternals = new Set()
 
     const serverBuildOptions = getBuildOptions('server', options)
     if (serverBuildOptions !== null && serverEntry) {
@@ -247,8 +236,8 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
-            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.environmentAliases),
-            external: serverExternals,
+            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals, options.environmentAliases),
+            external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"server"',
@@ -268,7 +257,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(layout.clientOutDir, layout.clientOutFile),
-            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.environmentAliases),
+            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution, null, options.environmentAliases),
             external: clientExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -284,11 +273,13 @@ async function buildCore(resourcePath, outDir, options = {}) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
-    if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, layout.serverOutDir)
-    }
-
     await Promise.all(builds)
+    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
+    if (shouldHandleDependencies(dependencyOptions)) {
+        await handleDependencies(resourcePath, layout.serverOutDir, dependencyOptions)
+    } else {
+        await cleanupDependencyArtifacts(layout.serverOutDir)
+    }
     await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
     console.log(`[core] Built ${path.basename(layout.serverOutDir)}`)
 }
@@ -301,7 +292,9 @@ async function buildResource(resourcePath, outDir, options = {}) {
     await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
     await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
+    await checkBundleCompatibility(resourcePath, options)
     const builds = []
+    const usedServerExternals = new Set()
 
     const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
     const serverBuildOptions = getBuildOptions('server', options)
@@ -315,8 +308,8 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
-            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.environmentAliases),
-            external: serverExternals,
+            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals, options.environmentAliases),
+            external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -337,7 +330,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(layout.clientOutDir, layout.clientOutFile),
-            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.environmentAliases),
+            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution, null, options.environmentAliases),
             external: clientExternals,
             define: {
                 ...shared.define,
@@ -354,11 +347,13 @@ async function buildResource(resourcePath, outDir, options = {}) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
-    if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, layout.serverOutDir)
-    }
-
     if (builds.length > 0) await Promise.all(builds)
+    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
+    if (shouldHandleDependencies(dependencyOptions)) {
+        await handleDependencies(resourcePath, layout.serverOutDir, dependencyOptions)
+    } else {
+        await cleanupDependencyArtifacts(layout.serverOutDir)
+    }
     await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
     console.log(`[resource] Built ${path.basename(layout.serverOutDir)}`)
 }
@@ -371,7 +366,9 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
     await fs.promises.mkdir(layout.serverOutDir, { recursive: true })
     await fs.promises.mkdir(layout.clientOutDir, { recursive: true })
     await checkNativePackages(resourcePath, options)
+    await checkBundleCompatibility(resourcePath, options)
     const builds = []
+    const usedServerExternals = new Set()
 
     const serverEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)
     const serverBuildOptions = getBuildOptions('server', options)
@@ -384,8 +381,8 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
-            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.environmentAliases),
-            external: serverExternals,
+            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals, options.environmentAliases),
+            external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -406,7 +403,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(layout.clientOutDir, layout.clientOutFile),
-            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.environmentAliases),
+            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution, null, options.environmentAliases),
             external: clientExternals,
             define: {
                 ...shared.define,
@@ -423,11 +420,13 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
-    if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, layout.serverOutDir)
-    }
-
     if (builds.length > 0) await Promise.all(builds)
+    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
+    if (shouldHandleDependencies(dependencyOptions)) {
+        await handleDependencies(resourcePath, layout.serverOutDir, dependencyOptions)
+    } else {
+        await cleanupDependencyArtifacts(layout.serverOutDir)
+    }
     await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
     console.log(`[standalone] Built ${path.basename(layout.serverOutDir)}`)
 }
@@ -439,7 +438,7 @@ async function copyResource(resourcePath, outDir, options = {}) {
 
     if (absSrcPath === absOutDir) {
         if (shouldHandleDependencies(options)) {
-            await handleDependencies(resourcePath, outDir)
+            await handleDependencies(resourcePath, outDir, options)
         }
         return
     }
@@ -468,7 +467,7 @@ async function copyResource(resourcePath, outDir, options = {}) {
     }
 
     if (shouldHandleDependencies(options)) {
-        await handleDependencies(resourcePath, outDir)
+        await handleDependencies(resourcePath, outDir, options)
     }
 
     const copyServerEntry = resolveEntry(resourcePath, 'server', options.entryPoints?.server)

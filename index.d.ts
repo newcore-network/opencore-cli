@@ -345,6 +345,9 @@ export interface ResourceBuildConfig {
    * Defaults to the current OS (win32/linux/darwin).
    */
   serverBinaryPlatform?: 'win32' | 'linux' | 'darwin' | string;
+
+  /** Override dependency resolution for this resource. */
+  dependencyResolution?: DependencyResolutionConfig;
 }
 
 
@@ -631,6 +634,39 @@ export interface SideBuildConfig {
   sourceMaps?: boolean;
 }
 
+export type DependencyResolutionMode =
+  | 'auto'
+  | 'isolated'
+  | 'shared-resource'
+  | 'bundle'
+  | 'symlink';
+
+export interface DependencyResolutionConfig {
+  /**
+   * Runtime dependency strategy for server.external packages.
+   * `auto` resolves to `isolated` for FiveM/RedM sandbox compatibility.
+   * `shared-resource` is experimental and generates one dependency resource.
+   * `bundle` is experimental and bundles configured server externals when compatible.
+   * @default 'auto'
+   */
+  mode?: DependencyResolutionMode;
+
+  /** Package manager used to install isolated runtime dependencies. */
+  packageManager?: 'auto' | 'npm' | 'pnpm' | 'yarn';
+
+  /** Resource name used by the shared-resource strategy. */
+  sharedResourceName?: string;
+
+  /** Reject symlinks that resolve outside the generated resource. */
+  verifySandboxPaths?: boolean;
+
+  /** Allow dependency install lifecycle scripts. Disabled by default. */
+  allowInstallScripts?: boolean;
+
+  /** Allow package-manager cache usage when installing dependencies. */
+  cache?: boolean;
+}
+
 /**
  * Global build configuration.
  * These settings apply to all resources unless overridden.
@@ -706,6 +742,22 @@ export interface BuildConfig {
    * @default CPU cores
    */
   maxWorkers?: number;
+
+  /**
+   * Controls how server.external runtime dependencies are made available in built resources.
+   *
+   * @example
+   * ```typescript
+   * dependencyResolution: {
+   *   mode: 'isolated',
+   *   packageManager: 'auto',
+   *   verifySandboxPaths: true,
+   *   allowInstallScripts: false,
+   *   cache: true,
+   * }
+   * ```
+   */
+  dependencyResolution?: DependencyResolutionConfig;
 
   /**
    * Server-side build configuration.

@@ -71,6 +71,20 @@ func buildSideOptionsFromConfig(cfg *config.BuildSideConfig) *BuildSideOptions {
 	}
 }
 
+func dependencyResolutionFromConfig(cfg *config.DependencyResolutionConfig) *DependencyResolutionConfig {
+	if cfg == nil {
+		return nil
+	}
+	return &DependencyResolutionConfig{
+		Mode:                cfg.Mode,
+		PackageManager:      cfg.PackageManager,
+		SharedResourceName:  cfg.SharedResourceName,
+		VerifySandboxPaths:  cfg.VerifySandboxPaths,
+		AllowInstallScripts: cfg.AllowInstallScripts,
+		Cache:               cfg.Cache,
+	}
+}
+
 func mergeBuildSideConfig(base *config.BuildSideConfig, override *config.BuildSideConfig) *config.BuildSideConfig {
 	if base == nil {
 		return override
@@ -190,6 +204,10 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 	if err := b.validateTaskSources(tasks); err != nil {
 		return err
 	}
+	sharedOptions, sharedName, err := b.sharedDependencyOptions(tasks)
+	if err != nil {
+		return err
+	}
 
 	// Clean only the resources we are about to build
 	uniqueResources := make(map[string]struct{})
@@ -198,10 +216,19 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 		baseResource := strings.Split(task.ResourceName, "/")[0]
 		uniqueResources[baseResource] = struct{}{}
 	}
+	if sharedName != "" {
+		uniqueResources[sharedName] = struct{}{}
+	}
 
 	for baseResource := range uniqueResources {
 		if err := b.cleanResourceOutputDir(baseResource); err != nil {
 			return fmt.Errorf("failed to clean resource output directory: %w", err)
+		}
+	}
+	if sharedOptions != nil {
+		layout := b.resourceLayout(sharedName)
+		if _, err := b.resourceBuilder.GenerateSharedDependencies(ctx, layout.ServerOutDir, *sharedOptions); err != nil {
+			return err
 		}
 	}
 
@@ -216,7 +243,6 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 
 	// Build with parallel or sequential mode
 	var results []BuildResult
-	var err error
 
 	if b.config.Build.Parallel && len(tasks) > 1 {
 		if mode == OutputModeTUI {
@@ -283,16 +309,31 @@ func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]B
 	if err := b.validateTaskSources(tasks); err != nil {
 		return nil, err
 	}
+	sharedOptions, sharedName, err := b.sharedDependencyOptions(tasks)
+	if err != nil {
+		return nil, err
+	}
 
 	uniqueResources := make(map[string]struct{})
+	resourceTasks := make(map[string][]BuildTask)
 	for _, task := range tasks {
 		baseResource := strings.Split(task.ResourceName, "/")[0]
 		uniqueResources[baseResource] = struct{}{}
+		resourceTasks[baseResource] = append(resourceTasks[baseResource], task)
+	}
+	if sharedName != "" {
+		uniqueResources[sharedName] = struct{}{}
 	}
 
 	for baseResource := range uniqueResources {
-		if err := b.cleanResourceOutputDir(baseResource); err != nil {
+		if err := b.cleanResourceOutputForTasks(baseResource, resourceTasks[baseResource]); err != nil {
 			return nil, fmt.Errorf("failed to clean resource output directory: %w", err)
+		}
+	}
+	if sharedOptions != nil {
+		layout := b.resourceLayout(sharedName)
+		if _, err := b.resourceBuilder.GenerateSharedDependencies(ctx, layout.ServerOutDir, *sharedOptions); err != nil {
+			return nil, err
 		}
 	}
 
@@ -661,6 +702,97 @@ func buildOptionsWithLayout(layout resourceBuildLayout, opts BuildOptions) Build
 	return opts
 }
 
+func (b *Builder) applyDependencyResolution(opts *BuildOptions, buildCfg *config.BuildConfig, resourceBuildCfg *config.ResourceBuildConfig) {
+	if opts == nil {
+		return
+	}
+	if buildCfg != nil && buildCfg.DependencyResolution != nil {
+		opts.DependencyResolution = dependencyResolutionFromConfig(buildCfg.DependencyResolution)
+	} else if b.config.Build.DependencyResolution != nil {
+		opts.DependencyResolution = dependencyResolutionFromConfig(b.config.Build.DependencyResolution)
+	}
+	if resourceBuildCfg != nil && resourceBuildCfg.DependencyResolution != nil {
+		opts.DependencyResolution = dependencyResolutionFromConfig(resourceBuildCfg.DependencyResolution)
+	}
+}
+
+func dependencyResolutionMode(opts BuildOptions) string {
+	if opts.DependencyResolution == nil || strings.TrimSpace(opts.DependencyResolution.Mode) == "" || opts.DependencyResolution.Mode == "auto" {
+		return "isolated"
+	}
+	return strings.ToLower(strings.TrimSpace(opts.DependencyResolution.Mode))
+}
+
+func sharedResourceName(opts BuildOptions) string {
+	if opts.DependencyResolution != nil && strings.TrimSpace(opts.DependencyResolution.SharedResourceName) != "" {
+		return strings.TrimSpace(opts.DependencyResolution.SharedResourceName)
+	}
+	return "__opencore_deps"
+}
+
+func serverExternalsFromTask(task BuildTask) []string {
+	if !task.Options.Server.Enabled || task.Options.Server.Options == nil {
+		return nil
+	}
+	return task.Options.Server.Options.External
+}
+
+func (b *Builder) sharedDependencyOptions(tasks []BuildTask) (*SharedDependencyOptions, string, error) {
+	var deps []SharedDependencyResource
+	name := ""
+	var cfg *DependencyResolutionConfig
+
+	for _, task := range tasks {
+		if dependencyResolutionMode(task.Options) != "shared-resource" {
+			continue
+		}
+		externals := serverExternalsFromTask(task)
+		if len(externals) == 0 {
+			continue
+		}
+
+		taskSharedName := sharedResourceName(task.Options)
+		if name == "" {
+			name = taskSharedName
+			cfg = task.Options.DependencyResolution
+		} else if name != taskSharedName {
+			return nil, "", fmt.Errorf("shared-resource dependency resolution uses multiple sharedResourceName values (%q and %q)", name, taskSharedName)
+		}
+
+		deps = append(deps, SharedDependencyResource{ResourcePath: task.Path, Externals: externals})
+	}
+
+	if len(deps) == 0 {
+		return nil, "", nil
+	}
+	if name == "" {
+		name = "__opencore_deps"
+	}
+
+	options := &SharedDependencyOptions{SharedResourceName: name, Dependencies: deps}
+	if cfg != nil {
+		options.PackageManager = cfg.PackageManager
+		options.VerifySandboxPaths = cfg.VerifySandboxPaths
+		options.AllowInstallScripts = cfg.AllowInstallScripts
+		options.Cache = cfg.Cache
+	}
+
+	return options, name, nil
+}
+
+func (b *Builder) generateSharedDependencyResource(ctx context.Context, tasks []BuildTask) (string, error) {
+	options, name, err := b.sharedDependencyOptions(tasks)
+	if err != nil || options == nil {
+		return "", err
+	}
+	layout := b.resourceLayout(name)
+	_, err = b.resourceBuilder.GenerateSharedDependencies(ctx, layout.ServerOutDir, *options)
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 // collectAllTasks gathers all build tasks from config
 func (b *Builder) collectAllTasks() []BuildTask {
 	var tasks []BuildTask
@@ -718,6 +850,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 	if coreBuildCfg.ServerBinaryPlatform != "" {
 		coreTask.Options.ServerBinaryPlatform = coreBuildCfg.ServerBinaryPlatform
 	}
+	b.applyDependencyResolution(&coreTask.Options, coreBuildCfg, nil)
 
 	tasks = append(tasks, coreTask)
 
@@ -799,6 +932,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					ServerBinaries: nil,
 				}),
 			}
+			b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 
 			// Apply explicit overrides
 			if explicit != nil {
@@ -839,6 +973,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					if explicit.Build.ServerBinaryPlatform != "" {
 						task.Options.ServerBinaryPlatform = explicit.Build.ServerBinaryPlatform
 					}
+					b.applyDependencyResolution(&task.Options, &b.config.Build, explicit.Build)
 				}
 
 				// Add views task if configured or discovered
@@ -963,6 +1098,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			if res.Build.ServerBinaryPlatform != "" {
 				task.Options.ServerBinaryPlatform = res.Build.ServerBinaryPlatform
 			}
+			b.applyDependencyResolution(&task.Options, &b.config.Build, res.Build)
+		} else {
+			b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 		}
 
 		// Resources are always compiled, so we can always check for views
@@ -1049,7 +1187,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					standaloneLogLevel = "INFO"
 				}
 
-				tasks = append(tasks, BuildTask{
+				task := BuildTask{
 					Path:           match,
 					ResourceName:   resourceName,
 					Type:           taskType,
@@ -1064,7 +1202,13 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Compile:     shouldCompile,
 						EntryPoints: entryPoints,
 					}),
-				})
+				}
+				if explicit != nil && explicit.Build != nil {
+					b.applyDependencyResolution(&task.Options, &b.config.Build, explicit.Build)
+				} else {
+					b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
+				}
+				tasks = append(tasks, task)
 			}
 		}
 
@@ -1126,6 +1270,9 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				if res.Build.ServerBinaryPlatform != "" {
 					task.Options.ServerBinaryPlatform = res.Build.ServerBinaryPlatform
 				}
+				b.applyDependencyResolution(&task.Options, &b.config.Build, res.Build)
+			} else {
+				b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 			}
 
 			tasks = append(tasks, task)
@@ -1440,6 +1587,34 @@ func (b *Builder) hasClientCode(resourcePath string) bool {
 	return false
 }
 
+// cleanResourceOutputForTasks cleans a resource's output before a rebuild,
+// scoped to the tasks being built. A views-only rebuild (e.g. editing a .tsx UI
+// file in dev mode) cleans only the views subdirectory; wiping the whole
+// resource dir would delete the sibling server.js/client.js that aren't being
+// regenerated.
+func (b *Builder) cleanResourceOutputForTasks(resourceName string, tasks []BuildTask) error {
+	// No tasks (shared-dependency resource) or any non-views task means the
+	// whole resource output is regenerated, so a full clean is safe.
+	if len(tasks) == 0 {
+		return b.cleanResourceOutputDir(resourceName)
+	}
+	for _, task := range tasks {
+		if task.Type != TypeViews {
+			return b.cleanResourceOutputDir(resourceName)
+		}
+	}
+
+	for _, task := range tasks {
+		if viewsDir := strings.TrimSpace(task.OutDir); viewsDir != "" {
+			if err := os.RemoveAll(viewsDir); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (b *Builder) cleanResourceOutputDir(resourceName string) error {
 	layout := b.resourceLayout(resourceName)
 	paths := []string{layout.ServerOutDir}
@@ -1451,7 +1626,31 @@ func (b *Builder) cleanResourceOutputDir(resourceName string) error {
 		if _, err := os.Stat(resourceDir); os.IsNotExist(err) {
 			continue
 		}
-		if err := os.RemoveAll(resourceDir); err != nil {
+		if err := cleanResourceDir(resourceDir); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func cleanResourceDir(resourceDir string) error {
+	markerPath := filepath.Join(resourceDir, ".opencore-deps.json")
+	if _, err := os.Stat(markerPath); err != nil {
+		return os.RemoveAll(resourceDir)
+	}
+
+	entries, err := os.ReadDir(resourceDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "node_modules" || name == ".opencore-deps.json" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(resourceDir, name)); err != nil {
 			return err
 		}
 	}

@@ -122,7 +122,7 @@ function createExcludeNodeAdaptersPlugin(isServerBuild) {
     }
 }
 
-function createExternalPackagesPlugin(externals = []) {
+function createExternalPackagesPlugin(externals = [], usedExternals = null) {
     if (!externals || externals.length === 0) {
         return {
             name: 'external-packages',
@@ -140,6 +140,9 @@ function createExternalPackagesPlugin(externals = []) {
                 for (const pkg of externals) {
                     if (importPath === pkg || importPath.startsWith(pkg + '/')) {
                         console.log(`[external-packages] Marking as external: ${importPath}`)
+                        if (usedExternals && typeof usedExternals.add === 'function') {
+                            usedExternals.add(importPath)
+                        }
                         return {
                             path: importPath,
                             external: true
@@ -147,6 +150,52 @@ function createExternalPackagesPlugin(externals = []) {
                     }
                 }
                 return null
+            })
+        },
+    }
+}
+
+function externalBasePackage(specifier) {
+    if (specifier.startsWith('@')) {
+        const parts = specifier.split('/')
+        return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : specifier
+    }
+    return specifier.split('/')[0]
+}
+
+function createSharedResourceDependencyPlugin(externals = [], sharedResourceName = '__opencore_deps', usedExternals = null) {
+    if (!externals || externals.length === 0) {
+        return { name: 'shared-resource-dependencies', setup() {} }
+    }
+
+    return {
+        name: 'shared-resource-dependencies',
+        setup(build) {
+            build.onResolve({ filter: /.*/ }, (args) => {
+                for (const pkg of externals) {
+                    if (args.path === pkg || args.path.startsWith(pkg + '/')) {
+                        if (usedExternals && typeof usedExternals.add === 'function') {
+                            usedExternals.add(args.path)
+                        }
+                        return { path: args.path, namespace: 'opencore-shared-dep' }
+                    }
+                }
+                return null
+            })
+
+            build.onLoad({ filter: /.*/, namespace: 'opencore-shared-dep' }, (args) => {
+                const basePackage = externalBasePackage(args.path)
+                const subpath = args.path === basePackage ? '' : args.path.slice(basePackage.length + 1)
+                const parts = ['node_modules', ...basePackage.split('/')]
+                if (subpath) parts.push(...subpath.split('/'))
+                return {
+                    loader: 'js',
+                    contents: [
+                        'const path = require("path");',
+                        `const target = path.join(GetResourcePath(${JSON.stringify(sharedResourceName)}), ${parts.map(part => JSON.stringify(part)).join(', ')});`,
+                        'module.exports = require(target);',
+                    ].join('\n'),
+                }
             })
         },
     }
@@ -647,6 +696,7 @@ module.exports = {
     createSwcPlugin,
     createExcludeNodeAdaptersPlugin,
     createExternalPackagesPlugin,
+    createSharedResourceDependencyPlugin,
     preserveFiveMExportsPlugin,
     createNodeGlobalsShimPlugin,
     createTsconfigPathsPlugin,

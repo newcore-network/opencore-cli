@@ -23,6 +23,20 @@ type ResourceBuilder struct {
 	embeddedScriptReady bool
 }
 
+type SharedDependencyResource struct {
+	ResourcePath string   `json:"resourcePath"`
+	Externals    []string `json:"externals"`
+}
+
+type SharedDependencyOptions struct {
+	SharedResourceName  string                     `json:"sharedResourceName"`
+	PackageManager      string                     `json:"packageManager,omitempty"`
+	VerifySandboxPaths  *bool                      `json:"verifySandboxPaths,omitempty"`
+	AllowInstallScripts *bool                      `json:"allowInstallScripts,omitempty"`
+	Cache               *bool                      `json:"cache,omitempty"`
+	Dependencies        []SharedDependencyResource `json:"dependencies"`
+}
+
 // NewResourceBuilder creates a new resource builder
 func NewResourceBuilder(projectPath string) *ResourceBuilder {
 	return &ResourceBuilder{
@@ -109,6 +123,31 @@ func (rb *ResourceBuilder) getBuildScriptPath(task BuildTask) (string, error) {
 // Build executes a build task and returns the result
 func (rb *ResourceBuilder) Build(task BuildTask) BuildResult {
 	return rb.BuildWithContext(context.Background(), task)
+}
+
+func (rb *ResourceBuilder) GenerateSharedDependencies(ctx context.Context, outDir string, options SharedDependencyOptions) (string, error) {
+	scriptPath, err := rb.ensureEmbeddedScript()
+	if err != nil {
+		return "", err
+	}
+
+	optionsJSON, err := json.Marshal(options)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal shared dependency options: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "node", scriptPath, "shared-deps", outDir, string(optionsJSON))
+	cmd.Dir = rb.projectPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return string(output), ctx.Err()
+		}
+		return string(output), fmt.Errorf("shared dependency resource generation failed: %w\nOutput:\n%s", err, string(output))
+	}
+
+	return string(output), nil
 }
 
 // BuildWithContext executes a build task and returns the result.

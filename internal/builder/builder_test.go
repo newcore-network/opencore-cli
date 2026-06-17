@@ -685,6 +685,83 @@ func TestCollectAllTasks_ExplicitResourceViewsInheritResourceDefaults(t *testing
 	t.Fatal("Expected xchat/ui views task")
 }
 
+func TestCleanResourceOutputForTasks_ViewsOnlyKeepsSiblings(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: tmp,
+		Core:   config.CoreConfig{Path: "./core", ResourceName: "core"},
+		Build:  config.BuildConfig{},
+	}
+	builder := New(cfg)
+
+	layout := builder.resourceLayout("team")
+
+	// Seed a fully-built resource: server.js, client.js, fxmanifest.lua and ui/.
+	if err := os.MkdirAll(layout.ViewsOutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	serverJS := filepath.Join(layout.ServerOutDir, "server.js")
+	clientJS := filepath.Join(layout.ClientOutDir, "client.js")
+	manifest := filepath.Join(layout.ServerOutDir, "fxmanifest.lua")
+	staleView := filepath.Join(layout.ViewsOutDir, "old.js")
+	for _, f := range []string{serverJS, clientJS, manifest, staleView} {
+		if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	viewsTask := BuildTask{
+		ResourceName: "team/ui",
+		Type:         TypeViews,
+		OutDir:       layout.ViewsOutDir,
+	}
+	if err := builder.cleanResourceOutputForTasks("team", []BuildTask{viewsTask}); err != nil {
+		t.Fatalf("cleanResourceOutputForTasks returned error: %v", err)
+	}
+
+	// Sibling artifacts must survive a views-only clean.
+	for _, f := range []string{serverJS, clientJS, manifest} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("expected %s to survive views-only clean, but it was removed", filepath.Base(f))
+		}
+	}
+	// The views output dir itself must be cleaned (stale assets removed).
+	if _, err := os.Stat(staleView); !os.IsNotExist(err) {
+		t.Errorf("expected stale view artifact to be removed from views output dir")
+	}
+}
+
+func TestCleanResourceOutputForTasks_FullRebuildCleansAll(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: tmp,
+		Core:   config.CoreConfig{Path: "./core", ResourceName: "core"},
+		Build:  config.BuildConfig{},
+	}
+	builder := New(cfg)
+	layout := builder.resourceLayout("team")
+
+	if err := os.MkdirAll(layout.ServerOutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(layout.ServerOutDir, "server.js")
+	if err := os.WriteFile(stale, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resourceTask := BuildTask{ResourceName: "team", Type: TypeResource, OutDir: layout.ServerOutDir}
+	viewsTask := BuildTask{ResourceName: "team/ui", Type: TypeViews, OutDir: layout.ViewsOutDir}
+	if err := builder.cleanResourceOutputForTasks("team", []BuildTask{resourceTask, viewsTask}); err != nil {
+		t.Fatalf("cleanResourceOutputForTasks returned error: %v", err)
+	}
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("expected full rebuild to clean stale server.js")
+	}
+}
+
 func TestCollectAllTasks_BuildOptions(t *testing.T) {
 	serverFalse := &config.ResourceBuildSideConfig{Enabled: false}
 
@@ -810,6 +887,78 @@ func TestCollectAllTasks_ResourceSideOverrides(t *testing.T) {
 	}
 	if databaseTask.Options.Server.Options.External[0] != "pg" || databaseTask.Options.Server.Options.External[1] != "typeorm" {
 		t.Errorf("Expected server externals [pg typeorm], got %#v", databaseTask.Options.Server.Options.External)
+	}
+}
+
+func TestSharedDependencyOptions(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core:   config.CoreConfig{Path: "./core", ResourceName: "core"},
+		Build: config.BuildConfig{
+			DependencyResolution: &config.DependencyResolutionConfig{Mode: "shared-resource", SharedResourceName: "__deps", PackageManager: "npm"},
+			Server:               &config.BuildSideConfig{External: []string{"pg"}},
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path:  "./resources/database",
+					Build: &config.ResourceBuildConfig{Server: &config.ResourceBuildSideConfig{Enabled: true, Options: &config.BuildSideConfig{External: []string{"typeorm", "@prisma/adapter-pg"}}}},
+				},
+			},
+		},
+	}
+
+	b := New(cfg)
+	tasks := b.collectAllTasks()
+	options, name, err := b.sharedDependencyOptions(tasks)
+	if err != nil {
+		t.Fatalf("sharedDependencyOptions failed: %v", err)
+	}
+	if name != "__deps" {
+		t.Fatalf("expected shared resource name __deps, got %q", name)
+	}
+	if options == nil || options.PackageManager != "npm" {
+		t.Fatalf("expected shared dependency options with npm, got %#v", options)
+	}
+	if len(options.Dependencies) != 2 {
+		t.Fatalf("expected core and database dependency entries, got %d", len(options.Dependencies))
+	}
+}
+
+func TestSharedDependencyOptionsRejectsNameConflict(t *testing.T) {
+	cfg := &config.Config{
+		Name:   "test-project",
+		OutDir: "./dist",
+		Core:   config.CoreConfig{Path: "./core", ResourceName: "core"},
+		Build: config.BuildConfig{
+			DependencyResolution: &config.DependencyResolutionConfig{Mode: "shared-resource", SharedResourceName: "__deps_a"},
+			Server:               &config.BuildSideConfig{External: []string{"pg"}},
+		},
+		Resources: config.ResourcesConfig{
+			Explicit: []config.ExplicitResource{
+				{
+					Path: "./resources/database",
+					Build: &config.ResourceBuildConfig{
+						DependencyResolution: &config.DependencyResolutionConfig{Mode: "shared-resource", SharedResourceName: "__deps_b"},
+						Server:               &config.ResourceBuildSideConfig{Enabled: true, Options: &config.BuildSideConfig{External: []string{"typeorm"}}},
+					},
+				},
+			},
+		},
+	}
+
+	b := New(cfg)
+	_, _, err := b.sharedDependencyOptions(b.collectAllTasks())
+	if err == nil {
+		t.Fatal("expected shared resource name conflict")
+	}
+}
+
+func TestDependencyResolutionModeBundle(t *testing.T) {
+	task := BuildTask{Options: BuildOptions{DependencyResolution: &DependencyResolutionConfig{Mode: "bundle"}}}
+	if got := dependencyResolutionMode(task.Options); got != "bundle" {
+		t.Fatalf("expected bundle dependency resolution mode, got %q", got)
 	}
 }
 

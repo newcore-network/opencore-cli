@@ -185,8 +185,76 @@ Notes:
 | `sourceMaps` | `boolean` | `false` | Generate source maps |
 | `parallel` | `boolean` | `false` | Parallel compilation |
 | `maxWorkers` | `number` | CPU cores | Max parallel workers |
+| `dependencyResolution` | `DependencyResolutionConfig` | `{ mode: 'auto' }` | Runtime dependency strategy for `server.external` packages |
 | `server` | `SideBuildConfig` | - | Server build config |
 | `client` | `SideBuildConfig` | - | Client build config |
+
+### Dependency Resolution Options
+
+`auto` resolves to `isolated` for FiveM/RedM. In isolated mode, OpenCore writes a minimal `package.json`, installs only normalized `server.external` runtime packages into the built resource, and rejects symlinks that escape the resource folder. `shared-resource` is experimental: it generates one dependency resource and proxies external imports through `GetResourcePath(...)`. `bundle` is experimental and bundles configured server externals into each resource when compatibility checks pass. Validate experimental modes with a real FXServer Node.js 22 server before production use. `symlink` is legacy opt-in and may fail under the FXServer Node.js 22 filesystem sandbox.
+
+```ts
+export default defineConfig({
+  build: {
+    dependencyResolution: {
+      mode: 'isolated',
+      packageManager: 'auto',
+      verifySandboxPaths: true,
+      allowInstallScripts: false,
+      cache: true,
+    },
+    server: {
+      external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+    },
+  },
+})
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `mode` | `'auto' \| 'isolated' \| 'symlink' \| 'shared-resource' \| 'bundle'` | `'auto'` | Dependency strategy. `shared-resource` and `bundle` are experimental. |
+| `packageManager` | `'auto' \| 'npm' \| 'pnpm' \| 'yarn'` | `'auto'` | Package manager for isolated installs |
+| `verifySandboxPaths` | `boolean` | `true` | Reject symlinks resolving outside the resource |
+| `allowInstallScripts` | `boolean` | `false` | Allow dependency lifecycle scripts during install |
+| `cache` | `boolean` | `true` | Allow package-manager cache usage |
+| `sharedResourceName` | `string` | `'__opencore_deps'` | Generated dependency resource name for shared-resource mode |
+
+Shared dependency resource example:
+
+```ts
+export default defineConfig({
+  build: {
+    dependencyResolution: {
+      mode: 'shared-resource',
+      sharedResourceName: '__opencore_deps',
+      packageManager: 'auto',
+      verifySandboxPaths: true,
+    },
+    server: {
+      external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+    },
+  },
+})
+```
+
+This produces `__opencore_deps/package.json`, `__opencore_deps/node_modules`, and a minimal `fxmanifest.lua`. If two resources require different version specs for the same package, the build fails with a dependency conflict instead of choosing one silently.
+
+Bundle mode example:
+
+```ts
+export default defineConfig({
+  build: {
+    dependencyResolution: {
+      mode: 'bundle',
+    },
+    server: {
+      external: ['nanoid'],
+    },
+  },
+})
+```
+
+In bundle mode, OpenCore treats `server.external` as the set of packages to compatibility-check and then bundle into each resource. Native packages are rejected, and packages with dynamic `require()` calls produce warnings because they may not bundle reliably. Use `isolated` for Prisma, native modules, packages with runtime assets, or packages that rely on dynamic loading.
 
 ### Side Build Options
 

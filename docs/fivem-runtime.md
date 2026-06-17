@@ -44,6 +44,58 @@ server: {
 }
 ```
 
+When `server.external` is used, OpenCore defaults to sandbox-safe isolated dependency installation for FiveM/RedM:
+
+```typescript
+build: {
+  dependencyResolution: {
+    mode: 'isolated',
+    packageManager: 'auto',
+    verifySandboxPaths: true,
+    allowInstallScripts: false,
+  },
+  server: {
+    external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+  },
+}
+```
+
+The built resource gets its own physical `node_modules` and minimal `package.json`. OpenCore resolves dependency versions from the resource `package.json`, then the root `package.json`, then installed package metadata. It refuses to install `latest` silently.
+
+Legacy `dependencyResolution.mode: 'symlink'` remains available as explicit opt-in, but it may fail under the FXServer Node.js 22 filesystem sandbox.
+
+Experimental shared dependency mode is available when you want all resources to read runtime packages from one generated resource:
+
+```typescript
+build: {
+  dependencyResolution: {
+    mode: 'shared-resource',
+    sharedResourceName: '__opencore_deps',
+    verifySandboxPaths: true,
+  },
+  server: {
+    external: ['typeorm', 'pg', '@prisma/adapter-pg'],
+  },
+}
+```
+
+OpenCore generates `__opencore_deps` and rewrites external imports at bundle time through an esbuild virtual module that uses `GetResourcePath('__opencore_deps')`. This mode is experimental because FXServer sandbox rules may still restrict cross-resource reads under Node.js 22.
+
+Experimental bundle mode is available for pure JavaScript packages:
+
+```typescript
+build: {
+  dependencyResolution: {
+    mode: 'bundle',
+  },
+  server: {
+    external: ['nanoid'],
+  },
+}
+```
+
+In this mode, `server.external` marks packages that should be compatibility-checked and then bundled into each resource. OpenCore rejects native packages and warns about dynamic `require()` usage. Do not use bundle mode for Prisma, native modules, packages that load runtime assets, or packages that depend on dynamic loading.
+
 ---
 
 ## Client Runtime

@@ -324,8 +324,9 @@ func TestCopyResource(t *testing.T) {
 		Path:   srcDir,
 		OutDir: outDir,
 		Options: BuildOptions{
-			Server: SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
-			Client: SideConfigValue{Enabled: false},
+			Server:               SideConfigValue{Enabled: true, Options: &BuildSideOptions{External: []string{"typeorm"}}},
+			Client:               SideConfigValue{Enabled: false},
+			DependencyResolution: &DependencyResolutionConfig{Mode: "symlink"},
 		},
 	}
 
