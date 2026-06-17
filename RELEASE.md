@@ -48,6 +48,10 @@ The resolver detects known native packages and native package indicators such as
 
 Native packages are rejected in `bundle` mode and reported clearly for dependency-resolution flows.
 
+### Bug Fixes
+
+**Dev Mode UI Hot-Reload ([#16](https://github.com/newcore-network/opencore-cli/issues/16)):** Fixed an issue where `server.js` and `client.js` would disappear from the resource output directory when editing UI files (`.tsx`, `.jsx`) in dev mode. The incremental build now preserves sibling artifacts when rebuilding only views, instead of wiping the entire resource directory before the partial rebuild.
+
 ### Docs
 
 Added dependency resolver documentation and FiveM sandbox guidance:
@@ -57,6 +61,3 @@ Added dependency resolver documentation and FiveM sandbox guidance:
 
 Use `isolated` for production FiveM/RedM server resources that require runtime npm dependencies.
 
-### Bug Fixes
-
-**Dev Mode UI Hot-Reload (#16):** Fixed an issue where `server.js` and `client.js` would disappear from the resource output directory when editing UI files (`.tsx`, `.jsx`) in dev mode. The incremental build now preserves sibling artifacts when rebuilding only views, instead of wiping the entire resource directory before the partial rebuild.
