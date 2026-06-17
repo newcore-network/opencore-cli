@@ -315,16 +315,18 @@ func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]B
 	}
 
 	uniqueResources := make(map[string]struct{})
+	resourceTasks := make(map[string][]BuildTask)
 	for _, task := range tasks {
 		baseResource := strings.Split(task.ResourceName, "/")[0]
 		uniqueResources[baseResource] = struct{}{}
+		resourceTasks[baseResource] = append(resourceTasks[baseResource], task)
 	}
 	if sharedName != "" {
 		uniqueResources[sharedName] = struct{}{}
 	}
 
 	for baseResource := range uniqueResources {
-		if err := b.cleanResourceOutputDir(baseResource); err != nil {
+		if err := b.cleanResourceOutputForTasks(baseResource, resourceTasks[baseResource]); err != nil {
 			return nil, fmt.Errorf("failed to clean resource output directory: %w", err)
 		}
 	}
@@ -1583,6 +1585,34 @@ func (b *Builder) hasClientCode(resourcePath string) bool {
 	}
 
 	return false
+}
+
+// cleanResourceOutputForTasks cleans a resource's output before a rebuild,
+// scoped to the tasks being built. A views-only rebuild (e.g. editing a .tsx UI
+// file in dev mode) cleans only the views subdirectory; wiping the whole
+// resource dir would delete the sibling server.js/client.js that aren't being
+// regenerated.
+func (b *Builder) cleanResourceOutputForTasks(resourceName string, tasks []BuildTask) error {
+	// No tasks (shared-dependency resource) or any non-views task means the
+	// whole resource output is regenerated, so a full clean is safe.
+	if len(tasks) == 0 {
+		return b.cleanResourceOutputDir(resourceName)
+	}
+	for _, task := range tasks {
+		if task.Type != TypeViews {
+			return b.cleanResourceOutputDir(resourceName)
+		}
+	}
+
+	for _, task := range tasks {
+		if viewsDir := strings.TrimSpace(task.OutDir); viewsDir != "" {
+			if err := os.RemoveAll(viewsDir); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (b *Builder) cleanResourceOutputDir(resourceName string) error {
