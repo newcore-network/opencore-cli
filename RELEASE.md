@@ -56,3 +56,7 @@ Added dependency resolver documentation and FiveM sandbox guidance:
 - `docs/adapters/fivem.md`
 
 Use `isolated` for production FiveM/RedM server resources that require runtime npm dependencies.
+
+### Bug Fixes
+
+**Dev Mode UI Hot-Reload (#16):** Fixed an issue where `server.js` and `client.js` would disappear from the resource output directory when editing UI files (`.tsx`, `.jsx`) in dev mode. The incremental build now preserves sibling artifacts when rebuilding only views, instead of wiping the entire resource directory before the partial rebuild.
