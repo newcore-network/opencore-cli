@@ -192,6 +192,7 @@ func GenerateStarterProject(targetPath, projectName string, installIdentity bool
 		filepath.Join(targetPath, "views"),
 		filepath.Join(targetPath, "resources"),
 		filepath.Join(targetPath, "standalones"),
+		filepath.Join(targetPath, "environments"),
 	}
 
 	for _, dir := range dirs {
@@ -216,6 +217,9 @@ func GenerateStarterProject(targetPath, projectName string, installIdentity bool
 
 	files["core/src/server.ts"] = filepath.Join(targetPath, "core", "src", "server.ts")
 	files["core/src/client.ts"] = filepath.Join(targetPath, "core", "src", "client.ts")
+	files["environments/environment.model.ts"] = filepath.Join(targetPath, "environments", "environment.model.ts")
+	files["environments/environment.development.ts"] = filepath.Join(targetPath, "environments", "environment.development.ts")
+	files["environments/environment.production.ts"] = filepath.Join(targetPath, "environments", "environment.production.ts")
 
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)

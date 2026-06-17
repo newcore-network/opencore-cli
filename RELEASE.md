@@ -1,7 +1,11 @@
-## OpenCore CLI v1.3.1
+## OpenCore CLI v1.4.1
 
-### Fix
-- Fixed explicit resources build config issue
+### Fix — Dev mode build loop
 
-### Improve
-- Improved entrypoint init templates, reduced and more elegant using `loggers` const
+Fixed an infinite rebuild loop that could happen when running:
+
+- `opencore build`
+- `opencore dev`
+
+The watcher now ignores build-generated artifacts (including `.opencore/autoload.*.controllers.ts`) and output/deploy directories, preventing recursive self-triggered rebuilds.  
+Result: dev mode stabilizes after the initial build and only rebuilds on real source changes.

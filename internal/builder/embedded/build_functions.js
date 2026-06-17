@@ -1,6 +1,6 @@
 const path = require('path')
 const fs = require('fs')
-const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, createSharedResourceDependencyPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin } = require('./plugins')
+const { getEsbuild, createSwcPlugin, createExcludeNodeAdaptersPlugin, createExternalPackagesPlugin, createSharedResourceDependencyPlugin, preserveFiveMExportsPlugin, createNodeGlobalsShimPlugin, createTsconfigPathsPlugin, createReflectMetadataPlugin, createAutoloadDynamicImportShimPlugin, createAutoloadControllersRedirectPlugin, createEnvironmentAliasPlugin } = require('./plugins')
 const { getSharedConfig, getBuildOptions, getExternals } = require('./config')
 const { handleDependencies, shouldHandleDependencies, detectNativePackages, printNativePackageWarnings, checkBundleCompatibility, cleanupDependencyArtifacts } = require('./dependencies')
 
@@ -93,55 +93,7 @@ async function copyDirContents(srcDir, destDir) {
     }
 }
 
-function dependencyPlugin(isServerBuild, externals, dependencyResolution = {}, usedExternals = null) {
-    if (isServerBuild && dependencyResolution?.mode === 'shared-resource') {
-        return createSharedResourceDependencyPlugin(externals, dependencyResolution.sharedResourceName || '__opencore_deps', usedExternals)
-    }
-    if (isServerBuild && dependencyResolution?.mode === 'bundle') {
-        return createExternalPackagesPlugin([])
-    }
-    return createExternalPackagesPlugin(externals, usedExternals)
-}
-
-function esbuildExternals(serverExternals, dependencyResolution = {}) {
-    if (dependencyResolution?.mode === 'shared-resource' || dependencyResolution?.mode === 'bundle') return []
-    return serverExternals
-}
-
-function optionsWithServerExternals(options = {}, externals = []) {
-    return {
-        ...options,
-        server: {
-            ...(options.server && typeof options.server === 'object' ? options.server : {}),
-            external: externals,
-        },
-    }
-}
-
-function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null) {
-    const plugins = [
-        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
-        createAutoloadDynamicImportShimPlugin(),
-        createAutoloadControllersRedirectPlugin(resourcePath),
-        dependencyPlugin(isServerBuild, externals, dependencyResolution, usedExternals),
-        createSwcPlugin(target),
-        createExcludeNodeAdaptersPlugin(isServerBuild),
-        preserveFiveMExportsPlugin,
-        createNodeGlobalsShimPlugin(format)
-    ]
-
-    // Add tsconfig-paths plugin if resourcePath is provided
-    if (resourcePath) {
-        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
-        if (tsconfigPlugin) {
-            plugins.unshift(tsconfigPlugin) // Add at the beginning for early resolution
-        }
-    }
-
-    return plugins
-}
-
-function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null) {
+function getCorePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, environmentAliases = null) {
     const plugins = [
         createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
@@ -160,10 +112,43 @@ function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2
         }
     }
 
+    // Must be unshifted after tsconfig-paths so it ends up at index 0 and runs first.
+    const envPlugin = createEnvironmentAliasPlugin(environmentAliases)
+    if (envPlugin) {
+        plugins.unshift(envPlugin)
+    }
+
     return plugins
 }
 
-function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, dependencyResolution = {}, usedExternals = null) {
+function getResourcePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, environmentAliases = null) {
+    const plugins = [
+        createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
+        createAutoloadDynamicImportShimPlugin(),
+        createAutoloadControllersRedirectPlugin(resourcePath),
+        createExternalPackagesPlugin(externals),
+        createSwcPlugin(target),
+        createExcludeNodeAdaptersPlugin(isServerBuild),
+        preserveFiveMExportsPlugin,
+        createNodeGlobalsShimPlugin(format)
+    ]
+
+    if (resourcePath) {
+        const tsconfigPlugin = createTsconfigPathsPlugin(resourcePath)
+        if (tsconfigPlugin) {
+            plugins.unshift(tsconfigPlugin)
+        }
+    }
+
+    const envPlugin = createEnvironmentAliasPlugin(environmentAliases)
+    if (envPlugin) {
+        plugins.unshift(envPlugin)
+    }
+
+    return plugins
+}
+
+function getStandalonePlugins(isServerBuild = false, externals = [], target = 'es2020', format = 'iife', resourcePath = null, packageManager = null, environmentAliases = null) {
     const plugins = [
         createReflectMetadataPlugin({ packageManager, resourcePath, target: isServerBuild ? 'server' : 'client' }),
         createAutoloadDynamicImportShimPlugin(),
@@ -179,6 +164,11 @@ function getStandalonePlugins(isServerBuild = false, externals = [], target = 'e
         if (tsconfigPlugin) {
             plugins.unshift(tsconfigPlugin)
         }
+    }
+
+    const envPlugin = createEnvironmentAliasPlugin(environmentAliases)
+    if (envPlugin) {
+        plugins.unshift(envPlugin)
     }
 
     return plugins
@@ -259,8 +249,8 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
-            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals),
-            external: esbuildExternals(serverExternals, options.dependencyResolution),
+            plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.environmentAliases),
+            external: serverExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"server"',
@@ -280,7 +270,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(layout.clientOutDir, layout.clientOutFile),
-            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution),
+            plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.environmentAliases),
             external: clientExternals,
             define: {
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -331,8 +321,8 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
-            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals),
-            external: esbuildExternals(serverExternals, options.dependencyResolution),
+            plugins: getResourcePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.environmentAliases),
+            external: serverExternals,
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -353,7 +343,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(layout.clientOutDir, layout.clientOutFile),
-            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution),
+            plugins: getResourcePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.environmentAliases),
             external: clientExternals,
             define: {
                 ...shared.define,
@@ -404,8 +394,8 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: serverTarget,
             entryPoints: [serverEntry],
             outfile: path.join(layout.serverOutDir, layout.serverOutFile),
-            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals),
-            external: esbuildExternals(serverExternals, options.dependencyResolution),
+            plugins: getStandalonePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.environmentAliases),
+            external: serverExternals,
             define: {
                 ...shared.define,
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
@@ -426,7 +416,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             target: clientTarget,
             entryPoints: [clientEntry],
             outfile: path.join(layout.clientOutDir, layout.clientOutFile),
-            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution),
+            plugins: getStandalonePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.environmentAliases),
             external: clientExternals,
             define: {
                 ...shared.define,
