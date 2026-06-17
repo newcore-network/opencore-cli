@@ -290,7 +290,7 @@ function installCommand(pm, options = {}) {
     const allowScripts = dependencyConfig(options).allowInstallScripts === true
     if (pm === 'npm') return { command: 'npm', args: ['install', '--omit=dev', '--package-lock=false', ...(allowScripts ? [] : ['--ignore-scripts'])] }
     if (pm === 'yarn') return { command: 'yarn', args: ['install', '--production=true', '--no-lockfile', ...(allowScripts ? [] : ['--ignore-scripts'])] }
-    if (pm === 'pnpm') return { command: 'pnpm', args: ['install', '--prod', '--ignore-workspace', '--no-lockfile', '--reporter=append-only', '--package-import-method=copy', ...(allowScripts ? [] : ['--ignore-scripts'])] }
+    if (pm === 'pnpm') return { command: 'pnpm', args: ['install', '--prod', '--ignore-workspace', '--no-lockfile', '--reporter=append-only', '--config.node-linker=hoisted', '--package-import-method=copy', ...(allowScripts ? [] : ['--ignore-scripts'])] }
     throw new Error(`[deps] Invalid dependencyResolution.packageManager "${pm}". Expected auto, npm, pnpm, or yarn.`)
 }
 
@@ -311,6 +311,7 @@ function dependencyCacheKey(dependencies, pm, options = {}) {
         dependencies,
         packageManager: pm,
         allowInstallScripts: dependencyConfig(options).allowInstallScripts === true,
+        nodeLinker: pm === 'pnpm' ? 'hoisted' : undefined,
         platform: process.platform,
         arch: process.arch,
         node: process.versions.node.split('.')[0],
