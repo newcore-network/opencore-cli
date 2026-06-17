@@ -359,17 +359,6 @@ type BuildSideConfig struct {
 }
 
 type BuildConfig struct {
-	Minify               bool                        `json:"minify"`
-	SourceMaps           bool                        `json:"sourceMaps"`
-	LogLevel             string                      `json:"logLevel,omitempty"`
-	Target               string                      `json:"target,omitempty"`
-	Parallel             bool                        `json:"parallel"`
-	MaxWorkers           int                         `json:"maxWorkers,omitempty"`
-	ServerBinaries       []string                    `json:"serverBinaries,omitempty"`
-	ServerBinaryPlatform string                      `json:"serverBinaryPlatform,omitempty"`
-	DependencyResolution *DependencyResolutionConfig `json:"dependencyResolution,omitempty"`
-	Server               *BuildSideConfig            `json:"server,omitempty"`
-	Client               *BuildSideConfig            `json:"client,omitempty"`
 	Minify               bool                           `json:"minify"`
 	SourceMaps           bool                           `json:"sourceMaps"`
 	LogLevel             string                         `json:"logLevel,omitempty"`
@@ -378,6 +367,7 @@ type BuildConfig struct {
 	MaxWorkers           int                            `json:"maxWorkers,omitempty"`
 	ServerBinaries       []string                       `json:"serverBinaries,omitempty"`
 	ServerBinaryPlatform string                         `json:"serverBinaryPlatform,omitempty"`
+	DependencyResolution *DependencyResolutionConfig    `json:"dependencyResolution,omitempty"`
 	Server               *BuildSideConfig               `json:"server,omitempty"`
 	Client               *BuildSideConfig               `json:"client,omitempty"`
 	Environment          string                         `json:"environment,omitempty"`
