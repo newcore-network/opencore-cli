@@ -143,6 +143,9 @@ func TestEmbeddedBuildResourceWithDependencyResolutionAndEnvironmentAliases(t *t
 	}
 
 	repoRoot := findRepoRootWithNodeDeps(t)
+	if repoRoot == "" {
+		t.Skip("skipping: node build dependencies are not installed")
+	}
 	scriptDir := t.TempDir()
 	entries, err := BuildFS.ReadDir(".")
 	if err != nil {
@@ -254,6 +257,5 @@ func findRepoRootWithNodeDeps(t *testing.T) string {
 		}
 		cur = parent
 	}
-	t.Fatalf("could not find repo root with node_modules from %s", wd)
 	return ""
 }
