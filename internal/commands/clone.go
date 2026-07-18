@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,6 +29,20 @@ const (
 	templatesURL  = "https://github.com/" + templatesRepo
 	apiBaseURL    = "https://api.github.com/repos/" + templatesRepo + "/contents"
 )
+
+// httpClient is used for all GitHub API/download requests so a stalled
+// response can't hang the command indefinitely.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+// isSafeItemName reports whether a GitHub content item's name is safe to
+// join into a local filesystem path. Defense-in-depth against a compromised
+// or unexpected API response containing a path-traversal name.
+func isSafeItemName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	return !strings.ContainsAny(name, "/\\")
+}
 
 // GitHubContent represents a file/directory from GitHub API
 type GitHubContent struct {
@@ -149,7 +164,7 @@ func buildContentsAPIURL(path, branch string) string {
 // fetchGroupedTemplates fetches templates grouped by category (resources vs standalones)
 func fetchGroupedTemplates(branch string) (resources []templateDescriptor, standalones []templateDescriptor, err error) {
 	// Fetch root contents
-	resp, err := http.Get(buildContentsAPIURL("", branch))
+	resp, err := httpClient.Get(buildContentsAPIURL("", branch))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -196,7 +211,7 @@ func fetchGroupedTemplates(branch string) (resources []templateDescriptor, stand
 // fetchFolderContents fetches the list of directories inside a folder
 func fetchFolderContents(folderPath string, category templateCategory, branch string) ([]templateDescriptor, error) {
 	requestURL := buildContentsAPIURL(folderPath, branch)
-	resp, err := http.Get(requestURL)
+	resp, err := httpClient.Get(requestURL)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +251,7 @@ func fetchFolderContents(folderPath string, category templateCategory, branch st
 
 func fetchTemplateManifest(templatePath, branch string) (*templateManifest, error) {
 	requestURL := buildContentsAPIURL(templatePath, branch)
-	resp, err := http.Get(requestURL)
+	resp, err := httpClient.Get(requestURL)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +271,7 @@ func fetchTemplateManifest(templatePath, branch string) (*templateManifest, erro
 			continue
 		}
 
-		manifestResp, err := http.Get(item.DownloadURL)
+		manifestResp, err := httpClient.Get(item.DownloadURL)
 		if err != nil {
 			return nil, err
 		}
@@ -308,7 +323,7 @@ func resolveTemplate(templateName, branch string) (templateDescriptor, error) {
 }
 
 func fetchTemplateList() ([]string, error) {
-	resp, err := http.Get(apiBaseURL)
+	resp, err := httpClient.Get(apiBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +518,7 @@ func cloneWithSparseCheckout(template, targetPath, branch string) error {
 func cloneWithGitHubAPI(template, targetPath, branch string) error {
 	// First verify template exists
 	apiURL := buildContentsAPIURL(template, branch)
-	resp, err := http.Get(apiURL)
+	resp, err := httpClient.Get(apiURL)
 	if err != nil {
 		return fmt.Errorf("failed to connect to GitHub: %w", err)
 	}
@@ -527,7 +542,7 @@ func cloneWithGitHubAPI(template, targetPath, branch string) error {
 
 func downloadDirectory(remotePath, localPath, branch string) error {
 	apiURL := buildContentsAPIURL(remotePath, branch)
-	resp, err := http.Get(apiURL)
+	resp, err := httpClient.Get(apiURL)
 	if err != nil {
 		return err
 	}
@@ -543,6 +558,9 @@ func downloadDirectory(remotePath, localPath, branch string) error {
 	}
 
 	for _, item := range contents {
+		if !isSafeItemName(item.Name) {
+			return fmt.Errorf("unsafe item name in template contents: %q", item.Name)
+		}
 		localItemPath := filepath.Join(localPath, item.Name)
 
 		if item.Type == "dir" {
@@ -563,7 +581,7 @@ func downloadDirectory(remotePath, localPath, branch string) error {
 }
 
 func downloadFile(url, localPath string) error {
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return err
 	}
