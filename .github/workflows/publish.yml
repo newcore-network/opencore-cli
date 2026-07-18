@@ -93,9 +93,6 @@ jobs:
 
       - name: Publish to NPM (Trusted Publisher)
         if: ${{ matrix.isPublisher }}
-        env:
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
         run: npm publish --access public --provenance --tag "${{ steps.channel.outputs.channel }}"
 
       - name: Download all artifacts
