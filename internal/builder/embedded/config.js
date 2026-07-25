@@ -70,7 +70,7 @@ function getBuildOptions(side, options = {}) {
         return null
     }
 
-    return {
+    const buildOptions = {
         platform: merged.platform,
         target: merged.target,
         format: merged.format,
@@ -81,6 +81,17 @@ function getBuildOptions(side, options = {}) {
             'class-static-blocks': false,
         },
     }
+
+    // FiveM Enhanced (Node 26) breaks its global msgpack codec when a large CJS
+    // server bundle declares modules at the top level, failing every event and
+    // export with "this.codec.encode/decode is not a function". The IIFE moves
+    // those declarations into a function scope. Client already builds as `iife`.
+    if (side === 'server' && merged.format === 'cjs') {
+        buildOptions.banner = { js: '(function(){' }
+        buildOptions.footer = { js: '})();' }
+    }
+
+    return buildOptions
 }
 
 function getExternals(side, options = {}) {
