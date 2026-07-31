@@ -121,6 +121,29 @@ opencore update --package-manager pnpm
 opencore update --package-manager yarn
 ```
 
+## Release process
+
+Keep every npm package at the same version. Never edit only one `package.json`
+or reuse a version already published to npm.
+
+```bash
+npm run version:set -- 2.0.0-beta.2
+npm run release:check
+git add package.json npm/*/package.json
+git commit -m "chore: prepare v2.0.0-beta.2"
+git push origin develop
+```
+
+After the release commit is on `develop` or `master`, verify and create the
+matching tag. GitHub Actions verifies the tag version and publishes the
+packages automatically.
+
+```bash
+npm run version:check-tag -- v2.0.0-beta.2
+git tag -a v2.0.0-beta.2 -m "OpenCore CLI 2.0.0 beta 2"
+git push origin v2.0.0-beta.2
+```
+
 ---
 
 ## Quick Start

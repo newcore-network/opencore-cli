@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -27,6 +29,19 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Verify tag is on a release branch
+        run: |
+          git fetch origin develop master
+          tag_commit=$(git rev-list -n 1 "$GITHUB_SHA")
+          if git merge-base --is-ancestor "$tag_commit" origin/develop || git merge-base --is-ancestor "$tag_commit" origin/master; then
+            exit 0
+          fi
+          echo "Tag commit $tag_commit is not contained in develop or master."
+          exit 1
+
+      - name: Check package version matches tag
+        run: npm run version:check-tag -- "${{ github.ref_name }}"
 
       - name: Run Go tests
         run: go test ./...
@@ -46,27 +61,6 @@ jobs:
             if [ "$GOOS" = "windows" ]; then artifact="${artifact}.exe"; fi
             GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o "build/${artifact}" .
           done
-
-      - name: Update package versions from tag
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          node -e '
-            const fs = require("node:fs");
-            const version = process.env.VERSION.replace(/^v/, "");
-            const packageDirs = [".", "npm/linux-x64", "npm/linux-arm64", "npm/darwin-x64", "npm/darwin-arm64", "npm/win32-x64"];
-            const optionalDependencies = Object.fromEntries(packageDirs.slice(1).map((dir) => {
-              const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, "utf8"));
-              return [pkg.name, version];
-            }));
-            for (const dir of packageDirs) {
-              const file = `${dir}/package.json`;
-              const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
-              pkg.version = version;
-              if (dir === ".") pkg.optionalDependencies = optionalDependencies;
-              fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
-            }
-          '
 
       - name: Prepare platform packages
         run: bash scripts/prepare-npm-packages.sh build

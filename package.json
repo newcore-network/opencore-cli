@@ -20,7 +20,11 @@
     "opencore": "bin/opencore.js"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.js"
+    "test": "node --test test/**/*.test.js",
+    "version:set": "node scripts/version.js set",
+    "version:check": "node scripts/version.js check",
+    "version:check-tag": "node scripts/version.js check-tag",
+    "release:check": "node scripts/release-check.js"
   },
   "dependencies": {
     "esbuild": "^0.27.2",
