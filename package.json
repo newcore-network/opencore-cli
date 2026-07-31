@@ -1,6 +1,6 @@
 {
   "name": "@open-core/cli",
-  "version": "1.5.0",
+  "version": "2.0.0-beta.1",
   "description": "Official CLI tool for OpenCore Framework",
   "main": "index.js",
   "types": "index.d.ts",
@@ -17,15 +17,22 @@
     }
   },
   "bin": {
-    "opencore": "index.js"
+    "opencore": "bin/opencore.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "test": "node --test test/**/*.test.js"
   },
   "dependencies": {
     "esbuild": "^0.27.2",
     "@swc/core": "^1.15.8",
     "tsconfig-paths": "^4.2.0"
+  },
+  "optionalDependencies": {
+    "@open-core/cli-darwin-arm64": "2.0.0-beta.1",
+    "@open-core/cli-darwin-x64": "2.0.0-beta.1",
+    "@open-core/cli-linux-arm64": "2.0.0-beta.1",
+    "@open-core/cli-linux-x64": "2.0.0-beta.1",
+    "@open-core/cli-win32-x64": "2.0.0-beta.1"
   },
   "repository": {
     "type": "git",
@@ -41,23 +48,17 @@
   "author": "Newcore Network",
   "license": "MPL-2.0",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
-  "os": [
-    "darwin",
-    "linux",
-    "win32"
-  ],
   "files": [
-    "bin/opencore",
+    "bin/opencore.js",
     "index.js",
     "index.d.ts",
     "vite.js",
     "vite.mjs",
     "vite.d.ts",
-    "binary.js",
-    "install.js",
-    "config-helper.js"
+    "config-helper.js",
+    "platform.js"
   ],
   "publishConfig": {
     "access": "public"

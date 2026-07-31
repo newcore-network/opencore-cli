@@ -44,6 +44,23 @@ This may be outdated, the latest information is recommended at [opencorejs.dev](
 npm install -g @open-core/cli
 ```
 
+The CLI can also be installed with pnpm or Yarn Classic:
+
+```bash
+pnpm add -g @open-core/cli
+yarn global add @open-core/cli
+```
+
+Run without installing globally:
+
+```bash
+npx @open-core/cli
+```
+
+The npm package installs a prebuilt binary for the current platform. It does
+not run installation scripts or download binaries after npm has installed the
+packages. GitHub Releases remain available for manual downloads.
+
 ### Go
 
 ```bash
@@ -72,7 +89,7 @@ go build -o opencore .
 | `opencore clone <template>` | Clone an official template |
 | `opencore dev` | Start development mode with file watching |
 | `opencore doctor` | Validate project configuration |
-| `opencore update` | self-update CLI |
+| `opencore update` | Update the CLI through npm, pnpm, or Yarn |
 | `opencore --version` | Display CLI version |
 | `opencore --h` | Help |
 
@@ -86,26 +103,22 @@ For CI runners (for example GitHub Actions) and non-interactive shells, use plai
 opencore build --output=plain
 ```
 
-You can also disable automatic update checks in CI logs:
-
-```bash
-OPENCORE_DISABLE_UPDATE_CHECK=1 opencore build --output=plain
-```
-
-Choose a release channel when you want to validate prereleases before stable rollout:
-
-```bash
-opencore update --channel stable
-opencore update --channel beta
-
-OPENCORE_UPDATE_CHANNEL=beta opencore build
-```
-
 For npm installations, use dist-tags directly:
 
 ```bash
 npm install -g @open-core/cli
 npm install -g @open-core/cli@beta
+```
+
+Use `opencore update` to run the global update through the detected package
+manager. It does not download or replace binaries itself. Select a manager or
+beta explicitly when needed:
+
+```bash
+opencore update
+opencore update --channel beta
+opencore update --package-manager pnpm
+opencore update --package-manager yarn
 ```
 
 ---

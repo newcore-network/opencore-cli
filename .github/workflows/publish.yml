@@ -10,80 +10,82 @@ permissions:
   id-token: write
 
 jobs:
-  pipeline:
-    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
+  publish:
+    name: Build and publish
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            artifact: opencore-linux-amd64
-            isPublisher: false
-
-          - goos: darwin
-            goarch: amd64
-            artifact: opencore-darwin-amd64
-            isPublisher: false
-
-          - goos: darwin
-            goarch: arm64
-            artifact: opencore-darwin-arm64
-            isPublisher: false
-
-          - goos: windows
-            goarch: amd64
-            artifact: opencore-windows-amd64.exe
-            isPublisher: true
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.24.5"
 
-      - name: Go tests
-        if: ${{ matrix.isPublisher }}
-        run: go test ./...
-
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
-        run: |
-          go build -ldflags "-X main.version=${{ github.ref_name }}" -o "${{ matrix.artifact }}" .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
-
       - name: Setup Node
-        if: ${{ matrix.isPublisher }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Update package version
-        if: ${{ matrix.isPublisher }}
-        shell: bash
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Run Node tests
+        run: npm test
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          mkdir -p build
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS=${target%/*}
+            GOARCH=${target#*/}
+            artifact="opencore-${GOOS}-${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then artifact="${artifact}.exe"; fi
+            GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o "build/${artifact}" .
+          done
+
+      - name: Update package versions from tag
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const version = process.env.VERSION.replace(/^v/, "");
+            const packageDirs = [".", "npm/linux-x64", "npm/linux-arm64", "npm/darwin-x64", "npm/darwin-arm64", "npm/win32-x64"];
+            const optionalDependencies = Object.fromEntries(packageDirs.slice(1).map((dir) => {
+              const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, "utf8"));
+              return [pkg.name, version];
+            }));
+            for (const dir of packageDirs) {
+              const file = `${dir}/package.json`;
+              const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+              pkg.version = version;
+              if (dir === ".") pkg.optionalDependencies = optionalDependencies;
+              fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+            }
+          '
+
+      - name: Prepare platform packages
+        run: bash scripts/prepare-npm-packages.sh build
+
+      - name: Validate npm packages
+        run: |
+          mkdir -p dist/npm
+          npm pack --pack-destination dist/npm
+          for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
+            (cd "$package_dir" && npm pack --pack-destination ../../dist/npm)
+          done
+          find dist/npm -name '*.tgz' -print
 
       - name: Resolve release channel
-        if: ${{ matrix.isPublisher }}
         id: channel
-        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          if [[ "$VERSION" == *-* ]]; then
+          if [[ "${VERSION}" == *-* ]]; then
             echo "channel=beta" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
@@ -91,34 +93,23 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish to NPM (Trusted Publisher)
-        if: ${{ matrix.isPublisher }}
-        env:
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
+      - name: Publish platform packages
+        run: |
+          for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
+            (cd "$package_dir" && npm publish --access public --provenance --tag "${{ steps.channel.outputs.channel }}")
+          done
+
+      - name: Publish main package
         run: npm publish --access public --provenance --tag "${{ steps.channel.outputs.channel }}"
 
-      - name: Download all artifacts
-        if: ${{ matrix.isPublisher }}
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-
-      - name: Prepare release assets
-        if: ${{ matrix.isPublisher }}
-        shell: bash
+      - name: Generate checksums
         run: |
-          mkdir -p release
-          find ./artifacts -type f -maxdepth 2 -exec cp {} ./release/ \;
-          ls -lah ./release/
+          (cd build && sha256sum opencore-* > SHA256SUMS)
 
       - name: Create GitHub Release
-        if: ${{ matrix.isPublisher }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: ./release/*
+          files: build/*
           draft: false
           prerelease: ${{ steps.channel.outputs.prerelease }}
           body_path: RELEASE.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

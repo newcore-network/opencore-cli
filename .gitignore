@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-opencore
-opencore-*
+/opencore
+/opencore-*
 !scripts/*.sh
 
 # Test binary

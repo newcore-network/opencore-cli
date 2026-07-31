@@ -1,0 +1,15 @@
+{
+  "name": "@open-core/cli-linux-x64",
+  "version": "2.0.0-beta.1",
+  "description": "OpenCore CLI binary for Linux x64",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/newcore-network/opencore-cli.git",
+    "directory": "npm/linux-x64"
+  },
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/opencore"],
+  "publishConfig": {"access": "public"}
+}
