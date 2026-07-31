@@ -1,0 +1,10 @@
+{
+  "name": "@open-core/cli-darwin-arm64",
+  "version": "2.0.0-beta.1",
+  "description": "OpenCore CLI binary for macOS arm64",
+  "license": "MPL-2.0",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["bin/opencore"],
+  "publishConfig": {"access": "public"}
+}

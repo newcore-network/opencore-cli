@@ -15,10 +15,11 @@ mkdir -p "$OUTPUT_DIR"
 
 # Build for each platform
 platforms=(
-    "windows/amd64"
+    "linux/amd64"
+    "linux/arm64"
     "darwin/amd64"
     "darwin/arm64"
-    "linux/amd64"
+    "windows/amd64"
 )
 
 for platform in "${platforms[@]}"; do

@@ -10,7 +10,7 @@
 | `opencore create <type>` | Create scaffolding |
 | `opencore clone <template>` | Clone official template |
 | `opencore doctor` | Validate configuration |
-| `opencore update` | Update the CLI |
+| `opencore update` | Update the CLI through npm, pnpm, or Yarn |
 | `opencore --version` | Display CLI version |
 
 ## init
@@ -119,13 +119,17 @@ Checks:
 
 ## update
 
-Update the CLI from the selected release channel.
+Update the CLI through the package manager instead of downloading a binary.
+The command detects the invoking npm, pnpm, or Yarn Classic process when
+possible and otherwise uses npm.
 
 ```bash
 opencore update
 opencore update --channel beta
+opencore update --package-manager pnpm
+opencore update --package-manager yarn
 ```
 
 Options:
-- `--channel stable|beta` selects which release stream to check
-- `OPENCORE_UPDATE_CHANNEL=beta` changes the default channel for update checks
+- `--channel stable|beta` chooses the npm dist-tag (`latest` or `beta`)
+- `-p, --package-manager auto|npm|pnpm|yarn` chooses the global package manager

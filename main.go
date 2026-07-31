@@ -12,7 +12,6 @@ import (
 
 	"github.com/newcore-network/opencore-cli/internal/commands"
 	"github.com/newcore-network/opencore-cli/internal/ui"
-	"github.com/newcore-network/opencore-cli/internal/updater"
 )
 
 var (
@@ -67,31 +66,4 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Check for updates in the background after command execution
-	if shouldCheckForUpdates(os.Args) {
-		channel := updater.GetConfiguredChannel()
-		if info, err := updater.CheckForUpdate(version, false, channel); err == nil {
-			if updater.NeedsUpdate(version, info.LatestVersion) {
-				fmt.Println()
-				fmt.Println(ui.Info(fmt.Sprintf("New %s version available: %s -> %s", channel, version, info.LatestVersion)))
-				fmt.Println(ui.Info(fmt.Sprintf("Run 'opencore update --channel %s' to update.", channel)))
-			}
-		}
-	}
-}
-
-func shouldCheckForUpdates(args []string) bool {
-	if len(args) <= 1 {
-		return false
-	}
-
-	if args[1] == "update" || args[1] == "--version" || args[1] == "-v" {
-		return false
-	}
-
-	if ui.IsUpdateCheckDisabled() || ui.IsNonInteractiveSession() {
-		return false
-	}
-
-	return true
 }

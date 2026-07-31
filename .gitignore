@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-opencore
-opencore-*
+/opencore
+/opencore-*
 !scripts/*.sh
 
 # Test binary
@@ -15,6 +15,7 @@ opencore-*
 *.out
 dist/
 build/
+bin/
 
 # Go workspace
 *.work
