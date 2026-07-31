@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -17,13 +18,18 @@ type createNamePrompt struct {
 	Kind        string
 }
 
+// validNamePattern is an allow-list for scaffolded names: letters, numbers,
+// hyphens and underscores only. This also rules out path separators and
+// "..", since these names end up joined into filesystem paths.
+var validNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
 func validateCreateName(kind string) func(string) error {
 	return func(s string) error {
 		if s == "" {
 			return fmt.Errorf("%s name cannot be empty", kind)
 		}
-		if strings.Contains(s, " ") {
-			return fmt.Errorf("%s name cannot contain spaces", kind)
+		if !validNamePattern.MatchString(s) {
+			return fmt.Errorf("%s name must only contain letters, numbers, hyphens and underscores", kind)
 		}
 		return nil
 	}
@@ -31,7 +37,11 @@ func validateCreateName(kind string) func(string) error {
 
 func getNameFromArgsOrPrompt(args []string, p createNamePrompt) (string, error) {
 	if len(args) > 0 {
-		return args[0], nil
+		name := args[0]
+		if err := validateCreateName(p.Kind)(name); err != nil {
+			return "", err
+		}
+		return name, nil
 	}
 
 	var name string
