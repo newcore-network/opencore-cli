@@ -84,8 +84,10 @@ func updateArgs(packageManager, channel string) ([]string, error) {
 
 	packageSpec := "@open-core/cli@" + tag
 	switch packageManager {
-	case "npm", "pnpm":
-		return []string{"update", "--global", packageSpec}, nil
+	case "npm":
+		return []string{"install", "--global", packageSpec}, nil
+	case "pnpm":
+		return []string{"add", "--global", packageSpec}, nil
 	case "yarn":
 		return []string{"global", "add", packageSpec}, nil
 	default:

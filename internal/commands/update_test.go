@@ -11,8 +11,8 @@ func TestUpdateArgs(t *testing.T) {
 		channel string
 		want    []string
 	}{
-		{"npm", "stable", []string{"update", "--global", "@open-core/cli@latest"}},
-		{"pnpm", "beta", []string{"update", "--global", "@open-core/cli@beta"}},
+		{"npm", "stable", []string{"install", "--global", "@open-core/cli@latest"}},
+		{"pnpm", "beta", []string{"add", "--global", "@open-core/cli@beta"}},
 		{"yarn", "stable", []string{"global", "add", "@open-core/cli@latest"}},
 	}
 

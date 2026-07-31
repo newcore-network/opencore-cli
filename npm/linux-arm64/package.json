@@ -3,6 +3,11 @@
   "version": "2.0.0-beta.1",
   "description": "OpenCore CLI binary for Linux arm64",
   "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/newcore-network/opencore-cli.git",
+    "directory": "npm/linux-arm64"
+  },
   "os": ["linux"],
   "cpu": ["arm64"],
   "files": ["bin/opencore"],
