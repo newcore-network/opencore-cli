@@ -247,8 +247,10 @@ func (w *Watcher) Watch(ctx context.Context) error {
 					}
 					w.buildingMutex.Unlock()
 
-					// Perform the build
 					fmt.Println(ui.Info(fmt.Sprintf("File changed: %s", filepath.Base(fileName))))
+
+					w.regenerateTypes(affected)
+
 					results, err := w.builder.BuildTasksContext(ctx, affected)
 
 					// Unmark resources as being built
@@ -359,6 +361,25 @@ func (w *Watcher) registerPaths() {
 
 		if err == nil {
 			fmt.Println(ui.Info(fmt.Sprintf("Watching: %s (recursive)", basePath)))
+		}
+	}
+}
+
+func (w *Watcher) regenerateTypes(tasks []builder.BuildTask) {
+	resourceBuilder := w.builder.ResourceBuilder()
+	if resourceBuilder == nil {
+		return
+	}
+
+	seen := make(map[string]bool, len(tasks))
+	for _, task := range tasks {
+		if task.Type == builder.TypeViews || seen[task.Path] {
+			continue
+		}
+		seen[task.Path] = true
+
+		if resourceBuilder.RunTypegen(task.Path) {
+			fmt.Println(ui.Muted(fmt.Sprintf("  types regenerated: %s", task.ResourceName)))
 		}
 	}
 }

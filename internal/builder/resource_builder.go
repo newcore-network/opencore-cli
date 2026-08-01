@@ -21,6 +21,31 @@ type ResourceBuilder struct {
 	embeddedScriptPath  string
 	embeddedScriptMutex sync.Mutex
 	embeddedScriptReady bool
+
+	typegenEnabled     bool
+	typegenOptions     TypegenOptions
+	typegenWarned      map[string]bool
+	typegenWarnedMutex sync.Mutex
+	viewPathResolver   func(resourcePath string) string
+
+	viewPayloadCache map[string]viewPayloadCacheEntry
+	viewPayloadMutex sync.Mutex
+}
+
+func (rb *ResourceBuilder) ConfigureTypegen(enabled bool, opts TypegenOptions) {
+	rb.typegenEnabled = enabled
+	rb.typegenOptions = opts
+}
+
+func (rb *ResourceBuilder) SetViewPathResolver(resolve func(resourcePath string) string) {
+	rb.viewPathResolver = resolve
+}
+
+func (rb *ResourceBuilder) viewPathFor(resourcePath string) string {
+	if rb.viewPathResolver != nil {
+		return rb.viewPathResolver(resourcePath)
+	}
+	return findViewsPath(resourcePath)
 }
 
 type SharedDependencyResource struct {
@@ -40,7 +65,8 @@ type SharedDependencyOptions struct {
 // NewResourceBuilder creates a new resource builder
 func NewResourceBuilder(projectPath string) *ResourceBuilder {
 	return &ResourceBuilder{
-		projectPath: projectPath,
+		projectPath:   projectPath,
+		typegenWarned: make(map[string]bool),
 	}
 }
 
@@ -168,6 +194,8 @@ func (rb *ResourceBuilder) BuildWithContext(ctx context.Context, task BuildTask)
 				Output:   "",
 			}
 		}
+
+		rb.RunTypegen(task.Path)
 	}
 
 	switch task.Type {

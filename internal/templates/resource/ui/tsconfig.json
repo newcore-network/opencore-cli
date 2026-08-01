@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "{{.TSConfigTarget}}",
+    "module": "{{.TSConfigModule}}",
+    "moduleResolution": "{{.TSModuleResolution}}",
+    "lib": ["es2020", "dom", "dom.iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false
+  },
+  "include": [
+    "**/*",
+    "**/.opencore/**/*.ts"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

@@ -53,7 +53,11 @@ export default defineConfig({
     },
     client: {
       target: 'es2020',
-    }{{ end }}
+    }{{ end }},
+    typegen: {
+      enabled: true,
+      strict: true,
+    },
   },
 
   dev: {

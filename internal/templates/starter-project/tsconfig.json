@@ -10,7 +10,7 @@
 {{ end }}
         "skipLibCheck": true,
         "strict": true,
-        "baseUrl": ".",
+        "rootDir": ".",
         "paths": {
             "@opencore/environment": ["./environments/environment.development.ts"]
         },
@@ -24,8 +24,14 @@
 {{ else }}        "types": ["@citizenfx/client", "@citizenfx/server"]
 {{ end }}
     },
+    "include": [
+        "**/*",
+        "**/.opencore/**/*.ts"
+    ],
     "exclude": [
         "views",
+        "resources/*/ui",
+        "resources/*/nui",
         "dist",
         "node_modules"
     ]

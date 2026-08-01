@@ -372,6 +372,30 @@ type BuildConfig struct {
 	Client               *BuildSideConfig               `json:"client,omitempty"`
 	Environment          string                         `json:"environment,omitempty"`
 	Environments         map[string]EnvironmentOverride `json:"environments,omitempty"`
+	Typegen              *TypegenConfig                 `json:"typegen,omitempty"`
+}
+
+// TypegenConfig controls generation of the per-resource `.opencore/opencore.gen.ts` files
+// that give end-to-end type safety to net events, RPCs and commands.
+type TypegenConfig struct {
+	Enabled *bool `json:"enabled,omitempty"`
+	Strict  bool  `json:"strict,omitempty"`
+}
+
+// TypegenEnabled reports whether type generation should run. Defaults to true.
+func (b *BuildConfig) TypegenEnabled() bool {
+	if b == nil || b.Typegen == nil || b.Typegen.Enabled == nil {
+		return true
+	}
+	return *b.Typegen.Enabled
+}
+
+// TypegenStrict reports whether generated files should opt into strict mode.
+func (b *BuildConfig) TypegenStrict() bool {
+	if b == nil || b.Typegen == nil {
+		return false
+	}
+	return b.Typegen.Strict
 }
 
 // EnvironmentOverride holds per-environment build overrides

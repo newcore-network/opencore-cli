@@ -286,6 +286,10 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool, o
 		files["src/client/main.ts"] = filepath.Join(targetPath, "src", "client", "main.ts")
 	}
 
+	if hasNUI {
+		files["ui/tsconfig.json"] = filepath.Join(targetPath, "ui", "tsconfig.json")
+	}
+
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
 		embedPath := path.Join("resource", tplFile)

@@ -80,6 +80,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			adapterCheck := checkAdapter(cfg)
 			adapterCheck.Required = true
 			checks = append(checks, adapterCheck)
+			checks = append(checks, checkTypegen(cfg))
 		}
 	}
 
@@ -253,6 +254,23 @@ func formatAdapterBinding(side string, binding *config.AdapterBinding) string {
 	}
 
 	return fmt.Sprintf("%s: %s [%s] (%s)", side, name, adapterRuntimeLabel(binding), status)
+}
+
+func checkTypegen(cfg *config.Config) CheckResult {
+	if !cfg.Build.TypegenEnabled() {
+		return CheckResult{
+			Name:    "Type generation",
+			Passed:  true,
+			Message: "disabled (build.typegen.enabled = false)",
+		}
+	}
+
+	mode := "enabled"
+	if cfg.Build.TypegenStrict() {
+		mode = "enabled (strict: unknown event names are compile errors)"
+	}
+
+	return CheckResult{Name: "Type generation", Passed: true, Message: mode}
 }
 
 func adapterRuntimeLabel(binding *config.AdapterBinding) string {

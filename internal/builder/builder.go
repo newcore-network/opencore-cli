@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -147,11 +148,23 @@ func buildResourceSideValue(side *config.ResourceBuildSideConfig, base *config.B
 }
 
 func New(cfg *config.Config) *Builder {
-	return &Builder{
+	resourceBuilder := NewResourceBuilder(".")
+	resourceBuilder.ConfigureTypegen(cfg.Build.TypegenEnabled(), TypegenOptions{
+		Strict: cfg.Build.TypegenStrict(),
+	})
+
+	b := &Builder{
 		config:          cfg,
-		resourceBuilder: NewResourceBuilder("."),
+		resourceBuilder: resourceBuilder,
 		deployer:        NewDeployer(cfg),
 	}
+	resourceBuilder.SetViewPathResolver(b.ViewPathFor)
+
+	return b
+}
+
+func (b *Builder) ResourceBuilder() *ResourceBuilder {
+	return b.resourceBuilder
 }
 
 func (b *Builder) CollectTasks() []BuildTask {
@@ -444,16 +457,73 @@ func writeRuntimeBarrel(filePath string, resources []string) error {
 	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
 }
 
+var conventionalViewDirs = []string{"ui", "nui", "view", "views", "web", "html"}
+
+func newViewDirSkipper(viewPath string) func(path string, name string) bool {
+	normalizedView := ""
+	if viewPath != "" {
+		normalizedView = filepath.ToSlash(filepath.Clean(viewPath))
+	}
+
+	return func(path string, name string) bool {
+		switch name {
+		case "node_modules", "dist", ".opencore":
+			return true
+		}
+		if slices.Contains(conventionalViewDirs, name) {
+			return true
+		}
+		return normalizedView != "" && filepath.ToSlash(filepath.Clean(path)) == normalizedView
+	}
+}
+
 // findViewsPath searches for a views directory in a resource path
 func findViewsPath(resourcePath string) string {
-	viewDirs := []string{"ui", "view", "views", "web", "html"}
-	for _, dir := range viewDirs {
+	for _, dir := range conventionalViewDirs {
 		path := filepath.Join(resourcePath, dir)
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
 			return path
 		}
 	}
 	return ""
+}
+
+func (b *Builder) ViewPathFor(resourcePath string) string {
+	if b == nil || b.config == nil {
+		return findViewsPath(resourcePath)
+	}
+
+	views := resolveViewsConfig(resourcePath, b.viewsDefaultsFor(resourcePath))
+	if views == nil {
+		return ""
+	}
+	return views.Path
+}
+
+func (b *Builder) viewsDefaultsFor(resourcePath string) *config.ViewsConfig {
+	if views := b.config.GetResourceViews(resourcePath); views != nil {
+		return views
+	}
+	if b.config.Standalones != nil && matchesAnyInclude(b.config.Standalones.Include, resourcePath) {
+		return b.config.Standalones.Views
+	}
+	return b.config.Resources.Views
+}
+
+func matchesAnyInclude(patterns []string, resourcePath string) bool {
+	target := filepath.Clean(resourcePath)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			if filepath.Clean(match) == target {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func detectViewFramework(viewPath string) string {
