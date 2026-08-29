@@ -1,6 +1,6 @@
 {
   "name": "@open-core/cli",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0",
   "description": "Official CLI tool for OpenCore Framework",
   "main": "index.js",
   "types": "index.d.ts",
@@ -27,8 +27,8 @@
     "release:check": "node scripts/release-check.js"
   },
   "dependencies": {
-    "esbuild": "^0.27.2",
-    "@swc/core": "^1.15.8",
+    "@swc/core": "^1.16.1",
+    "esbuild": "^0.27.7",
     "tsconfig-paths": "^4.2.0"
   },
   "optionalDependencies": {
