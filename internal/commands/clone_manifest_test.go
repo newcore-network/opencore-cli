@@ -60,6 +60,33 @@ func TestParseTemplateManifestRejectsInvalidRuntime(t *testing.T) {
 	}
 }
 
+func TestParseTemplateManifestRejectsUnsafeNamesAndTrailingJSON(t *testing.T) {
+	for _, name := range []string{"Chat", "chat.name", "chat:name", "../chat"} {
+		data := []byte(`{"schemaVersion":1,"name":"` + name + `","kind":"resource"}`)
+		if _, err := parseTemplateManifest(data); err == nil {
+			t.Errorf("expected name %q to be rejected", name)
+		}
+	}
+
+	if _, err := parseTemplateManifest([]byte(`{"schemaVersion":1,"name":"chat","kind":"resource"} {}`)); err == nil {
+		t.Fatal("expected trailing JSON value to be rejected")
+	}
+}
+
+func TestParseTemplateManifestRejectsDuplicateAndInvalidNestedValues(t *testing.T) {
+	cases := []string{
+		`{"schemaVersion":1,"name":"chat","kind":"resource","compatibility":{"runtimes":["fivem","fivem"]}}`,
+		`{"schemaVersion":1,"name":"chat","kind":"resource","compatibility":{"gameProfiles":["gta5","gta5"]}}`,
+		`{"schemaVersion":1,"name":"chat","kind":"resource","requires":{"templates":["../core"]}}`,
+		`{"schemaVersion":1,"name":"chat","kind":"resource","requires":{"templates":["core","core"]}}`,
+	}
+	for _, data := range cases {
+		if _, err := parseTemplateManifest([]byte(data)); err == nil {
+			t.Errorf("expected invalid manifest to be rejected: %s", data)
+		}
+	}
+}
+
 func TestValidateManifestCompatibilityAllowsUnknownManifest(t *testing.T) {
 	descriptor := templateDescriptor{Name: "xchat"}
 	if err := validateManifestCompatibility(descriptor, "ragemp"); err != nil {

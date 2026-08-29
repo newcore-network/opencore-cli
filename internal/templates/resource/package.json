@@ -1,5 +1,5 @@
 {
-  "name": "{{.ResourceName}}",
+  "name": {{jsonString .ResourceName}},
   "version": "1.0.0",
   "private": true,
   "main": "dist/server/main.js",

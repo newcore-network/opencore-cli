@@ -9,6 +9,10 @@ permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Build and publish
@@ -29,50 +33,42 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.33.0
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Verify tag is on a release branch
         run: |
           git fetch origin develop master
-          tag_commit=$(git rev-list -n 1 "$GITHUB_SHA")
-          if git merge-base --is-ancestor "$tag_commit" origin/develop || git merge-base --is-ancestor "$tag_commit" origin/master; then
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/develop || git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
             exit 0
           fi
-          echo "Tag commit $tag_commit is not contained in develop or master."
+          echo "Tag commit $GITHUB_SHA is not contained in develop or master."
           exit 1
 
-      - name: Check package version matches tag
-        run: npm run version:check-tag -- "${{ github.ref_name }}"
-
-      - name: Run Go tests
-        run: go test ./...
-
-      - name: Run Node tests
-        run: npm test
+      - name: Run release preflight
+        run: pnpm release:check -- "${{ github.ref_name }}"
 
       - name: Build binaries
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          mkdir -p build
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            GOOS=${target%/*}
-            GOARCH=${target#*/}
-            artifact="opencore-${GOOS}-${GOARCH}"
-            if [ "$GOOS" = "windows" ]; then artifact="${artifact}.exe"; fi
-            GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o "build/${artifact}" .
-          done
+        run: scripts/build-all.sh "${{ github.ref_name }}"
 
       - name: Prepare platform packages
-        run: bash scripts/prepare-npm-packages.sh build
+        run: scripts/prepare-npm-packages.sh build
 
-      - name: Validate npm packages
+      - name: Pack npm packages
         run: |
           mkdir -p dist/npm
           npm pack --pack-destination dist/npm
           for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
-            (cd "$package_dir" && npm pack --pack-destination ../../dist/npm)
+            npm pack "$package_dir" --pack-destination dist/npm
           done
-          find dist/npm -name '*.tgz' -print
+
+      - name: Smoke test npm tarballs
+        run: pnpm test:npm-smoke
 
       - name: Resolve release channel
         id: channel
@@ -87,18 +83,28 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish platform packages
+      - name: Publish packages idempotently
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          VERSION: ${{ github.ref_name }}
         run: |
+          version=${VERSION#v}
+          publish_if_missing() {
+            package_dir=$1
+            package_name=$(node -p "require('./${package_dir}/package.json').name")
+            if npm view "${package_name}@${version}" version >/dev/null 2>&1; then
+              echo "${package_name}@${version} is already published."
+            else
+              (cd "$package_dir" && npm publish --access public --provenance --tag "$CHANNEL")
+            fi
+          }
           for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
-            (cd "$package_dir" && npm publish --access public --provenance --tag "${{ steps.channel.outputs.channel }}")
+            publish_if_missing "$package_dir"
           done
-
-      - name: Publish main package
-        run: npm publish --access public --provenance --tag "${{ steps.channel.outputs.channel }}"
+          publish_if_missing .
 
       - name: Generate checksums
-        run: |
-          (cd build && sha256sum opencore-* > SHA256SUMS)
+        run: (cd build && sha256sum opencore-* > SHA256SUMS)
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2

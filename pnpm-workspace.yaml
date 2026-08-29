@@ -1,0 +1,8 @@
+packages:
+  - npm/*
+
+linkWorkspacePackages: true
+
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild

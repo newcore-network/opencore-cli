@@ -14,18 +14,29 @@ type WorkerPool struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	buildFunc  func(context.Context, BuildTask) BuildResult
+	closeOnce  sync.Once
+	resultMu   sync.Mutex
+	resultCond *sync.Cond
+	pending    []BuildResult
+	finished   bool
 }
 
 // NewWorkerPool creates a new worker pool with the specified number of workers
 func NewWorkerPool(workers int) *WorkerPool {
+	if workers <= 0 {
+		workers = 1
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &WorkerPool{
+	pool := &WorkerPool{
 		workers:    workers,
 		taskChan:   make(chan BuildTask, 100),
-		resultChan: make(chan BuildResult, 100),
+		resultChan: make(chan BuildResult),
 		ctx:        ctx,
 		cancel:     cancel,
 	}
+	pool.resultCond = sync.NewCond(&pool.resultMu)
+	go pool.dispatchResults()
+	return pool
 }
 
 // Start begins the worker pool with the given build function.
@@ -56,11 +67,37 @@ func (wp *WorkerPool) worker(id int) {
 				return
 			}
 			result := wp.buildFunc(wp.ctx, task)
-			select {
-			case wp.resultChan <- result:
-			case <-wp.ctx.Done():
-				return
-			}
+			wp.enqueueResult(result)
+		case <-wp.ctx.Done():
+			return
+		}
+	}
+}
+
+func (wp *WorkerPool) enqueueResult(result BuildResult) {
+	wp.resultMu.Lock()
+	wp.pending = append(wp.pending, result)
+	wp.resultCond.Signal()
+	wp.resultMu.Unlock()
+}
+
+func (wp *WorkerPool) dispatchResults() {
+	defer close(wp.resultChan)
+	for {
+		wp.resultMu.Lock()
+		for len(wp.pending) == 0 && !wp.finished {
+			wp.resultCond.Wait()
+		}
+		if len(wp.pending) == 0 && wp.finished {
+			wp.resultMu.Unlock()
+			return
+		}
+		result := wp.pending[0]
+		wp.pending[0] = BuildResult{}
+		wp.pending = wp.pending[1:]
+		wp.resultMu.Unlock()
+		select {
+		case wp.resultChan <- result:
 		case <-wp.ctx.Done():
 			return
 		}
@@ -90,9 +127,14 @@ func (wp *WorkerPool) Results() <-chan BuildResult {
 // Close shuts down the worker pool gracefully
 // Call this after all tasks have been submitted
 func (wp *WorkerPool) Close() {
-	close(wp.taskChan)
-	wp.wg.Wait()
-	close(wp.resultChan)
+	wp.closeOnce.Do(func() {
+		close(wp.taskChan)
+		wp.wg.Wait()
+		wp.resultMu.Lock()
+		wp.finished = true
+		wp.resultCond.Broadcast()
+		wp.resultMu.Unlock()
+	})
 }
 
 // Cancel cancels all workers immediately

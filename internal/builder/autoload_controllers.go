@@ -67,7 +67,8 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 		if readErr != nil {
 			return readErr
 		}
-		text := string(content)
+		text := blankComments(string(content))
+		codeText := blankStringContents(text)
 
 		relPath, relErr := filepath.Rel(resourcePath, path)
 		if relErr != nil {
@@ -76,6 +77,7 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 		relPath = filepath.ToSlash(relPath)
 
 		lines := strings.Split(text, "\n")
+		codeLines := strings.Split(codeText, "\n")
 		clientDecoratorLine := 0
 		serverDecoratorLine := 0
 		controllerDecoratorLine := 0
@@ -83,14 +85,15 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 		frameworkClientImportLine := 0
 
 		for idx, line := range lines {
+			codeLine := codeLines[idx]
 			lineNumber := idx + 1
-			if clientDecoratorLine == 0 && clientDecoratorPattern.MatchString(line) {
+			if clientDecoratorLine == 0 && clientDecoratorPattern.MatchString(codeLine) {
 				clientDecoratorLine = lineNumber
 			}
-			if serverDecoratorLine == 0 && serverDecoratorPattern.MatchString(line) {
+			if serverDecoratorLine == 0 && serverDecoratorPattern.MatchString(codeLine) {
 				serverDecoratorLine = lineNumber
 			}
-			if controllerDecoratorLine == 0 && controllerDecoratorPattern.MatchString(line) {
+			if controllerDecoratorLine == 0 && controllerDecoratorPattern.MatchString(codeLine) {
 				controllerDecoratorLine = lineNumber
 			}
 			if frameworkServerImportLine == 0 && frameworkServerImportPattern.MatchString(line) {
@@ -135,10 +138,10 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 			})
 		}
 
-		hasServerController := serverControllerDecoratorPattern.MatchString(text)
-		hasClientController := clientControllerDecoratorPattern.MatchString(text)
+		hasServerController := serverControllerDecoratorPattern.MatchString(codeText)
+		hasClientController := clientControllerDecoratorPattern.MatchString(codeText)
 
-		hasGenericController := controllerDecoratorPattern.MatchString(text)
+		hasGenericController := controllerDecoratorPattern.MatchString(codeText)
 		if hasGenericController {
 			if frameworkServerImportLine > 0 && frameworkClientImportLine == 0 {
 				hasServerController = true
@@ -188,6 +191,33 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 	})
 
 	return serverImports, clientImports, issues, nil
+}
+
+func blankStringContents(text string) string {
+	out := []byte(text)
+	var quote byte
+	for i := 0; i < len(out); i++ {
+		if quote == 0 {
+			if out[i] == '\'' || out[i] == '"' || out[i] == '`' {
+				quote = out[i]
+			}
+			continue
+		}
+		if out[i] == '\\' {
+			if i+1 < len(out) {
+				i++
+			}
+			continue
+		}
+		if out[i] == quote {
+			quote = 0
+			continue
+		}
+		if out[i] != '\n' && out[i] != '\r' {
+			out[i] = ' '
+		}
+	}
+	return string(out)
 }
 
 func (rb *ResourceBuilder) validateSourceFiles(resourcePath string) ([]SourceValidationIssue, error) {

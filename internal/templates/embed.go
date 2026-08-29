@@ -2,10 +2,12 @@ package templates
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -15,6 +17,33 @@ import (
 //go:embed all:standalone
 //go:embed all:feature
 var templatesFS embed.FS
+
+var scaffoldNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// ValidateName applies the single naming policy used by scaffold commands and manifests.
+func ValidateName(name string) error {
+	if !scaffoldNamePattern.MatchString(name) {
+		return fmt.Errorf("name must match %s", scaffoldNamePattern.String())
+	}
+	return nil
+}
+
+var templateFunctions = template.FuncMap{
+	"jsonString": func(value string) (string, error) {
+		encoded, err := json.Marshal(value)
+		return string(encoded), err
+	},
+	"luaString": func(value string) string {
+		replacer := strings.NewReplacer(
+			`\`, `\\`,
+			`'`, `\'`,
+			"\r", `\r`,
+			"\n", `\n`,
+			"\x00", `\0`,
+		)
+		return "'" + replacer.Replace(value) + "'"
+	},
+}
 
 type ProjectConfig struct {
 	ProjectName          string
@@ -159,6 +188,9 @@ type FeatureConfig struct {
 }
 
 func GenerateStarterProject(targetPath, projectName string, installIdentity bool, adapter string, useMinify bool, destination string, packageManager string) error {
+	if err := ValidateName(projectName); err != nil {
+		return fmt.Errorf("invalid project name: %w", err)
+	}
 	if destination != "" {
 		// Ensure the generated TypeScript config is safe on Windows.
 		// Backslashes can be interpreted as escape sequences in JS/TS strings.
@@ -182,10 +214,19 @@ func GenerateStarterProject(targetPath, projectName string, installIdentity bool
 		config.ManifestGame = "rdr3"
 		config.AddRedMWarning = true
 	}
+	cleanup, err := createTargetDirectory(targetPath)
+	if err != nil {
+		return err
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			cleanup()
+		}
+	}()
 
 	// Create base directories
 	dirs := []string{
-		targetPath,
 		filepath.Join(targetPath, "core"),
 		filepath.Join(targetPath, "core", "src"),
 		filepath.Join(targetPath, "core", "src", "features"),
@@ -224,36 +265,33 @@ func GenerateStarterProject(targetPath, projectName string, installIdentity bool
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
 		embedPath := path.Join("starter-project", tplFile)
-		content, err := templatesFS.ReadFile(embedPath)
-		if err != nil {
-			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
-		}
-
-		tmpl, err := template.New(tplFile).Parse(string(content))
-		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
-		}
-
-		f, err := os.Create(targetFile)
-		if err != nil {
-			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
-		}
-		defer f.Close()
-
-		if err := tmpl.Execute(f, config); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		if err := renderTemplateFile(embedPath, tplFile, targetFile, config); err != nil {
+			return err
 		}
 	}
 
+	succeeded = true
 	return nil
 }
 
 func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool, opts ScaffoldRuntimeOptions) error {
+	if err := ValidateName(resourceName); err != nil {
+		return fmt.Errorf("invalid resource name: %w", err)
+	}
 	config := resourceTemplateConfig(resourceName, hasClient, hasNUI, opts)
+	cleanup, err := createTargetDirectory(targetPath)
+	if err != nil {
+		return err
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			cleanup()
+		}
+	}()
 
 	// Create directories
 	dirs := []string{
-		targetPath,
 		filepath.Join(targetPath, "src"),
 		filepath.Join(targetPath, "src", "server"),
 	}
@@ -293,37 +331,34 @@ func GenerateResource(targetPath, resourceName string, hasClient, hasNUI bool, o
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
 		embedPath := path.Join("resource", tplFile)
-		content, err := templatesFS.ReadFile(embedPath)
-		if err != nil {
-			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
-		}
-
-		tmpl, err := template.New(tplFile).Parse(string(content))
-		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
-		}
-
-		f, err := os.Create(targetFile)
-		if err != nil {
-			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
-		}
-		defer f.Close()
-
-		if err := tmpl.Execute(f, config); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		if err := renderTemplateFile(embedPath, tplFile, targetFile, config); err != nil {
+			return err
 		}
 	}
 
+	succeeded = true
 	return nil
 }
 
 // GenerateStandalone generates a new standalone resource from templates.
 func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI bool, opts ScaffoldRuntimeOptions) error {
+	if err := ValidateName(standaloneName); err != nil {
+		return fmt.Errorf("invalid standalone name: %w", err)
+	}
 	config := standaloneTemplateConfig(standaloneName, hasClient, hasNUI, opts)
+	cleanup, err := createTargetDirectory(targetPath)
+	if err != nil {
+		return err
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			cleanup()
+		}
+	}()
 
 	// Create directories
 	dirs := []string{
-		targetPath,
 		filepath.Join(targetPath, "src"),
 		filepath.Join(targetPath, "src", "server"),
 	}
@@ -358,41 +393,35 @@ func GenerateStandalone(targetPath, standaloneName string, hasClient, hasNUI boo
 
 	for tplFile, targetFile := range files {
 		embedPath := path.Join("standalone", tplFile)
-		content, err := templatesFS.ReadFile(embedPath)
-		if err != nil {
-			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
-		}
-
-		tmpl, err := template.New(tplFile).Parse(string(content))
-		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
-		}
-
-		f, err := os.Create(targetFile)
-		if err != nil {
-			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
-		}
-		defer f.Close()
-
-		if err := tmpl.Execute(f, config); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		if err := renderTemplateFile(embedPath, tplFile, targetFile, config); err != nil {
+			return err
 		}
 	}
 
+	succeeded = true
 	return nil
 }
 
 func GenerateFeature(targetPath, featureName string) error {
+	if err := ValidateName(featureName); err != nil {
+		return fmt.Errorf("invalid feature name: %w", err)
+	}
 	pascalCase := toPascalCase(featureName)
 	config := FeatureConfig{
 		FeatureName:       featureName,
 		FeatureNamePascal: pascalCase,
 	}
 
-	// Create feature directory
-	if err := os.MkdirAll(targetPath, 0755); err != nil {
+	cleanup, err := createTargetDirectory(targetPath)
+	if err != nil {
 		return err
 	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			cleanup()
+		}
+	}()
 
 	// Generate files
 	files := map[string]string{
@@ -404,27 +433,53 @@ func GenerateFeature(targetPath, featureName string) error {
 	for tplFile, targetFile := range files {
 		// Use forward slashes for embed.FS (works on all platforms)
 		embedPath := path.Join("feature", tplFile)
-		content, err := templatesFS.ReadFile(embedPath)
-		if err != nil {
-			return fmt.Errorf("failed to read template %s: %w", tplFile, err)
-		}
-
-		tmpl, err := template.New(tplFile).Parse(string(content))
-		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", tplFile, err)
-		}
-
-		f, err := os.Create(targetFile)
-		if err != nil {
-			return fmt.Errorf("failed to create file %s: %w", targetFile, err)
-		}
-		defer f.Close()
-
-		if err := tmpl.Execute(f, config); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", tplFile, err)
+		if err := renderTemplateFile(embedPath, tplFile, targetFile, config); err != nil {
+			return err
 		}
 	}
 
+	succeeded = true
+	return nil
+}
+
+func createTargetDirectory(targetPath string) (func(), error) {
+	cleanTarget := filepath.Clean(targetPath)
+	if cleanTarget == "." {
+		return nil, fmt.Errorf("refusing to generate into the current directory")
+	}
+	if err := os.MkdirAll(filepath.Dir(cleanTarget), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create parent directory: %w", err)
+	}
+	if err := os.Mkdir(cleanTarget, 0755); err != nil {
+		if os.IsExist(err) {
+			return nil, fmt.Errorf("target path %q already exists", cleanTarget)
+		}
+		return nil, fmt.Errorf("failed to create target directory: %w", err)
+	}
+	return func() { _ = os.RemoveAll(cleanTarget) }, nil
+}
+
+func renderTemplateFile(embedPath, templateName, targetFile string, data any) error {
+	content, err := templatesFS.ReadFile(embedPath)
+	if err != nil {
+		return fmt.Errorf("failed to read template %s: %w", templateName, err)
+	}
+	tmpl, err := template.New(templateName).Funcs(templateFunctions).Parse(string(content))
+	if err != nil {
+		return fmt.Errorf("failed to parse template %s: %w", templateName, err)
+	}
+	f, err := os.OpenFile(targetFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", targetFile, err)
+	}
+	if err := tmpl.Execute(f, data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(targetFile)
+		return fmt.Errorf("failed to execute template %s: %w", templateName, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close file %s: %w", targetFile, err)
+	}
 	return nil
 }
 

@@ -172,6 +172,13 @@ async function checkNativePackages(resourcePath, options = {}) {
 
     const { warnings, errors } = await detectNativePackages(nodeModulesPath, allExternals)
     printNativePackageWarnings(warnings, errors)
+    if (errors.length > 0) {
+        throw new Error(`[build] ${errors.length} incompatible native external package(s) detected: ${errors.map(error => error.package).join(', ')}`)
+    }
+}
+
+function nodeEnvDefine(buildOptions) {
+    return { 'process.env.NODE_ENV': buildOptions.minifyWhitespace ? '"production"' : '"development"' }
 }
 
 /**
@@ -239,6 +246,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             plugins: getCorePlugins(true, serverExternals, serverTarget, serverFormat, resourcePath, options.packageManager, options.dependencyResolution, usedServerExternals, options.environmentAliases),
             external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
+				...nodeEnvDefine(serverBuildOptions),
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"server"',
                 '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
@@ -260,6 +268,7 @@ async function buildCore(resourcePath, outDir, options = {}) {
             plugins: getCorePlugins(false, clientExternals, clientTarget, clientFormat, resourcePath, options.packageManager, options.dependencyResolution, null, options.environmentAliases),
             external: clientExternals,
             define: {
+				...nodeEnvDefine(clientBuildOptions),
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"client"',
                 '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
@@ -312,6 +321,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 ...shared.define,
+				...nodeEnvDefine(serverBuildOptions),
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"server"',
                 '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
@@ -334,6 +344,7 @@ async function buildResource(resourcePath, outDir, options = {}) {
             external: clientExternals,
             define: {
                 ...shared.define,
+				...nodeEnvDefine(clientBuildOptions),
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"client"',
                 '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
@@ -385,6 +396,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             external: esbuildExternals(serverExternals, options.dependencyResolution),
             define: {
                 ...shared.define,
+				...nodeEnvDefine(serverBuildOptions),
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"server"',
                 '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
@@ -407,6 +419,7 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
             external: clientExternals,
             define: {
                 ...shared.define,
+				...nodeEnvDefine(clientBuildOptions),
                 '__OPENCORE_LOG_LEVEL__': JSON.stringify(options.logLevel || 'INFO'),
                 '__OPENCORE_TARGET__': '"client"',
                 '__OPENCORE_RESOURCE_NAME__': JSON.stringify(options.resourceName || '')
@@ -455,13 +468,13 @@ async function copyResource(resourcePath, outDir, options = {}) {
         const src = path.join(absSrcPath, entry.name)
         const dst = path.join(absOutDir, entry.name)
         
-        if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git' || entry.name === '.ocignore') {
-                continue
-            }
-            await copyDirRecursive(src, dst)
+		if (shouldSkipCopyEntry(entry)) {
+			continue
+		}
+
+		if (entry.isDirectory()) {
+			await copyDirRecursive(src, dst)
         } else {
-            if (entry.name === 'package.json') continue 
             await fs.promises.copyFile(src, dst)
         }
     }
@@ -484,12 +497,21 @@ async function copyDirRecursive(src, dst) {
         const srcPath = path.join(src, entry.name)
         const dstPath = path.join(dst, entry.name)
         
-        if (entry.isDirectory()) {
+		if (shouldSkipCopyEntry(entry)) {
+			continue
+		}
+		if (entry.isDirectory()) {
             await copyDirRecursive(srcPath, dstPath)
         } else {
             await fs.promises.copyFile(srcPath, dstPath)
         }
     }
+}
+
+function shouldSkipCopyEntry(entry) {
+	if (entry.isSymbolicLink()) return true
+	if (entry.isDirectory()) return ['node_modules', 'dist', '.git', '.ocignore'].includes(entry.name)
+	return entry.name === 'package.json' || entry.name === '.ocignore'
 }
 
 module.exports = {

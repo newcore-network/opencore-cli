@@ -1,6 +1,6 @@
 {
   "name": "@open-core/cli-darwin-x64",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0",
   "description": "OpenCore CLI binary for macOS x64",
   "license": "MPL-2.0",
   "repository": {

@@ -11,6 +11,73 @@ permissions:
 
 jobs:
   checks:
+    name: Checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.24.5"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.33.0
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check package versions
+        run: pnpm version:check
+
+      - name: Run Node tests
+        run: pnpm test
+
+      - name: Run Go tests without skips
+        run: pnpm test:go
+
+      - name: Run Go vet
+        run: go vet ./...
+
+  quality:
+    name: Format, lint, and vulnerability checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.24.5"
+
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@25e2cdc5eb1d7a04fdc45ff538f1a00e960ae128 # v8.0.0
+        with:
+          version: v2.7.2
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  npm-smoke:
+    name: npm tarball smoke test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,14 +93,19 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Check package versions
-        run: npm run version:check
+      - name: Build binaries
+        run: scripts/build-all.sh v2.0.0-smoke
 
-      - name: Run Go tests
-        run: go test ./...
+      - name: Prepare platform packages
+        run: scripts/prepare-npm-packages.sh build
 
-      - name: Run Go vet
-        run: go vet ./...
+      - name: Pack npm packages
+        run: |
+          mkdir -p dist/npm
+          npm pack --pack-destination dist/npm
+          for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
+            npm pack "$package_dir" --pack-destination dist/npm
+          done
 
-      - name: Run Node tests
-        run: npm test
+      - name: Smoke test npm tarballs
+        run: npm run test:npm-smoke

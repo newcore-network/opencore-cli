@@ -1,11 +1,77 @@
 package templates
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestValidateName(t *testing.T) {
+	for _, name := range []string{"chat", "chat-admin", "chat_admin", "x1"} {
+		if err := ValidateName(name); err != nil {
+			t.Errorf("expected %q to be valid: %v", name, err)
+		}
+	}
+	for _, name := range []string{"", "Chat", "../chat", "chat/name", `chat\name`, "chat.name", "chat name", "chat:admin"} {
+		if err := ValidateName(name); err == nil {
+			t.Errorf("expected %q to be invalid", name)
+		}
+	}
+}
+
+func TestGenerateStarterProjectEscapesGeneratedValues(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "safe-project")
+	destination := "C:/server/'resources\nnext"
+	packageManager := "pnpm\"@10"
+	if err := GenerateStarterProject(targetPath, "safe-project", false, "fivem", false, destination, packageManager); err != nil {
+		t.Fatalf("GenerateStarterProject() error = %v", err)
+	}
+
+	packageBody, err := os.ReadFile(filepath.Join(targetPath, "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packageData map[string]any
+	if err := json.Unmarshal(packageBody, &packageData); err != nil {
+		t.Fatalf("generated package.json is invalid: %v", err)
+	}
+	if packageData["packageManager"] != packageManager {
+		t.Fatalf("package manager was not preserved, got %#v", packageData["packageManager"])
+	}
+
+	configBody, err := os.ReadFile(filepath.Join(targetPath, "opencore.config.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(configBody), "destination: 'C:/server/'resources") {
+		t.Fatal("destination was emitted as an injectable single-quoted literal")
+	}
+	if !strings.Contains(string(configBody), `destination: "C:/server/'resources\nnext"`) {
+		t.Fatalf("destination was not JSON-escaped in TypeScript: %s", configBody)
+	}
+}
+
+func TestGenerateResourceDoesNotOverwriteExistingDirectory(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "existing")
+	if err := os.Mkdir(targetPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	markerPath := filepath.Join(targetPath, "marker.txt")
+	if err := os.WriteFile(markerPath, []byte("preserve"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := GenerateResource(targetPath, "existing", false, false, ScaffoldRuntimeOptions{})
+	if err == nil {
+		t.Fatal("expected existing target error")
+	}
+	body, readErr := os.ReadFile(markerPath)
+	if readErr != nil || string(body) != "preserve" {
+		t.Fatalf("existing directory was modified: body=%q err=%v", body, readErr)
+	}
+}
 
 func TestGenerateStarterProjectWithFiveMAdapter(t *testing.T) {
 	targetPath := filepath.Join(t.TempDir(), "demo-project")

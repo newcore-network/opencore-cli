@@ -19,11 +19,8 @@ type createNamePrompt struct {
 
 func validateCreateName(kind string) func(string) error {
 	return func(s string) error {
-		if s == "" {
-			return fmt.Errorf("%s name cannot be empty", kind)
-		}
-		if strings.Contains(s, " ") {
-			return fmt.Errorf("%s name cannot contain spaces", kind)
+		if err := templates.ValidateName(s); err != nil {
+			return fmt.Errorf("invalid %s name: %w", kind, err)
 		}
 		return nil
 	}
@@ -31,7 +28,11 @@ func validateCreateName(kind string) func(string) error {
 
 func getNameFromArgsOrPrompt(args []string, p createNamePrompt) (string, error) {
 	if len(args) > 0 {
-		return args[0], nil
+		name := args[0]
+		if err := validateCreateName(p.Kind)(name); err != nil {
+			return "", err
+		}
+		return name, nil
 	}
 
 	var name string
@@ -48,6 +49,9 @@ func getNameFromArgsOrPrompt(args []string, p createNamePrompt) (string, error) 
 		return "", err
 	}
 
+	if err := validateCreateName(p.Kind)(name); err != nil {
+		return "", err
+	}
 	return name, nil
 }
 

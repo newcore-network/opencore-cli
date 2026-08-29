@@ -236,6 +236,39 @@ func TestBlankCommentsPreservesOffsetsAndStrings(t *testing.T) {
 	}
 }
 
+func TestGenerateTypesResolvesImportedAliasDefaultAndNamespace(t *testing.T) {
+	resourcePath := t.TempDir()
+	rb := NewResourceBuilder(".")
+	writeTestFile(t, resourcePath, "src/events.ts", `
+export const Named = { Event: 'named' } as const
+const DefaultEvents = { Event: 'default' } as const
+export default DefaultEvents
+`)
+	writeTestFile(t, resourcePath, "src/server/controller.ts", `
+import { Named as Alias } from '../events'
+import Defaults from '../events'
+import * as Events from '../events'
+export class Controller {
+  @Server.OnNet(Alias.Event) named(player: unknown) {}
+  @Server.OnNet(Defaults.Event) defaults(player: unknown) {}
+  @Server.OnNet(Events.Named.Event) namespace(player: unknown) {}
+}
+`)
+	if _, err := rb.generateTypes(resourcePath, TypegenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	content := readGenFile(t, resourcePath)
+	for _, expected := range []string{
+		"typeof import('../src/events').Named['Event']",
+		"typeof import('../src/events').default['Event']",
+		"/* Events.Named.Event */",
+	} {
+		if !strings.Contains(content, expected) {
+			t.Fatalf("missing %q in generated types:\n%s", expected, content)
+		}
+	}
+}
+
 func TestGenerateTypes_DuplicateEventNameIsReportedAndStable(t *testing.T) {
 	resourcePath := t.TempDir()
 	rb := NewResourceBuilder(".")
@@ -565,9 +598,9 @@ export class AliasController {
 	}
 
 	content := readGenFile(t, resourcePath)
-	// The alias is the local binding, so the emitted expression must use it.
-	if !strings.Contains(content, ".NetEvents['PING']") {
-		t.Fatalf("expected the alias to be used in the reference, got:\n%s", content)
+	// Type queries address exports of the imported module, not local aliases.
+	if !strings.Contains(content, ".Events['PING']") || strings.Contains(content, ".NetEvents['PING']") {
+		t.Fatalf("expected the original exported binding in the reference, got:\n%s", content)
 	}
 }
 

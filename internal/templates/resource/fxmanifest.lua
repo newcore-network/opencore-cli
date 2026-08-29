@@ -1,10 +1,10 @@
 fx_version 'cerulean'
-game '{{.ManifestGame}}'
+game {{luaString .ManifestGame}}
 {{if .AddRedMWarning}}
 rdr3_warning 'I acknowledge that this is a prerelease build of RedM, and I am aware my resources *will* become incompatible once RedM ships.'
 {{end}}
 
-name '{{.ResourceName}}'
+name {{luaString .ResourceName}}
 author 'Your Name'
 version '1.0.0'
 node_version '22'
@@ -28,4 +28,3 @@ files {
 dependencies {
     'core'
 }
-

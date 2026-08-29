@@ -1,4 +1,4 @@
-.PHONY: build build-all clean install test
+.PHONY: build build-all clean install test lint deps
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -9,10 +9,12 @@ build:
 
 # Build for all platforms
 build-all: clean
+	mkdir -p build
 	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o build/opencore-windows-amd64.exe .
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o build/opencore-darwin-amd64 .
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o build/opencore-darwin-arm64 .
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o build/opencore-linux-amd64 .
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o build/opencore-linux-arm64 .
 
 # Clean build artifacts
 clean:
@@ -35,4 +37,3 @@ lint:
 deps:
 	go mod download
 	go mod tidy
-

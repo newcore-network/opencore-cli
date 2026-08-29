@@ -1,13 +1,18 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+const configProtocolMarker = "__OPENCORE_CONFIG_JSON__"
 
 type Config struct {
 	Name        string            `json:"name"`
@@ -323,7 +328,7 @@ func (s *ResourceBuildSideConfig) UnmarshalJSON(data []byte) error {
 	}
 
 	var opts BuildSideConfig
-	if err := json.Unmarshal(data, &opts); err != nil {
+	if err := decodeStrictJSON(data, &opts); err != nil {
 		return err
 	}
 
@@ -350,12 +355,33 @@ type ViewsConfig struct {
 }
 
 type BuildSideConfig struct {
+	Enabled    *bool    `json:"-"`
 	Platform   string   `json:"platform,omitempty"`
 	Format     string   `json:"format,omitempty"`
 	Target     string   `json:"target,omitempty"`
 	External   []string `json:"external,omitempty"`
 	Minify     *bool    `json:"minify,omitempty"`
 	SourceMaps *bool    `json:"sourceMaps,omitempty"`
+}
+
+// UnmarshalJSON accepts the boolean shorthand used by resource/core build
+// sides while retaining the object fields consumed by the builder.
+func (s *BuildSideConfig) UnmarshalJSON(data []byte) error {
+	var enabled bool
+	if err := json.Unmarshal(data, &enabled); err == nil {
+		s.Enabled = &enabled
+		return nil
+	}
+
+	type plain BuildSideConfig
+	var value plain
+	if err := decodeStrictJSON(data, &value); err != nil {
+		return err
+	}
+	enabled = true
+	*s = BuildSideConfig(value)
+	s.Enabled = &enabled
+	return nil
 }
 
 type BuildConfig struct {
@@ -437,6 +463,71 @@ func FindProjectRoot(startDir string) (string, error) {
 	return "", fmt.Errorf("opencore.config.ts not found in current directory or any parent directory")
 }
 
+func parseNodeVersion(version string) (int, int, int, error) {
+	version = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(version), "v"))
+	version = strings.SplitN(version, "-", 2)[0]
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return 0, 0, 0, fmt.Errorf("invalid Node.js version %q", version)
+	}
+	values := [3]int{}
+	for i := range values {
+		value, err := strconv.Atoi(parts[i])
+		if err != nil || value < 0 {
+			return 0, 0, 0, fmt.Errorf("invalid Node.js version %q", version)
+		}
+		values[i] = value
+	}
+	return values[0], values[1], values[2], nil
+}
+
+func validateNodeVersion(version string) error {
+	major, minor, _, err := parseNodeVersion(version)
+	if err != nil {
+		return err
+	}
+	if major < 20 || major == 20 && minor < 19 {
+		return fmt.Errorf("Node.js >=20.19.0 is required (found %s)", strings.TrimSpace(version))
+	}
+	return nil
+}
+
+func checkNodeVersion() error {
+	if _, err := exec.LookPath("node"); err != nil {
+		return fmt.Errorf("Node.js is not installed; install Node.js >=20.19.0")
+	}
+	out, err := exec.Command("node", "--version").Output()
+	if err != nil {
+		return fmt.Errorf("failed to determine Node.js version: %w", err)
+	}
+	return validateNodeVersion(string(out))
+}
+
+func decodeStrictJSON(data []byte, value any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("unexpected data after config JSON")
+	}
+	return nil
+}
+
+func configJSONFromOutput(stdout []byte) ([]byte, error) {
+	index := bytes.LastIndex(stdout, []byte(configProtocolMarker))
+	if index < 0 {
+		return nil, fmt.Errorf("config loader did not emit its result marker")
+	}
+	payload := bytes.TrimSpace(stdout[index+len(configProtocolMarker):])
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("config loader emitted an empty result")
+	}
+	return payload, nil
+}
+
 // LoadWithProjectRoot reads and transpiles opencore.config.ts to Config and returns the project root.
 func LoadWithProjectRoot() (*Config, string, error) {
 	wd, err := os.Getwd()
@@ -451,9 +542,8 @@ func LoadWithProjectRoot() (*Config, string, error) {
 
 	configPathAbs := filepath.Join(root, "opencore.config.ts")
 
-	// Check if Node.js is installed
-	if _, err := exec.LookPath("node"); err != nil {
-		return nil, "", fmt.Errorf("Node.js is not installed. Please install Node.js 18+ and try again")
+	if err := checkNodeVersion(); err != nil {
+		return nil, "", err
 	}
 
 	// Create temporary transpiler script
@@ -466,12 +556,23 @@ const { createRequire } = require('module');
 // Make sure module resolution happens from the project root (cwd).
 const requireFromProject = createRequire(process.cwd() + path.sep);
 
-function inspectAdapterBinding(binding, pkgName, entryPath) {
+function adapterKind(binding) {
+  const candidate = String(binding?.runtime?.runtime || binding?.name || '').toLowerCase();
+  for (const kind of ['fivem', 'redm', 'ragemp', 'node']) {
+    if (candidate.includes(kind)) return kind;
+  }
+  return '';
+}
+
+function inspectAdapterBinding(binding, side) {
   if (!binding) {
     return undefined;
   }
 
   const name = typeof binding.name === 'string' ? binding.name : '';
+  const kind = adapterKind(binding);
+  const pkgName = kind && kind !== 'node' ? '@open-core/' + kind + '-adapter' : undefined;
+  const entryPath = pkgName ? pkgName + '/' + side : undefined;
   const hasRegister = typeof binding.register === 'function';
   const issues = [];
 
@@ -527,6 +628,7 @@ async function loadConfig(configPath) {
     os.tmpdir(),
     'opencore-config-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.cjs'
   );
+	fs.closeSync(fs.openSync(outfile, 'wx', 0o600));
 
   try {
     try {
@@ -539,7 +641,7 @@ async function loadConfig(configPath) {
       bundle: true,
       platform: 'node',
       format: 'cjs',
-      target: ['node18'],
+		target: ['node20.19'],
       absWorkingDir: process.cwd(),
       write: true,
       logLevel: 'silent',
@@ -558,11 +660,11 @@ async function loadConfig(configPath) {
   try {
     const configPath = path.resolve(process.argv[2]);
     const config = await loadConfig(configPath);
-    const serialized = {
+	const serialized = {
       ...config,
       adapter: {
-        server: inspectAdapterBinding(config?.adapter?.server, '@open-core/fivem-adapter', '@open-core/fivem-adapter/server'),
-        client: inspectAdapterBinding(config?.adapter?.client, '@open-core/fivem-adapter', '@open-core/fivem-adapter/client'),
+		server: inspectAdapterBinding(config?.adapter?.server, 'server'),
+		client: inspectAdapterBinding(config?.adapter?.client, 'client'),
       },
     };
 
@@ -570,7 +672,7 @@ async function loadConfig(configPath) {
       delete serialized.adapter;
     }
 
-    console.log(JSON.stringify(serialized, null, 2));
+	process.stdout.write('` + configProtocolMarker + `' + JSON.stringify(serialized));
   } catch (error) {
     console.error('Failed to load config:', error.message);
     process.exit(1);
@@ -578,29 +680,42 @@ async function loadConfig(configPath) {
 })();
 `
 
-	// Write transpiler script to temp file
-	tmpFile := filepath.Join(os.TempDir(), "opencore-config-loader.js")
-	if err := os.WriteFile(tmpFile, []byte(transpilerScript), 0644); err != nil {
+	// CreateTemp is unique and creates the loader with mode 0600.
+	tmp, err := os.CreateTemp("", "opencore-config-loader-*.cjs")
+	if err != nil {
 		return nil, "", fmt.Errorf("failed to create transpiler script: %w", err)
 	}
+	tmpFile := tmp.Name()
 	defer os.Remove(tmpFile)
+	if _, err := tmp.WriteString(transpilerScript); err != nil {
+		tmp.Close()
+		return nil, "", fmt.Errorf("failed to write transpiler script: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, "", fmt.Errorf("failed to close transpiler script: %w", err)
+	}
 
 	// Execute transpiler script
 	cmd := exec.Command("node", tmpFile, configPathAbs)
 	cmd.Dir = root
-	output, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to transpile config: %w\nOutput: %s", err, string(output))
+		return nil, "", fmt.Errorf("failed to transpile config: %w\nstderr: %s\nstdout: %s", err, strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
 	}
 
-	// Parse JSON output
+	payload, err := configJSONFromOutput(stdout.Bytes())
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read config loader output: %w\nstderr: %s\nstdout: %s", err, strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
+	}
 	var config Config
-	if err := json.Unmarshal(output, &config); err != nil {
-		return nil, "", fmt.Errorf("failed to parse config JSON: %w\nOutput: %s", err, string(output))
+	if err := decodeStrictJSON(payload, &config); err != nil {
+		return nil, "", fmt.Errorf("failed to parse config JSON: %w", err)
 	}
-
-	if strings.TrimSpace(config.Name) == "" {
-		return nil, "", fmt.Errorf("config.name is required")
+	if err := normalizeAndValidate(&config); err != nil {
+		return nil, "", err
 	}
 
 	runtimeKind := config.RuntimeKind()

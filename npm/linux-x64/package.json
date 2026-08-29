@@ -1,6 +1,6 @@
 {
   "name": "@open-core/cli-linux-x64",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0",
   "description": "OpenCore CLI binary for Linux x64",
   "license": "MPL-2.0",
   "repository": {

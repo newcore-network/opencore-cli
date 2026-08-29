@@ -64,31 +64,46 @@ func PreferenceFromEnv() Choice {
 // PreferenceFromProject tries to infer the preferred package manager from the current project.
 // It does NOT validate if the binary exists.
 func PreferenceFromProject(projectRoot string) Choice {
+	choice, _ := PreferenceFromProjectStrict(projectRoot)
+	return choice
+}
+
+// PreferenceFromProjectStrict infers the project preference and reports a
+// malformed package.json or packageManager declaration instead of hiding it.
+func PreferenceFromProjectStrict(projectRoot string) (Choice, error) {
 	// 1) package.json "packageManager" field (highest priority)
 	if projectRoot == "" {
 		projectRoot = "."
 	}
-	if b, err := os.ReadFile(filepath.Join(projectRoot, "package.json")); err == nil {
+	packagePath := filepath.Join(projectRoot, "package.json")
+	if b, err := os.ReadFile(packagePath); err == nil {
 		var pkg packageJSON
-		if err := json.Unmarshal(b, &pkg); err == nil {
-			if c, ok := choiceFromPackageManagerField(pkg.PackageManager); ok {
-				return c
+		if err := json.Unmarshal(b, &pkg); err != nil {
+			return ChoiceAuto, fmt.Errorf("invalid %s: %w", packagePath, err)
+		}
+		if strings.TrimSpace(pkg.PackageManager) != "" {
+			if c, err := parsePackageManagerField(pkg.PackageManager); err == nil {
+				return c, nil
+			} else {
+				return ChoiceAuto, fmt.Errorf("invalid packageManager in %s: %w", packagePath, err)
 			}
 		}
+	} else if !os.IsNotExist(err) {
+		return ChoiceAuto, fmt.Errorf("failed to read %s: %w", packagePath, err)
 	}
 
 	// 2) Lockfiles
 	if fileExists(filepath.Join(projectRoot, "pnpm-lock.yaml")) {
-		return ChoicePnpm
+		return ChoicePnpm, nil
 	}
 	if fileExists(filepath.Join(projectRoot, "yarn.lock")) || fileExists(filepath.Join(projectRoot, ".yarnrc.yml")) {
-		return ChoiceYarn
+		return ChoiceYarn, nil
 	}
 	if fileExists(filepath.Join(projectRoot, "package-lock.json")) {
-		return ChoiceNpm
+		return ChoiceNpm, nil
 	}
 
-	return ChoiceAuto
+	return ChoiceAuto, nil
 }
 
 // EffectivePreference applies env override (if not auto) and otherwise falls back to project inference.
@@ -154,7 +169,7 @@ func (r Resolved) InstallCmd() string {
 	case ChoiceNpm:
 		return "npm install"
 	default:
-		return "npm install"
+		return ""
 	}
 }
 
@@ -168,7 +183,7 @@ func (r Resolved) AddDevCmd(pkgs ...string) string {
 	case ChoiceNpm:
 		return strings.TrimSpace("npm install -D " + args)
 	default:
-		return strings.TrimSpace("npm install -D " + args)
+		return ""
 	}
 }
 
@@ -182,7 +197,7 @@ func (r Resolved) AddCmd(pkgs ...string) string {
 	case ChoiceNpm:
 		return strings.TrimSpace("npm install " + args)
 	default:
-		return strings.TrimSpace("npm install " + args)
+		return ""
 	}
 }
 
@@ -199,7 +214,7 @@ func (r Resolved) ExecCmd(bin string, args ...string) string {
 	case ChoiceNpm:
 		return "npm exec -- " + bin + rest
 	default:
-		return "npm exec -- " + bin + rest
+		return ""
 	}
 }
 
@@ -246,22 +261,48 @@ func parseMajor(version string) (int, bool) {
 }
 
 func choiceFromPackageManagerField(field string) (Choice, bool) {
+	choice, err := parsePackageManagerField(field)
+	return choice, err == nil
+}
+
+func parsePackageManagerField(field string) (Choice, error) {
 	f := strings.TrimSpace(strings.ToLower(field))
-	if f == "" {
-		return "", false
+	parts := strings.SplitN(f, "@", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		return "", fmt.Errorf("expected <npm|pnpm|yarn>@<version>, got %q", field)
 	}
-	// examples: "pnpm@9.0.0", "yarn@4.0.0", "npm@10.0.0"
-	name := strings.SplitN(f, "@", 2)[0]
-	switch name {
-	case string(ChoicePnpm):
-		return ChoicePnpm, true
-	case string(ChoiceYarn):
-		return ChoiceYarn, true
-	case string(ChoiceNpm):
-		return ChoiceNpm, true
-	default:
-		return "", false
+	choice, err := ParseChoice(parts[0])
+	if err != nil || choice == ChoiceAuto {
+		return "", fmt.Errorf("unsupported package manager %q", parts[0])
 	}
+	if _, _, _, err := parseVersion(parts[1]); err != nil {
+		return "", err
+	}
+	if choice == ChoiceYarn {
+		major, _, _, _ := parseVersion(parts[1])
+		if major < 2 {
+			return "", fmt.Errorf("yarn v1 is not supported; use Yarn Berry (v2+)")
+		}
+	}
+	return choice, nil
+}
+
+func parseVersion(version string) (int, int, int, error) {
+	version = strings.SplitN(strings.TrimSpace(strings.TrimPrefix(version, "v")), "+", 2)[0]
+	version = strings.SplitN(version, "-", 2)[0]
+	parts := strings.Split(version, ".")
+	if len(parts) < 1 || len(parts) > 3 {
+		return 0, 0, 0, fmt.Errorf("invalid package manager version %q", version)
+	}
+	values := [3]int{}
+	for i, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil || value < 0 {
+			return 0, 0, 0, fmt.Errorf("invalid package manager version %q", version)
+		}
+		values[i] = value
+	}
+	return values[0], values[1], values[2], nil
 }
 
 func fileExists(p string) bool {

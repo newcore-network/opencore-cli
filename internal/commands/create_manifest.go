@@ -63,11 +63,6 @@ func runCreateManifest(resourceName, standaloneName string, core, force bool) er
 	}
 
 	manifestPath := filepath.Join(target.Path, ocManifestFileName)
-	if !force {
-		if _, err := os.Stat(manifestPath); err == nil {
-			return fmt.Errorf("%s already exists\n\nUse '--force' to overwrite it", manifestPath)
-		}
-	}
 
 	manifest := buildExampleManifest(target)
 	body, err := json.MarshalIndent(manifest, "", "  ")
@@ -76,7 +71,7 @@ func runCreateManifest(resourceName, standaloneName string, core, force bool) er
 	}
 	body = append(body, '\n')
 
-	if err := os.WriteFile(manifestPath, body, 0644); err != nil {
+	if err := writeManifestFile(manifestPath, body, force); err != nil {
 		return fmt.Errorf("failed to write %s: %w", ocManifestFileName, err)
 	}
 
@@ -89,6 +84,43 @@ func runCreateManifest(resourceName, standaloneName string, core, force bool) er
 	)
 
 	return nil
+}
+
+func writeManifestFile(manifestPath string, body []byte, force bool) error {
+	if !force {
+		file, err := os.OpenFile(manifestPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if err != nil {
+			if os.IsExist(err) {
+				return fmt.Errorf("%s already exists; use '--force' to overwrite it", manifestPath)
+			}
+			return err
+		}
+		if _, err := file.Write(body); err != nil {
+			_ = file.Close()
+			_ = os.Remove(manifestPath)
+			return err
+		}
+		return file.Close()
+	}
+
+	temp, err := os.CreateTemp(filepath.Dir(manifestPath), ".oc-manifest-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.Write(body); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Chmod(0644); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, manifestPath)
 }
 
 func resolveManifestCreateTarget(resourceName, standaloneName string, core bool) (manifestCreateTarget, error) {
@@ -108,7 +140,7 @@ func resolveManifestCreateTarget(resourceName, standaloneName string, core bool)
 	}
 
 	if strings.TrimSpace(resourceName) != "" {
-		name := strings.TrimSpace(resourceName)
+		name := resourceName
 		if err := validateCreateName("resource")(name); err != nil {
 			return manifestCreateTarget{}, err
 		}
@@ -120,7 +152,7 @@ func resolveManifestCreateTarget(resourceName, standaloneName string, core bool)
 	}
 
 	if strings.TrimSpace(standaloneName) != "" {
-		name := strings.TrimSpace(standaloneName)
+		name := standaloneName
 		if err := validateCreateName("standalone")(name); err != nil {
 			return manifestCreateTarget{}, err
 		}

@@ -54,6 +54,9 @@ func runCreateFeature(cmd *cobra.Command, args []string, resourceName string) er
 
 	// Check if creating in a resource
 	if resourceName != "" {
+		if err := validateCreateName("resource")(resourceName); err != nil {
+			return err
+		}
 		// Verify resource exists
 		resourcePath := filepath.Join("resources", resourceName)
 		if _, err := os.Stat(resourcePath); os.IsNotExist(err) {

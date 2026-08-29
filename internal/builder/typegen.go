@@ -101,12 +101,17 @@ type typegenEntry struct {
 
 // fileSymbols captures the bindings of one source file that the name resolver needs.
 type fileSymbols struct {
-	// importedFrom maps a local binding to the module specifier it came from.
-	importedFrom map[string]string
+	// importedFrom maps a local binding to its module and exported binding.
+	importedFrom map[string]importBinding
 	// exportedConsts holds names reachable through `typeof import(...)` on the file itself.
 	exportedConsts map[string]bool
 	// localStrings holds constants with a plain string initialiser, inlinable even when private.
 	localStrings map[string]string
+}
+
+type importBinding struct {
+	spec     string
+	exported string
 }
 
 func parseFileSymbols(text string) *fileSymbols {
@@ -117,34 +122,35 @@ func parseFileSymbols(text string) *fileSymbols {
 	}
 }
 
-func collectImportBindings(text string) map[string]string {
-	bindings := map[string]string{}
+func collectImportBindings(text string) map[string]importBinding {
+	bindings := map[string]importBinding{}
 
 	for _, m := range namedImportPattern.FindAllStringSubmatch(text, -1) {
 		for clause := range strings.SplitSeq(m[1], ",") {
-			if local := localBindingOf(clause); local != "" {
-				bindings[local] = m[2]
+			if imported, local := importNamesOf(clause); local != "" {
+				bindings[local] = importBinding{spec: m[2], exported: imported}
 			}
 		}
 	}
 	for _, m := range namespaceImportPattern.FindAllStringSubmatch(text, -1) {
-		bindings[m[1]] = m[2]
+		bindings[m[1]] = importBinding{spec: m[2]}
 	}
 	for _, m := range defaultImportPattern.FindAllStringSubmatch(text, -1) {
 		if _, exists := bindings[m[1]]; !exists {
-			bindings[m[1]] = m[2]
+			bindings[m[1]] = importBinding{spec: m[2], exported: "default"}
 		}
 	}
 
 	return bindings
 }
 
-func localBindingOf(clause string) string {
-	local := strings.TrimPrefix(strings.TrimSpace(clause), "type ")
-	if _, alias, renamed := strings.Cut(local, " as "); renamed {
-		local = alias
+func importNamesOf(clause string) (imported, local string) {
+	imported = strings.TrimPrefix(strings.TrimSpace(clause), "type ")
+	local = imported
+	if original, alias, renamed := strings.Cut(imported, " as "); renamed {
+		imported, local = original, alias
 	}
-	return strings.TrimSpace(local)
+	return strings.TrimSpace(imported), strings.TrimSpace(local)
 }
 
 func collectExportedConsts(text string) map[string]bool {
@@ -250,12 +256,16 @@ func (s *fileSymbols) moduleExprFor(
 	selfImportPath string,
 	baseDir string,
 ) (string, bool) {
-	if spec, imported := s.importedFrom[base]; imported {
-		resolved, resolvable := resolveModuleImportPath(spec, sourceFile, baseDir)
+	if binding, imported := s.importedFrom[base]; imported {
+		resolved, resolvable := resolveModuleImportPath(binding.spec, sourceFile, baseDir)
 		if !resolvable {
 			return "", false
 		}
-		return fmt.Sprintf("typeof import(%s).%s", quoteTSString(resolved), base), true
+		expr := fmt.Sprintf("typeof import(%s)", quoteTSString(resolved))
+		if binding.exported != "" {
+			expr += "." + binding.exported
+		}
+		return expr, true
 	}
 	if s.exportedConsts[base] {
 		return fmt.Sprintf("typeof import(%s).%s", quoteTSString(selfImportPath), base), true

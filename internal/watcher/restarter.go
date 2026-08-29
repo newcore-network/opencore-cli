@@ -7,10 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/newcore-network/opencore-cli/internal/config"
@@ -81,6 +79,8 @@ type processRestarter struct {
 	ctx         context.Context
 	cancelWatch context.CancelFunc
 	cmd         *exec.Cmd
+	done        chan error
+	stopping    map[*exec.Cmd]struct{}
 	running     bool
 }
 
@@ -134,6 +134,7 @@ func (r *processRestarter) startLocked() error {
 	cmd.Stdout = r.stdout
 	cmd.Stderr = r.stderr
 	cmd.Stdin = os.Stdin
+	configureProcessGroup(cmd)
 
 	if cwd := strings.TrimSpace(r.config.Cwd); cwd != "" {
 		if !filepath.IsAbs(cwd) {
@@ -154,17 +155,23 @@ func (r *processRestarter) startLocked() error {
 	}
 
 	r.cmd = cmd
+	r.done = make(chan error, 1)
 	r.running = true
+	done := r.done
 
 	go func() {
 		err := cmd.Wait()
+		done <- err
+		close(done)
 		r.mu.Lock()
 		defer r.mu.Unlock()
+		_, expected := r.stopping[cmd]
+		delete(r.stopping, cmd)
 		if r.cmd == cmd {
 			r.cmd = nil
 			r.running = false
 		}
-		if err != nil && !errors.Is(err, context.Canceled) && r.ctx.Err() == nil {
+		if err != nil && !expected && !errors.Is(err, context.Canceled) && r.ctx.Err() == nil {
 			fmt.Fprintf(r.stderr, "[opencore dev] managed process exited: %v\n", err)
 		}
 	}()
@@ -175,79 +182,50 @@ func (r *processRestarter) startLocked() error {
 func (r *processRestarter) stopLocked() error {
 	if r.cmd == nil || r.cmd.Process == nil || !r.running {
 		r.cmd = nil
+		r.done = nil
 		r.running = false
 		return nil
 	}
 
-	proc := r.cmd.Process
 	cmd := r.cmd
+	done := r.done
+	if r.stopping == nil {
+		r.stopping = make(map[*exec.Cmd]struct{})
+	}
+	r.stopping[cmd] = struct{}{}
 	stopTimeout := time.Duration(r.config.StopTimeoutMs) * time.Millisecond
 	if stopTimeout <= 0 {
 		stopTimeout = 5 * time.Second
 	}
 
-	if err := sendStopSignal(proc, r.config.StopSignal); err != nil {
-		_ = proc.Kill()
+	if err := stopProcessTree(cmd, r.config.StopSignal); err != nil {
+		_ = killProcessTree(cmd)
 	}
 
-	deadline := time.Now().Add(stopTimeout)
-	for time.Now().Before(deadline) {
-		if !processRunning(cmd.ProcessState, proc.Pid) {
-			r.cmd = nil
-			r.running = false
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
+	timer := time.NewTimer(stopTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		r.cmd = nil
+		r.done = nil
+		r.running = false
+		return nil
+	case <-timer.C:
 	}
 
-	if err := proc.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := killProcessTree(cmd); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		return fmt.Errorf("managed process did not exit after being killed")
 	}
 
 	r.cmd = nil
+	r.done = nil
 	r.running = false
 	return nil
-}
-
-func processRunning(state *os.ProcessState, pid int) bool {
-	if state != nil && state.Exited() {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return proc.Signal(syscall.Signal(0)) == nil
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
-}
-
-func sendStopSignal(proc *os.Process, signalName string) error {
-	if proc == nil {
-		return nil
-	}
-
-	sig := strings.ToUpper(strings.TrimSpace(signalName))
-	switch sig {
-	case "", "SIGTERM", "TERM":
-		if runtime.GOOS == "windows" {
-			return proc.Kill()
-		}
-		return proc.Signal(syscall.SIGTERM)
-	case "SIGINT", "INT":
-		if runtime.GOOS == "windows" {
-			return proc.Signal(os.Interrupt)
-		}
-		return proc.Signal(os.Interrupt)
-	case "SIGKILL", "KILL":
-		return proc.Kill()
-	default:
-		if runtime.GOOS == "windows" {
-			return proc.Kill()
-		}
-		return proc.Signal(syscall.SIGTERM)
-	}
 }
 
 func newRestarter(cfg *config.Config) (restarter, error) {

@@ -1,13 +1,11 @@
-#!/bin/bash
-# Build script for all platforms
+#!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-VERSION=${1:-"dev"}
-OUTPUT_DIR="build"
+VERSION=${1:-$(git describe --tags --always --dirty 2>/dev/null || printf 'dev')}
+OUTPUT_DIR=${OUTPUT_DIR:-build}
 
-echo "🏗️  Building OpenCore CLI v${VERSION} for all platforms..."
-echo ""
+printf 'Building OpenCore CLI %s for all platforms...\n' "$VERSION"
 
 # Clean output directory
 rm -rf "$OUTPUT_DIR"
@@ -31,16 +29,14 @@ for platform in "${platforms[@]}"; do
         output_name="${output_name}.exe"
     fi
     
-    echo "📦 Building for ${GOOS}/${GOARCH}..."
+    printf 'Building for %s/%s...\n' "$GOOS" "$GOARCH"
     
     GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \
         go build -ldflags "-X main.version=${VERSION}" \
         -o "${OUTPUT_DIR}/${output_name}" \
         .
     
-    echo "✅ ${output_name}"
-    echo ""
+    printf 'Built %s\n' "$output_name"
 done
 
-echo "✨ Build complete! Binaries in ${OUTPUT_DIR}/"
-ls -lh "$OUTPUT_DIR"
+printf 'Build complete: %s/\n' "$OUTPUT_DIR"

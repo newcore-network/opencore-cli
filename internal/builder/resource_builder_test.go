@@ -399,6 +399,28 @@ func TestCopyFile(t *testing.T) {
 	}
 }
 
+func TestCleanupPreservesDependencyCache(t *testing.T) {
+	root := t.TempDir()
+	rb := NewResourceBuilder(root)
+	if _, err := rb.ensureEmbeddedScript(); err != nil {
+		t.Fatal(err)
+	}
+	dependencyCache := filepath.Join(root, "node_modules", ".cache", "opencore", "dependencies", "key", ".ready")
+	if err := os.MkdirAll(filepath.Dir(dependencyCache), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dependencyCache, []byte("ready"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rb.Cleanup()
+	if _, err := os.Stat(dependencyCache); err != nil {
+		t.Fatalf("Cleanup removed dependency cache: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "node_modules", ".cache", "opencore", "scripts")); !os.IsNotExist(err) {
+		t.Fatalf("Cleanup did not remove extracted scripts: %v", err)
+	}
+}
+
 func TestBuildTaskTypes(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("skipping: node is not installed")

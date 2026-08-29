@@ -7,6 +7,25 @@ import (
 	"testing"
 )
 
+func TestValidateCreateNameForArgumentsAndPrompts(t *testing.T) {
+	valid := []string{"chat", "chat-admin", "chat_admin", "x1"}
+	for _, name := range valid {
+		if err := validateCreateName("resource")(name); err != nil {
+			t.Errorf("expected %q to be valid: %v", name, err)
+		}
+	}
+
+	invalid := []string{"", "../chat", "chat/name", `chat\name`, "chat name", "Chat", "chat.json", "chat;rm", " chat"}
+	for _, name := range invalid {
+		if err := validateCreateName("resource")(name); err == nil {
+			t.Errorf("expected %q to be invalid", name)
+		}
+		if _, err := getNameFromArgsOrPrompt([]string{name}, createNamePrompt{Kind: "resource"}); err == nil {
+			t.Errorf("expected argument %q to be rejected", name)
+		}
+	}
+}
+
 func findNodeModulesRoot(t *testing.T) (string, bool) {
 	t.Helper()
 

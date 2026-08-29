@@ -247,7 +247,7 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 
 	// Determine number of workers
 	workers := b.config.Build.MaxWorkers
-	if workers == 0 {
+	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
 	if workers > len(tasks) {
@@ -391,6 +391,21 @@ func (b *Builder) writeRuntimeArtifacts(results []BuildResult) error {
 func (b *Builder) collectBarrelResources(results []BuildResult, side string) []string {
 	seen := make(map[string]struct{})
 	resources := make([]string, 0)
+	root := filepath.Join(b.config.OutDir, "packages")
+	if side == "client" {
+		root = filepath.Join(b.config.OutDir, "client_packages")
+	}
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(root, entry.Name(), "index.js")); err == nil {
+				seen[entry.Name()] = struct{}{}
+				resources = append(resources, entry.Name())
+			}
+		}
+	}
 
 	for _, result := range results {
 		if !result.Success || result.Task.Type == TypeViews {
@@ -1021,6 +1036,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Client: explicit.EntryPoints.Client,
 					}
 				}
+				if explicit.Compile != nil {
+					task.Options.Compile = *explicit.Compile
+					if !*explicit.Compile {
+						task.Type = TypeCopy
+					}
+				}
 				if explicit.Build != nil {
 					if explicit.Build.Server != nil {
 						task.Options.Server = buildResourceSideValue(explicit.Build.Server, b.config.Build.Server)
@@ -1086,6 +1107,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Framework:    viewsConfig.Framework,
 						Minify:       b.config.Build.Minify,
 						SourceMaps:   b.config.Build.SourceMaps,
+						Ignore:       viewsConfig.Ignore,
 						ForceInclude: viewsConfig.ForceInclude,
 						BuildCommand: viewsConfig.BuildCommand,
 						OutputDir:    viewsConfig.OutputDir,
@@ -1143,6 +1165,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Compile:    true,
 			}),
 		}
+		if res.Compile != nil {
+			task.Options.Compile = *res.Compile
+			if !*res.Compile {
+				task.Type = TypeCopy
+			}
+		}
 
 		// Apply entryPoints if configured
 		if res.EntryPoints != nil {
@@ -1161,6 +1189,12 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			}
 			if res.Build.NUI != nil {
 				task.Options.NUI = *res.Build.NUI
+			}
+			if res.Build.Minify != nil {
+				task.Options.Minify = *res.Build.Minify
+			}
+			if res.Build.SourceMaps != nil {
+				task.Options.SourceMaps = *res.Build.SourceMaps
 			}
 			if res.Build.ServerBinaries != nil {
 				task.Options.ServerBinaries = res.Build.ServerBinaries
@@ -1234,6 +1268,10 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				customCompiler := ""
 				var entryPoints *EntryPoints
 				if explicit != nil {
+					if explicit.ResourceName != "" {
+						resourceName = explicit.ResourceName
+						layout = b.resourceLayout(resourceName)
+					}
 					customCompiler = explicit.CustomCompiler
 					if explicit.EntryPoints != nil {
 						entryPoints = &EntryPoints{
@@ -1273,7 +1311,14 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						EntryPoints: entryPoints,
 					}),
 				}
+				if explicit != nil && explicit.Compile != nil {
+					task.Options.Compile = *explicit.Compile
+					if !*explicit.Compile {
+						task.Type = TypeCopy
+					}
+				}
 				if explicit != nil && explicit.Build != nil {
+					applyResourceBuildOptions(&task.Options, explicit.Build, b.config.Build.Server, b.config.Build.Client)
 					b.applyDependencyResolution(&task.Options, &b.config.Build, explicit.Build)
 				} else {
 					b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
@@ -1334,6 +1379,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			}
 
 			if res.Build != nil {
+				applyResourceBuildOptions(&task.Options, res.Build, b.config.Build.Server, b.config.Build.Client)
 				if res.Build.ServerBinaries != nil {
 					task.Options.ServerBinaries = res.Build.ServerBinaries
 				}
@@ -1348,23 +1394,24 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			tasks = append(tasks, task)
 
 			// Add views task if configured
-			if res.Views != nil {
+			viewsConfig := resolveViewsConfig(res.Path, mergeViewsConfig(b.config.Standalones.Views, res.Views))
+			if viewsConfig != nil {
 				tasks = append(tasks, BuildTask{
-					Path:           res.Views.Path,
+					Path:           viewsConfig.Path,
 					ResourceName:   resourceName + "/ui",
 					Type:           TypeViews,
 					OutDir:         layout.ViewsOutDir,
 					CustomCompiler: res.CustomCompiler,
 					Options: BuildOptions{
 						Runtime:      layout.Runtime,
-						Framework:    res.Views.Framework,
+						Framework:    viewsConfig.Framework,
 						Minify:       b.config.Build.Minify,
 						SourceMaps:   b.config.Build.SourceMaps,
-						ViewEntry:    res.Views.EntryPoint,
-						Ignore:       res.Views.Ignore,
-						ForceInclude: res.Views.ForceInclude,
-						BuildCommand: res.Views.BuildCommand,
-						OutputDir:    res.Views.OutputDir,
+						ViewEntry:    viewsConfig.EntryPoint,
+						Ignore:       viewsConfig.Ignore,
+						ForceInclude: viewsConfig.ForceInclude,
+						BuildCommand: viewsConfig.BuildCommand,
+						OutputDir:    viewsConfig.OutputDir,
 					},
 				})
 			}
@@ -1379,7 +1426,35 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			tasks[i].Options.EnvironmentAliases = envAliases
 		}
 	}
-	return tasks
+	seenTasks := make(map[string]struct{}, len(tasks))
+	deduplicated := tasks[:0]
+	for _, task := range tasks {
+		key := string(task.Type) + "\x00" + normalizedBuildPath(task.Path)
+		if _, found := seenTasks[key]; found {
+			continue
+		}
+		seenTasks[key] = struct{}{}
+		deduplicated = append(deduplicated, task)
+	}
+	return deduplicated
+}
+
+func applyResourceBuildOptions(opts *BuildOptions, cfg *config.ResourceBuildConfig, serverBase, clientBase *config.BuildSideConfig) {
+	if cfg.Server != nil {
+		opts.Server = buildResourceSideValue(cfg.Server, serverBase)
+	}
+	if cfg.Client != nil {
+		opts.Client = buildResourceSideValue(cfg.Client, clientBase)
+	}
+	if cfg.NUI != nil {
+		opts.NUI = *cfg.NUI
+	}
+	if cfg.Minify != nil {
+		opts.Minify = *cfg.Minify
+	}
+	if cfg.SourceMaps != nil {
+		opts.SourceMaps = *cfg.SourceMaps
+	}
 }
 
 // applyEnvironmentOverrides merges the active environment's build overrides
@@ -1676,6 +1751,9 @@ func (b *Builder) cleanResourceOutputForTasks(resourceName string, tasks []Build
 
 	for _, task := range tasks {
 		if viewsDir := strings.TrimSpace(task.OutDir); viewsDir != "" {
+			if err := validateRemovalPath(b.config.OutDir, viewsDir); err != nil {
+				return err
+			}
 			if err := os.RemoveAll(viewsDir); err != nil {
 				return err
 			}
@@ -1693,6 +1771,9 @@ func (b *Builder) cleanResourceOutputDir(resourceName string) error {
 	}
 
 	for _, resourceDir := range paths {
+		if err := validateRemovalPath(b.config.OutDir, resourceDir); err != nil {
+			return err
+		}
 		if _, err := os.Stat(resourceDir); os.IsNotExist(err) {
 			continue
 		}
@@ -1701,6 +1782,49 @@ func (b *Builder) cleanResourceOutputDir(resourceName string) error {
 		}
 	}
 
+	return nil
+}
+
+func validateRemovalPath(outputRoot, target string) error {
+	rootAbs, err := filepath.Abs(filepath.Clean(outputRoot))
+	if err != nil {
+		return fmt.Errorf("resolve output directory: %w", err)
+	}
+	targetAbs, err := filepath.Abs(filepath.Clean(target))
+	if err != nil {
+		return fmt.Errorf("resolve cleanup path: %w", err)
+	}
+	rel, err := filepath.Rel(rootAbs, targetAbs)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to clean %q outside output directory %q", target, outputRoot)
+	}
+
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("resolve output directory symlinks: %w", err)
+	}
+	if err != nil {
+		return nil
+	}
+	ancestor := targetAbs
+	for {
+		targetReal, evalErr := filepath.EvalSymlinks(ancestor)
+		if evalErr == nil {
+			realRel, relErr := filepath.Rel(rootReal, targetReal)
+			if relErr != nil || realRel == ".." || strings.HasPrefix(realRel, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("refusing to clean %q through a path outside output directory %q", target, outputRoot)
+			}
+			break
+		}
+		if !os.IsNotExist(evalErr) {
+			return fmt.Errorf("resolve cleanup path symlinks: %w", evalErr)
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			break
+		}
+		ancestor = parent
+	}
 	return nil
 }
 

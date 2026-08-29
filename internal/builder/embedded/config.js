@@ -80,6 +80,11 @@ function getBuildOptions(side, options = {}) {
             'dynamic-import': true,
             'class-static-blocks': false,
         },
+        sourcemap: merged.sourceMaps ? 'inline' : false,
+        minifyWhitespace: merged.minify === true,
+        minifySyntax: merged.minify === true,
+        minifyIdentifiers: false,
+        keepNames: true,
     }
 
     // FiveM Enhanced (Node 26) breaks its global msgpack codec when a large CJS

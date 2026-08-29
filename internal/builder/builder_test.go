@@ -1082,6 +1082,102 @@ func TestWriteRuntimeArtifactsRageMPBarrels(t *testing.T) {
 	}
 }
 
+func TestWriteRuntimeArtifactsPreservesResourcesOnPartialBuild(t *testing.T) {
+	outDir := t.TempDir()
+	cfg := &config.Config{
+		OutDir: outDir,
+		Core:   config.CoreConfig{ResourceName: "core"},
+		Adapter: &config.AdapterConfig{
+			Server: &config.AdapterBinding{Name: "ragemp", Valid: true},
+			Client: &config.AdapterBinding{Name: "ragemp", Valid: true},
+		},
+	}
+	b := New(cfg)
+	for _, side := range []string{"packages", "client_packages"} {
+		for _, name := range []string{"existing", "rebuilt"} {
+			writeTestFile(t, outDir, filepath.Join(side, name, "index.js"), "module.exports = {}\n")
+		}
+	}
+
+	results := []BuildResult{{Success: true, Task: BuildTask{
+		ResourceName: "rebuilt",
+		Type:         TypeResource,
+		Options: BuildOptions{
+			Server: SideConfigValue{Enabled: true},
+			Client: SideConfigValue{Enabled: true},
+		},
+	}}}
+	if err := b.writeRuntimeArtifacts(results); err != nil {
+		t.Fatal(err)
+	}
+	for _, side := range []string{"packages", "client_packages"} {
+		content, err := os.ReadFile(filepath.Join(outDir, side, "index.js"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "require('./existing')") {
+			t.Fatalf("partial %s barrel lost existing resource:\n%s", side, content)
+		}
+	}
+}
+
+func TestValidateRemovalPathRejectsEscapes(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := validateRemovalPath(root, outside); err == nil {
+		t.Fatal("expected outside path to be rejected")
+	}
+	if err := validateRemovalPath(root, root); err == nil {
+		t.Fatal("expected output root itself to be rejected")
+	}
+	if err := validateRemovalPath(root, filepath.Join(root, "resource")); err != nil {
+		t.Fatalf("expected child path to be accepted: %v", err)
+	}
+
+	link := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, link); err == nil {
+		if err := validateRemovalPath(root, filepath.Join(link, "resource")); err == nil {
+			t.Fatal("expected symlink escape to be rejected")
+		}
+	}
+}
+
+func TestCollectAllTasksCompileFalseAndOverrides(t *testing.T) {
+	falseValue := false
+	trueValue := true
+	cfg := &config.Config{
+		OutDir: "dist",
+		Core:   config.CoreConfig{Path: "core", ResourceName: "core"},
+		Build:  config.BuildConfig{Minify: true},
+		Resources: config.ResourcesConfig{Explicit: []config.ExplicitResource{{
+			Path: "resources/raw", Compile: &falseValue,
+			Build: &config.ResourceBuildConfig{Minify: &falseValue, SourceMaps: &trueValue},
+		}}},
+		Standalones: &config.StandaloneConfig{Explicit: []config.ExplicitResource{{
+			Path: "standalones/raw", Compile: &falseValue,
+			Build: &config.ResourceBuildConfig{Minify: &falseValue, SourceMaps: &trueValue},
+		}}},
+	}
+	tasks := New(cfg).collectAllTasks()
+	for _, path := range []string{"resources/raw", "standalones/raw"} {
+		var found *BuildTask
+		for i := range tasks {
+			if normalizedBuildPath(tasks[i].Path) == path {
+				found = &tasks[i]
+			}
+		}
+		if found == nil {
+			t.Fatalf("missing task %s", path)
+		}
+		if found.Type != TypeCopy || found.Options.Compile {
+			t.Fatalf("%s did not honor compile:false: %#v", path, found)
+		}
+		if found.Options.Minify || !found.Options.SourceMaps {
+			t.Fatalf("%s did not honor build overrides: %#v", path, found.Options)
+		}
+	}
+}
+
 func TestHasClientCode(t *testing.T) {
 	tmpDir := t.TempDir()
 

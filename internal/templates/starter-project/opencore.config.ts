@@ -7,14 +7,14 @@ import { RageMPServerAdapter } from '@open-core/ragemp-adapter/server'
 // If you get a missing packages error, install dependencies in the project root.
 
 export default defineConfig({
-  name: '{{.ProjectName}}',
+  name: {{jsonString .ProjectName}},
 
 {{ if .InstallRageMPAdapter }}  // Mandatory: deploy to your RageMP server root.
   // OpenCore will place server files under packages/ and client files under client_packages/.
 {{ else }}  // Mandatory: Deploy to FiveM server
   // Here you must add the path where your FiveM resources are located.
 {{ end }}
-  destination: '{{.Destination}}',
+  destination: {{jsonString .Destination}},
 
 {{ if .InstallFiveMAdapter }}  adapter: {
     server: FiveMServerAdapter(),

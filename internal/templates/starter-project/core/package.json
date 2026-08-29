@@ -1,7 +1,6 @@
 {
-  "name": "{{.ProjectName}}-core",
+  "name": {{jsonString (printf "%s-core" .ProjectName)}},
   "version": "1.0.0",
   "private": true,
   "main": "dist/server.js"
 }
-

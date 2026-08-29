@@ -1,10 +1,10 @@
 fx_version 'cerulean'
-game '{{.ManifestGame}}'
+game {{luaString .ManifestGame}}
 {{if .AddRedMWarning}}
 rdr3_warning 'I acknowledge that this is a prerelease build of RedM, and I am aware my resources *will* become incompatible once RedM ships.'
 {{end}}
 
-name '{{.ProjectName}}-core'
+name {{luaString (printf "%s-core" .ProjectName)}}
 description 'OpenCore server core'
 author 'Your Name'
 version '1.0.0'
@@ -17,5 +17,4 @@ server_scripts {
 client_scripts {
     'client.js'
 }
-
 

@@ -859,16 +859,17 @@ function readOcIgnore(viewPath) {
 }
 
 function shouldIgnore(filePath, ignorePatterns) {
-    const fileName = path.basename(filePath)
-    for (const pattern of ignorePatterns) {
-        if (pattern === fileName) return true
-        if (pattern.startsWith('*.')) {
-            const ext = pattern.slice(1)
-            if (fileName.endsWith(ext)) return true
-        }
-        if (filePath.includes(pattern)) return true
-    }
-    return false
+	const normalized = filePath.split(path.sep).join('/')
+	const fileName = path.posix.basename(normalized)
+	for (const pattern of ignorePatterns) {
+		const normalizedPattern = String(pattern).trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '')
+		if (!normalizedPattern) continue
+		if (normalizedPattern === fileName || normalized === normalizedPattern || normalized.startsWith(`${normalizedPattern}/`)) return true
+		const escaped = normalizedPattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*')
+		const expression = escaped.replace(/\u0000/g, '.*')
+		if (new RegExp(`^(?:.*/)?${expression}(?:/.*)?$`).test(normalized)) return true
+	}
+	return false
 }
 
 function isForceIncluded(filePath, forceInclude) {
@@ -1105,7 +1106,7 @@ async function buildViews(viewPath, outDir, options = {}) {
     })
 
     // Copy static assets (CSS, images, fonts, etc.) that aren't imported in JS
-    const ignorePatterns = readOcIgnore(viewPath)
+	const ignorePatterns = [...readOcIgnore(viewPath), ...(options.ignore || [])]
     await copyStaticAssets(viewPath, outDir, ignorePatterns, options.forceInclude || [])
 
     const htmlSrc = path.join(viewPath, 'index.html')

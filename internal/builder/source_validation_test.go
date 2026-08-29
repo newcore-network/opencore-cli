@@ -242,3 +242,27 @@ export class IgnoredController {}
 		t.Fatalf("client autoload includes unexpected imports: %s", clientText)
 	}
 }
+
+func TestGenerateAutoloadControllersIgnoresCommentsAndStrings(t *testing.T) {
+	resourcePath := t.TempDir()
+	rb := NewResourceBuilder(".")
+	writeTestFile(t, resourcePath, "src/not-controller.ts", `
+// @Server.Controller()
+const docs = "@Client.Controller()"
+const fakeImport = "from '@open-core/framework/server'"
+/* @Controller() */
+export class NotAController {}
+`)
+	if err := rb.generateAutoloadControllers(resourcePath); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"autoload.server.controllers.ts", "autoload.client.controllers.ts"} {
+		content, err := os.ReadFile(filepath.Join(resourcePath, ".opencore", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "export {};\n" {
+			t.Fatalf("%s included a fake controller: %s", name, content)
+		}
+	}
+}

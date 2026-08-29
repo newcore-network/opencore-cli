@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
+	"io"
 	"sort"
 	"strings"
+
+	"github.com/newcore-network/opencore-cli/internal/templates"
 )
 
 const ocManifestFileName = "oc.manifest.json"
-
-var manifestNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-_]*$`)
 
 type manifestValidationError struct {
 	message string
@@ -71,17 +71,19 @@ func parseTemplateManifest(data []byte) (*templateManifest, error) {
 	if err := decoder.Decode(manifest); err != nil {
 		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: %v", ocManifestFileName, err)}
 	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: trailing data: %v", ocManifestFileName, err)}
+	}
 
 	if manifest.Version != 1 {
 		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: schemaVersion must be 1", ocManifestFileName)}
 	}
 
-	manifest.Name = strings.TrimSpace(manifest.Name)
-	if manifest.Name == "" {
-		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: name is required", ocManifestFileName)}
-	}
-	if !manifestNamePattern.MatchString(manifest.Name) {
-		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: name must match %s", ocManifestFileName, manifestNamePattern.String())}
+	if err := templates.ValidateName(manifest.Name); err != nil {
+		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: invalid name: %v", ocManifestFileName, err)}
 	}
 
 	switch manifest.Kind {
@@ -91,24 +93,38 @@ func parseTemplateManifest(data []byte) (*templateManifest, error) {
 	}
 
 	if manifest.Compatibility != nil {
+		seenRuntimes := make(map[string]struct{}, len(manifest.Compatibility.Runtimes))
 		for _, runtime := range manifest.Compatibility.Runtimes {
 			if !isSupportedManifestRuntime(runtime) {
 				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: unsupported runtime '%s'", ocManifestFileName, runtime)}
 			}
+			if _, exists := seenRuntimes[runtime]; exists {
+				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: duplicate runtime '%s'", ocManifestFileName, runtime)}
+			}
+			seenRuntimes[runtime] = struct{}{}
 		}
+		seenProfiles := make(map[string]struct{}, len(manifest.Compatibility.GameProfiles))
 		for _, profile := range manifest.Compatibility.GameProfiles {
 			if !isSupportedManifestGameProfile(profile) {
 				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: unsupported gameProfile '%s'", ocManifestFileName, profile)}
 			}
+			if _, exists := seenProfiles[profile]; exists {
+				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: duplicate gameProfile '%s'", ocManifestFileName, profile)}
+			}
+			seenProfiles[profile] = struct{}{}
 		}
 	}
 
 	if manifest.Requires != nil {
+		seenDependencies := make(map[string]struct{}, len(manifest.Requires.Templates))
 		for _, dependency := range manifest.Requires.Templates {
-			dep := strings.TrimSpace(dependency)
-			if dep == "" {
-				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: requires.templates cannot contain empty values", ocManifestFileName)}
+			if err := templates.ValidateName(dependency); err != nil {
+				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: invalid required template '%s': %v", ocManifestFileName, dependency, err)}
 			}
+			if _, exists := seenDependencies[dependency]; exists {
+				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: duplicate required template '%s'", ocManifestFileName, dependency)}
+			}
+			seenDependencies[dependency] = struct{}{}
 		}
 	}
 

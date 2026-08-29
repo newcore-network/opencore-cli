@@ -21,6 +21,8 @@
   },
   "scripts": {
     "test": "node --test test/**/*.test.js",
+    "test:go": "node scripts/go-test.js",
+    "test:npm-smoke": "node scripts/smoke-npm-packages.js dist/npm",
     "version:set": "node scripts/version.js set",
     "version:check": "node scripts/version.js check",
     "version:check-tag": "node scripts/version.js check-tag",
@@ -28,15 +30,23 @@
   },
   "dependencies": {
     "@swc/core": "^1.16.1",
-    "esbuild": "^0.27.7",
+    "esbuild": "^0.28.1",
     "tsconfig-paths": "^4.2.0"
   },
+  "peerDependencies": {
+    "vite": "^7.1.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
   "optionalDependencies": {
-    "@open-core/cli-darwin-arm64": "2.0.0-beta.1",
-    "@open-core/cli-darwin-x64": "2.0.0-beta.1",
-    "@open-core/cli-linux-arm64": "2.0.0-beta.1",
-    "@open-core/cli-linux-x64": "2.0.0-beta.1",
-    "@open-core/cli-win32-x64": "2.0.0-beta.1"
+    "@open-core/cli-darwin-arm64": "2.0.0",
+    "@open-core/cli-darwin-x64": "2.0.0",
+    "@open-core/cli-linux-arm64": "2.0.0",
+    "@open-core/cli-linux-x64": "2.0.0",
+    "@open-core/cli-win32-x64": "2.0.0"
   },
   "repository": {
     "type": "git",
@@ -66,5 +76,6 @@
   ],
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "packageManager": "pnpm@10.33.0"
 }

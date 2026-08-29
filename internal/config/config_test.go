@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -259,6 +260,92 @@ func TestResourceBuildSideConfigUnmarshalBool(t *testing.T) {
 	}
 	if side.Options != nil {
 		t.Fatal("Expected side config options to be nil")
+	}
+}
+
+func TestCoreBuildSidesAcceptBooleanAndObject(t *testing.T) {
+	var cfg Config
+	err := decodeStrictJSON([]byte(`{
+		"name":"project","core":{"path":"./core","resourceName":"core","build":{
+			"server":false,"client":{"target":"es2020"}
+		}}
+	}`), &cfg)
+	if err != nil {
+		t.Fatalf("failed to parse core build shorthand: %v", err)
+	}
+	if cfg.Core.Build == nil || cfg.Core.Build.Server == nil || cfg.Core.Build.Server.Enabled == nil || *cfg.Core.Build.Server.Enabled {
+		t.Fatalf("expected disabled core server build, got %#v", cfg.Core.Build)
+	}
+	if cfg.Core.Build.Client == nil || cfg.Core.Build.Client.Enabled == nil || !*cfg.Core.Build.Client.Enabled || cfg.Core.Build.Client.Target != "es2020" {
+		t.Fatalf("expected enabled core client object, got %#v", cfg.Core.Build.Client)
+	}
+}
+
+func TestDecodeStrictJSONRejectsUnknownProperties(t *testing.T) {
+	var cfg Config
+	err := decodeStrictJSON([]byte(`{"name":"project","core":{"path":"./core","resourceName":"core"},"build":{"server":{"targte":"node20"}}}`), &cfg)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected unknown property error, got %v", err)
+	}
+}
+
+func TestConfigProtocolIgnoresConfigStdoutLogs(t *testing.T) {
+	payload, err := configJSONFromOutput([]byte("config says hello\n" + configProtocolMarker + `{"name":"project"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(payload) != `{"name":"project"}` {
+		t.Fatalf("unexpected payload %q", payload)
+	}
+}
+
+func TestValidateNodeVersion(t *testing.T) {
+	for _, version := range []string{"v20.19.0", "20.19.1", "v22.0.0"} {
+		if err := validateNodeVersion(version); err != nil {
+			t.Errorf("expected %s to be accepted: %v", version, err)
+		}
+	}
+	for _, version := range []string{"v18.20.0", "v20.18.9", "invalid"} {
+		if err := validateNodeVersion(version); err == nil {
+			t.Errorf("expected %s to be rejected", version)
+		}
+	}
+}
+
+func TestNormalizeAndValidate(t *testing.T) {
+	valid := Config{
+		Name:      " project ",
+		Core:      CoreConfig{Path: " ./core ", ResourceName: "core"},
+		Resources: ResourcesConfig{Include: []string{"./resources/*"}},
+		Build:     BuildConfig{MaxWorkers: 4, DependencyResolution: &DependencyResolutionConfig{Mode: "ISOLATED", PackageManager: "PNPM"}},
+	}
+	if err := normalizeAndValidate(&valid); err != nil {
+		t.Fatalf("expected valid config: %v", err)
+	}
+	if valid.Name != "project" || valid.Destination != "" {
+		t.Fatalf("expected normalized name and optional destination, got %#v", valid)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*Config)
+	}{
+		{"unsafe name", func(c *Config) { c.Name = "../project" }},
+		{"escaping core path", func(c *Config) { c.Core.Path = "../core" }},
+		{"invalid glob", func(c *Config) { c.Resources.Include = []string{"["} }},
+		{"negative workers", func(c *Config) { c.Build.MaxWorkers = -1 }},
+		{"invalid package manager", func(c *Config) { c.Build.DependencyResolution.PackageManager = "bun" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := valid
+			resolution := *valid.Build.DependencyResolution
+			cfg.Build.DependencyResolution = &resolution
+			test.edit(&cfg)
+			if err := normalizeAndValidate(&cfg); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 

@@ -82,7 +82,7 @@ func (rb *ResourceBuilder) ensureEmbeddedScript() (string, error) {
 		}
 	}
 
-	cacheDir := filepath.Join(rb.projectPath, "node_modules", ".cache", "opencore")
+	cacheDir := filepath.Join(rb.projectPath, "node_modules", ".cache", "opencore", "scripts")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
@@ -117,8 +117,8 @@ func (rb *ResourceBuilder) Cleanup() {
 	defer rb.embeddedScriptMutex.Unlock()
 
 	if rb.embeddedScriptPath != "" {
-		cacheDir := filepath.Dir(rb.embeddedScriptPath)
-		os.RemoveAll(cacheDir)
+		scriptDir := filepath.Dir(rb.embeddedScriptPath)
+		os.RemoveAll(scriptDir)
 		rb.embeddedScriptPath = ""
 		rb.embeddedScriptReady = false
 	}

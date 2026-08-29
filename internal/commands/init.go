@@ -57,11 +57,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Description: "Name of your OpenCore server project (no spaces)",
 			Type:        ui.StepTypeInput,
 			Validate: func(s string) error {
-				if s == "" {
-					return fmt.Errorf("project name cannot be empty")
-				}
-				if strings.Contains(s, " ") {
-					return fmt.Errorf("project name cannot contain spaces")
+				if err := validateCreateName("project")(s); err != nil {
+					return err
 				}
 				projectDir := filepath.Join(baseDir, s)
 				if _, err := os.Stat(projectDir); !os.IsNotExist(err) {
@@ -132,6 +129,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		if projectName == "" {
 			return fmt.Errorf("project name is required in non-interactive mode")
+		}
+		if err := validateCreateName("project")(projectName); err != nil {
+			return err
 		}
 		useMinify := minifyFlag
 		adapter := strings.TrimSpace(strings.ToLower(adapterFlag))
@@ -222,6 +222,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Extract values
 	projectName := result.GetStringValue("Project Name")
+	if err := validateCreateName("project")(projectName); err != nil {
+		return err
+	}
 	adapter := result.GetStringValue("Adapter")
 	useMinify := result.GetBoolValue("Minification")
 	packageManager := result.GetStringValue("Package Manager")

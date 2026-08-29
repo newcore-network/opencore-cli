@@ -35,6 +35,36 @@ func TestNewWorkerPool(t *testing.T) {
 	}
 }
 
+func TestNewWorkerPoolNormalizesNonPositiveWorkers(t *testing.T) {
+	for _, workers := range []int{0, -4} {
+		pool := NewWorkerPool(workers)
+		if pool.workers != 1 {
+			t.Fatalf("NewWorkerPool(%d) workers = %d, want 1", workers, pool.workers)
+		}
+		pool.Close()
+	}
+}
+
+func TestWorkerPoolDoesNotDeadlockWhenResultsExceedBuffer(t *testing.T) {
+	pool := NewWorkerPool(2)
+	pool.Start(func(task BuildTask) BuildResult { return BuildResult{Task: task, Success: true} })
+
+	tasks := make([]BuildTask, 250)
+	pool.SubmitAll(tasks)
+	done := make(chan struct{})
+	go func() {
+		pool.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close blocked on unconsumed results")
+	}
+	pool.Cancel()
+}
+
 func TestWorkerPoolBasicExecution(t *testing.T) {
 	pool := NewWorkerPool(2)
 
