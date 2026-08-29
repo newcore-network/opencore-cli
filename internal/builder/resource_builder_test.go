@@ -313,6 +313,12 @@ func TestCopyResource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(srcDir, "subdir", "file2.lua"), []byte("-- nested"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(srcDir, ".ocignore"), []byte("subdir/private/**\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, srcDir, "subdir/private/secret.txt", "secret")
+	writeTestFile(t, srcDir, "subdir/node_modules/pkg/index.js", "ignored")
+	writeTestFile(t, srcDir, "subdir/package.json", `{}`)
 
 	// node_modules inside resource (should be skipped)
 	if err := os.MkdirAll(filepath.Join(srcDir, "node_modules"), 0755); err != nil {
@@ -349,6 +355,11 @@ func TestCopyResource(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dstDir, "subdir", "file2.lua")); os.IsNotExist(err) {
 		t.Error("subdir/file2.lua should be copied")
+	}
+	for _, ignored := range []string{"subdir/private", "subdir/node_modules", "subdir/package.json"} {
+		if _, err := os.Stat(filepath.Join(dstDir, ignored)); !os.IsNotExist(err) {
+			t.Errorf("%s should be filtered recursively", ignored)
+		}
 	}
 
 	// Verify node_modules junction/symlink was created by handleDependencies

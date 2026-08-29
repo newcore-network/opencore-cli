@@ -183,7 +183,7 @@ func (rb *ResourceBuilder) BuildWithContext(ctx context.Context, task BuildTask)
 	var err error
 	var output string
 
-	if task.Type != TypeViews {
+	if task.Type != TypeViews && task.Type != TypeCopy {
 		if autoloadErr := rb.generateAutoloadControllers(task.Path); autoloadErr != nil {
 			duration := time.Since(start)
 			return BuildResult{
@@ -338,7 +338,7 @@ func (rb *ResourceBuilder) copyResource(task BuildTask) (string, error) {
 }
 
 func (rb *ResourceBuilder) copyResourceWithContext(ctx context.Context, task BuildTask) (string, error) {
-	scriptPath, err := rb.getBuildScriptPath(task)
+	scriptPath, err := rb.ensureEmbeddedScript()
 	if err != nil {
 		return "", err
 	}

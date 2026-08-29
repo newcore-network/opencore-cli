@@ -528,6 +528,24 @@ func configJSONFromOutput(stdout []byte) ([]byte, error) {
 	return payload, nil
 }
 
+func writeTempLoader(contents string) (string, error) {
+	tmp, err := os.CreateTemp("", "opencore-config-loader-*.cjs")
+	if err != nil {
+		return "", err
+	}
+	name := tmp.Name()
+	if _, err := tmp.WriteString(contents); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+
 // LoadWithProjectRoot reads and transpiles opencore.config.ts to Config and returns the project root.
 func LoadWithProjectRoot() (*Config, string, error) {
 	wd, err := os.Getwd()
@@ -681,19 +699,11 @@ async function loadConfig(configPath) {
 `
 
 	// CreateTemp is unique and creates the loader with mode 0600.
-	tmp, err := os.CreateTemp("", "opencore-config-loader-*.cjs")
+	tmpFile, err := writeTempLoader(transpilerScript)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create transpiler script: %w", err)
 	}
-	tmpFile := tmp.Name()
 	defer os.Remove(tmpFile)
-	if _, err := tmp.WriteString(transpilerScript); err != nil {
-		tmp.Close()
-		return nil, "", fmt.Errorf("failed to write transpiler script: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return nil, "", fmt.Errorf("failed to close transpiler script: %w", err)
-	}
 
 	// Execute transpiler script
 	cmd := exec.Command("node", tmpFile, configPathAbs)

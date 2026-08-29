@@ -28,16 +28,24 @@ import (
 )
 
 const (
-	templatesRepo = "newcore-network/opencore-templates"
-	templatesURL  = "https://github.com/" + templatesRepo
-	apiBaseURL    = "https://api.github.com/repos/" + templatesRepo + "/contents"
-	apiBodyLimit  = 2 << 20
-	manifestLimit = 1 << 20
-	fileBodyLimit = 50 << 20
+	templatesRepo  = "newcore-network/opencore-templates"
+	templatesURL   = "https://github.com/" + templatesRepo
+	apiBaseURL     = "https://api.github.com/repos/" + templatesRepo + "/contents"
+	apiBodyLimit   = 2 << 20
+	manifestLimit  = 1 << 20
+	fileBodyLimit  = 50 << 20
 	cloneBodyLimit = 200 << 20
 )
 
-var cloneHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var cloneHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		if !isTrustedGitHubURL(req.URL) {
+			return fmt.Errorf("refusing redirect to untrusted URL %q", req.URL.String())
+		}
+		return nil
+	},
+}
 
 // GitHubContent represents a file/directory from GitHub API
 type GitHubContent struct {
@@ -282,6 +290,9 @@ func fetchTemplateManifest(ctx context.Context, templatePath, branch string) (*t
 	for _, item := range contents {
 		if item.Type != "file" || item.Name != ocManifestFileName || item.DownloadURL == "" {
 			continue
+		}
+		if err := validateDownloadURL(item.DownloadURL); err != nil {
+			return nil, err
 		}
 
 		manifestResp, err := cloneGET(ctx, item.DownloadURL)
@@ -583,9 +594,8 @@ func downloadDirectory(ctx context.Context, remotePath, localPath, branch string
 }
 
 func downloadFile(ctx context.Context, downloadURL, localPath string, budget *int64) error {
-	parsedURL, err := url.Parse(downloadURL)
-	if err != nil || parsedURL.Scheme != "https" || parsedURL.Hostname() != "raw.githubusercontent.com" {
-		return fmt.Errorf("refusing untrusted download URL %q", downloadURL)
+	if err := validateDownloadURL(downloadURL); err != nil {
+		return err
 	}
 	resp, err := cloneGET(ctx, downloadURL)
 	if err != nil {
@@ -643,6 +653,9 @@ func runClone(cmd *cobra.Command, args []string, forceAPI bool, force bool, bran
 		return err
 	}
 	if template.ManifestError != nil {
+		if _, invalid := template.ManifestError.(*manifestValidationError); invalid {
+			return fmt.Errorf("template '%s' has an invalid manifest: %w", template.Name, template.ManifestError)
+		}
 		fmt.Println(ui.Warning(fmt.Sprintf("Skipping manifest checks for '%s': %v", template.Name, template.ManifestError)))
 		fmt.Println()
 	}
@@ -709,6 +722,26 @@ func cloneGET(ctx context.Context, requestURL string) (*http.Response, error) {
 	return cloneHTTPClient.Do(req)
 }
 
+func validateDownloadURL(downloadURL string) error {
+	parsedURL, err := url.Parse(downloadURL)
+	if err != nil || parsedURL.Scheme != "https" || parsedURL.Hostname() != "raw.githubusercontent.com" || parsedURL.User != nil {
+		return fmt.Errorf("refusing untrusted download URL %q", downloadURL)
+	}
+	return nil
+}
+
+func isTrustedGitHubURL(candidate *url.URL) bool {
+	if candidate == nil || candidate.Scheme != "https" || candidate.User != nil {
+		return false
+	}
+	switch candidate.Hostname() {
+	case "api.github.com", "raw.githubusercontent.com":
+		return true
+	default:
+		return false
+	}
+}
+
 func readLimited(reader io.Reader, limit int64) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
 	if err != nil {
@@ -732,7 +765,7 @@ func decodeLimitedJSON(reader io.Reader, limit int64, target any) error {
 }
 
 func validateGitHubItem(parent string, item GitHubContent) error {
-	if item.Name == "" || item.Name == "." || item.Name == ".." || path.Base(item.Name) != item.Name || filepath.Base(item.Name) != item.Name {
+	if item.Name == "" || item.Name == "." || item.Name == ".." || strings.ContainsAny(item.Name, `/\`) || path.Base(item.Name) != item.Name || filepath.Base(item.Name) != item.Name {
 		return fmt.Errorf("unsafe item name %q returned by GitHub", item.Name)
 	}
 	if item.Path != path.Join(parent, item.Name) {

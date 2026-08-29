@@ -274,7 +274,7 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 		return err
 	}
 
-	if err := b.writeRuntimeArtifacts(results); err != nil {
+	if err := b.writeRuntimeArtifactsWithExisting(results, false); err != nil {
 		return fmt.Errorf("failed to write runtime artifacts: %w", err)
 	}
 
@@ -355,7 +355,7 @@ func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]B
 		return results, err
 	}
 
-	if err := b.writeRuntimeArtifacts(results); err != nil {
+	if err := b.writeRuntimeArtifactsWithExisting(results, true); err != nil {
 		return results, fmt.Errorf("failed to write runtime artifacts: %w", err)
 	}
 
@@ -371,12 +371,16 @@ func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]B
 }
 
 func (b *Builder) writeRuntimeArtifacts(results []BuildResult) error {
+	return b.writeRuntimeArtifactsWithExisting(results, true)
+}
+
+func (b *Builder) writeRuntimeArtifactsWithExisting(results []BuildResult, preserveExisting bool) error {
 	if b.runtimeKind() != "ragemp" {
 		return nil
 	}
 
-	serverResources := b.collectBarrelResources(results, "server")
-	clientResources := b.collectBarrelResources(results, "client")
+	serverResources := b.collectBarrelResources(results, "server", preserveExisting)
+	clientResources := b.collectBarrelResources(results, "client", preserveExisting)
 
 	if err := writeRuntimeBarrel(filepath.Join(b.config.OutDir, "packages", "index.js"), serverResources); err != nil {
 		return err
@@ -388,14 +392,14 @@ func (b *Builder) writeRuntimeArtifacts(results []BuildResult) error {
 	return nil
 }
 
-func (b *Builder) collectBarrelResources(results []BuildResult, side string) []string {
+func (b *Builder) collectBarrelResources(results []BuildResult, side string, preserveExisting bool) []string {
 	seen := make(map[string]struct{})
 	resources := make([]string, 0)
 	root := filepath.Join(b.config.OutDir, "packages")
 	if side == "client" {
 		root = filepath.Join(b.config.OutDir, "client_packages")
 	}
-	if entries, err := os.ReadDir(root); err == nil {
+	if entries, err := os.ReadDir(root); preserveExisting && err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				continue
@@ -939,23 +943,23 @@ func (b *Builder) collectAllTasks() []BuildTask {
 
 	tasks = append(tasks, coreTask)
 
-	// Core views if configured
-	if b.config.Core.Views != nil {
+	// Core views if configured or discovered.
+	if viewsConfig := resolveViewsConfig(b.config.Core.Path, b.config.Core.Views); viewsConfig != nil {
 		tasks = append(tasks, BuildTask{
-			Path:           b.config.Core.Views.Path,
+			Path:           viewsConfig.Path,
 			ResourceName:   b.config.Core.ResourceName + "/ui",
 			Type:           TypeViews,
 			OutDir:         coreLayout.ViewsOutDir,
 			CustomCompiler: b.config.Core.CustomCompiler, // Use core's custom compiler for views too
 			Options: BuildOptions{
-				Framework:    b.config.Core.Views.Framework,
-				Minify:       b.config.Build.Minify,
-				SourceMaps:   b.config.Build.SourceMaps,
-				ViewEntry:    b.config.Core.Views.EntryPoint,
-				Ignore:       b.config.Core.Views.Ignore,
-				ForceInclude: b.config.Core.Views.ForceInclude,
-				BuildCommand: b.config.Core.Views.BuildCommand,
-				OutputDir:    b.config.Core.Views.OutputDir,
+				Framework:    viewsConfig.Framework,
+				Minify:       coreTask.Options.Minify,
+				SourceMaps:   coreTask.Options.SourceMaps,
+				ViewEntry:    viewsConfig.EntryPoint,
+				Ignore:       viewsConfig.Ignore,
+				ForceInclude: viewsConfig.ForceInclude,
+				BuildCommand: viewsConfig.BuildCommand,
+				OutputDir:    viewsConfig.OutputDir,
 			},
 		})
 	}
@@ -1084,8 +1088,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 						Options: BuildOptions{
 							Runtime:      layout.Runtime,
 							Framework:    framework,
-							Minify:       b.config.Build.Minify,
-							SourceMaps:   b.config.Build.SourceMaps,
+							Minify:       task.Options.Minify,
+							SourceMaps:   task.Options.SourceMaps,
 							ViewEntry:    viewsConfig.EntryPoint,
 							Ignore:       viewsConfig.Ignore,
 							ForceInclude: viewsConfig.ForceInclude,
@@ -1105,8 +1109,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Options: BuildOptions{
 						Runtime:      layout.Runtime,
 						Framework:    viewsConfig.Framework,
-						Minify:       b.config.Build.Minify,
-						SourceMaps:   b.config.Build.SourceMaps,
+						Minify:       task.Options.Minify,
+						SourceMaps:   task.Options.SourceMaps,
 						Ignore:       viewsConfig.Ignore,
 						ForceInclude: viewsConfig.ForceInclude,
 						BuildCommand: viewsConfig.BuildCommand,
@@ -1207,7 +1211,7 @@ func (b *Builder) collectAllTasks() []BuildTask {
 			b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 		}
 
-		// Resources are always compiled, so we can always check for views
+		// Resolve explicitly configured or conventional views independently of compilation.
 		var resourceViewsDefaults *config.ViewsConfig
 		if b.config.Resources.Views != nil {
 			resourceViewsDefaults = b.config.Resources.Views
@@ -1235,8 +1239,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 				Options: BuildOptions{
 					Runtime:      layout.Runtime,
 					Framework:    framework,
-					Minify:       b.config.Build.Minify,
-					SourceMaps:   b.config.Build.SourceMaps,
+					Minify:       task.Options.Minify,
+					SourceMaps:   task.Options.SourceMaps,
 					ViewEntry:    viewsConfig.EntryPoint,
 					Ignore:       viewsConfig.Ignore,
 					ForceInclude: viewsConfig.ForceInclude,
@@ -1324,6 +1328,33 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					b.applyDependencyResolution(&task.Options, &b.config.Build, nil)
 				}
 				tasks = append(tasks, task)
+
+				var explicitViews *config.ViewsConfig
+				if explicit != nil {
+					explicitViews = explicit.Views
+				}
+				viewsConfig := resolveViewsConfig(match, mergeViewsConfig(b.config.Standalones.Views, explicitViews))
+				if viewsConfig != nil {
+					tasks = append(tasks, BuildTask{
+						Path:           viewsConfig.Path,
+						ResourceName:   resourceName + "/ui",
+						Type:           TypeViews,
+						OutDir:         layout.ViewsOutDir,
+						CustomCompiler: customCompiler,
+						Options: BuildOptions{
+							Runtime:      layout.Runtime,
+							Framework:    viewsConfig.Framework,
+							Minify:       task.Options.Minify,
+							SourceMaps:   task.Options.SourceMaps,
+							ViewEntry:    viewsConfig.EntryPoint,
+							Ignore:       viewsConfig.Ignore,
+							ForceInclude: viewsConfig.ForceInclude,
+							BuildCommand: viewsConfig.BuildCommand,
+							OutputDir:    viewsConfig.OutputDir,
+							LogLevel:     standaloneLogLevel,
+						},
+					})
+				}
 			}
 		}
 
@@ -1405,8 +1436,8 @@ func (b *Builder) collectAllTasks() []BuildTask {
 					Options: BuildOptions{
 						Runtime:      layout.Runtime,
 						Framework:    viewsConfig.Framework,
-						Minify:       b.config.Build.Minify,
-						SourceMaps:   b.config.Build.SourceMaps,
+						Minify:       task.Options.Minify,
+						SourceMaps:   task.Options.SourceMaps,
 						ViewEntry:    viewsConfig.EntryPoint,
 						Ignore:       viewsConfig.Ignore,
 						ForceInclude: viewsConfig.ForceInclude,

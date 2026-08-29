@@ -191,12 +191,6 @@ func GenerateStarterProject(targetPath, projectName string, installIdentity bool
 	if err := ValidateName(projectName); err != nil {
 		return fmt.Errorf("invalid project name: %w", err)
 	}
-	if destination != "" {
-		// Ensure the generated TypeScript config is safe on Windows.
-		// Backslashes can be interpreted as escape sequences in JS/TS strings.
-		destination = strings.ReplaceAll(destination, "\\", "/")
-	}
-
 	installFiveMAdapter := adapter == "fivem"
 
 	config := ProjectConfig{

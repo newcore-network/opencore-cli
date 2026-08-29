@@ -23,7 +23,7 @@ func TestValidateName(t *testing.T) {
 
 func TestGenerateStarterProjectEscapesGeneratedValues(t *testing.T) {
 	targetPath := filepath.Join(t.TempDir(), "safe-project")
-	destination := "C:/server/'resources\nnext"
+	destination := "C:\\server\\'resources\nnext"
 	packageManager := "pnpm\"@10"
 	if err := GenerateStarterProject(targetPath, "safe-project", false, "fivem", false, destination, packageManager); err != nil {
 		t.Fatalf("GenerateStarterProject() error = %v", err)
@@ -45,10 +45,10 @@ func TestGenerateStarterProjectEscapesGeneratedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(configBody), "destination: 'C:/server/'resources") {
+	if strings.Contains(string(configBody), "destination: 'C:\\server\\'resources") {
 		t.Fatal("destination was emitted as an injectable single-quoted literal")
 	}
-	if !strings.Contains(string(configBody), `destination: "C:/server/'resources\nnext"`) {
+	if !strings.Contains(string(configBody), `destination: "C:\\server\\'resources\nnext"`) {
 		t.Fatalf("destination was not JSON-escaped in TypeScript: %s", configBody)
 	}
 }

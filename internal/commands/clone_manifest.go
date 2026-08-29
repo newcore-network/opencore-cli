@@ -85,6 +85,9 @@ func parseTemplateManifest(data []byte) (*templateManifest, error) {
 	if err := templates.ValidateName(manifest.Name); err != nil {
 		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: invalid name: %v", ocManifestFileName, err)}
 	}
+	if manifest.DisplayName == "" && manifestFieldPresent(data, "displayName") {
+		return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: displayName cannot be empty", ocManifestFileName)}
+	}
 
 	switch manifest.Kind {
 	case string(templateCategoryResource), string(templateCategoryStandalone), "core":
@@ -127,8 +130,41 @@ func parseTemplateManifest(data []byte) (*templateManifest, error) {
 			seenDependencies[dependency] = struct{}{}
 		}
 	}
+	if manifest.Links != nil {
+		for field, value := range map[string]string{
+			"readme":     manifest.Links.Readme,
+			"docs":       manifest.Links.Docs,
+			"repository": manifest.Links.Repository,
+		} {
+			if value == "" && manifestNestedFieldPresent(data, "links", field) {
+				return nil, &manifestValidationError{message: fmt.Sprintf("invalid %s: links.%s cannot be empty", ocManifestFileName, field)}
+			}
+		}
+	}
 
 	return manifest, nil
+}
+
+func manifestFieldPresent(data []byte, field string) bool {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return false
+	}
+	_, ok := raw[field]
+	return ok
+}
+
+func manifestNestedFieldPresent(data []byte, parent, field string) bool {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return false
+	}
+	var nested map[string]json.RawMessage
+	if json.Unmarshal(raw[parent], &nested) != nil {
+		return false
+	}
+	_, ok := nested[field]
+	return ok
 }
 
 func validateManifestCategory(manifest *templateManifest, category templateCategory) error {

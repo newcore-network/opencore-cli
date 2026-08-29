@@ -172,7 +172,7 @@ async function checkNativePackages(resourcePath, options = {}) {
 
     const { warnings, errors } = await detectNativePackages(nodeModulesPath, allExternals)
     printNativePackageWarnings(warnings, errors)
-    if (errors.length > 0) {
+    if (errors.length > 0 && options.runtime !== 'ragemp') {
         throw new Error(`[build] ${errors.length} incompatible native external package(s) detected: ${errors.map(error => error.package).join(', ')}`)
     }
 }
@@ -455,6 +455,9 @@ async function copyResource(resourcePath, outDir, options = {}) {
         }
         return
     }
+	if (absOutDir.startsWith(absSrcPath + path.sep)) {
+		throw new Error(`Output path cannot be inside copied source: ${absOutDir}`)
+	}
 
     if (!fs.existsSync(absSrcPath)) {
         throw new Error(`Source path does not exist: ${absSrcPath}`)
@@ -462,18 +465,19 @@ async function copyResource(resourcePath, outDir, options = {}) {
 
     await fs.promises.mkdir(absOutDir, { recursive: true })
 
-    const entries = await fs.promises.readdir(absSrcPath, { withFileTypes: true })
+	const ignorePatterns = await readCopyIgnore(absSrcPath)
+	const entries = await fs.promises.readdir(absSrcPath, { withFileTypes: true })
     
     for (const entry of entries) {
         const src = path.join(absSrcPath, entry.name)
         const dst = path.join(absOutDir, entry.name)
         
-		if (shouldSkipCopyEntry(entry)) {
+		if (shouldSkipCopyEntry(entry, entry.name, ignorePatterns)) {
 			continue
 		}
 
 		if (entry.isDirectory()) {
-			await copyDirRecursive(src, dst)
+			await copyDirRecursive(src, dst, absSrcPath, ignorePatterns)
         } else {
             await fs.promises.copyFile(src, dst)
         }
@@ -489,29 +493,51 @@ async function copyResource(resourcePath, outDir, options = {}) {
 }
 
 
-async function copyDirRecursive(src, dst) {
+async function copyDirRecursive(src, dst, root, ignorePatterns) {
     await fs.promises.mkdir(dst, { recursive: true })
     const entries = await fs.promises.readdir(src, { withFileTypes: true })
     
     for (const entry of entries) {
-        const srcPath = path.join(src, entry.name)
-        const dstPath = path.join(dst, entry.name)
-        
-		if (shouldSkipCopyEntry(entry)) {
+		const srcPath = path.join(src, entry.name)
+		const dstPath = path.join(dst, entry.name)
+		const relativePath = path.relative(root, srcPath).split(path.sep).join('/')
+		
+		if (shouldSkipCopyEntry(entry, relativePath, ignorePatterns)) {
 			continue
 		}
 		if (entry.isDirectory()) {
-            await copyDirRecursive(srcPath, dstPath)
+			await copyDirRecursive(srcPath, dstPath, root, ignorePatterns)
         } else {
             await fs.promises.copyFile(srcPath, dstPath)
         }
     }
 }
 
-function shouldSkipCopyEntry(entry) {
+async function readCopyIgnore(root) {
+	try {
+		return (await fs.promises.readFile(path.join(root, '.ocignore'), 'utf8'))
+			.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
+	} catch (error) {
+		if (error.code !== 'ENOENT') throw error
+		return []
+	}
+}
+
+function matchesCopyPattern(relativePath, pattern) {
+	const normalized = String(pattern).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '')
+	if (!normalized) return false
+	const literalPrefix = normalized.split('*', 1)[0].replace(/\/$/, '')
+	if (literalPrefix === relativePath) return true
+	const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*')
+	const expression = escaped.replace(/\u0000/g, '.*')
+	return new RegExp(`^(?:.*/)?${expression}(?:/.*)?$`).test(relativePath)
+}
+
+function shouldSkipCopyEntry(entry, relativePath, ignorePatterns = []) {
 	if (entry.isSymbolicLink()) return true
-	if (entry.isDirectory()) return ['node_modules', 'dist', '.git', '.ocignore'].includes(entry.name)
-	return entry.name === 'package.json' || entry.name === '.ocignore'
+	if (entry.isDirectory() && ['node_modules', 'dist', '.git', '.ocignore'].includes(entry.name)) return true
+	if (entry.name === 'package.json' || entry.name === '.ocignore') return true
+	return ignorePatterns.some(pattern => matchesCopyPattern(relativePath, pattern))
 }
 
 module.exports = {

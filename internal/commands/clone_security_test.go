@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -62,6 +63,44 @@ func TestDownloadFileChecksStatusAndDoesNotCreateFile(t *testing.T) {
 	err := downloadFile(context.Background(), "https://raw.githubusercontent.com/example/repo/main/file", target, &budget)
 	if err == nil || !strings.Contains(err.Error(), "status 404") {
 		t.Fatalf("expected status error, got %v", err)
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("download target should not exist, stat error: %v", statErr)
+	}
+}
+
+func TestDownloadFileEnforcesRemainingBudget(t *testing.T) {
+	originalClient := cloneHTTPClient
+	cloneHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Body:          io.NopCloser(strings.NewReader("12345")),
+			ContentLength: -1,
+			Header:        make(http.Header),
+			Request:       req,
+		}, nil
+	})}
+	t.Cleanup(func() { cloneHTTPClient = originalClient })
+
+	budget := int64(4)
+	target := t.TempDir() + "/download.txt"
+	if err := downloadFile(context.Background(), "https://raw.githubusercontent.com/example/repo/main/file", target, &budget); err == nil {
+		t.Fatal("expected download size error")
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("partial download should be removed, stat error: %v", statErr)
+	}
+}
+
+func TestValidateDownloadURLRejectsUntrustedHostsAndCredentials(t *testing.T) {
+	for _, candidate := range []string{
+		"http://raw.githubusercontent.com/repo/file",
+		"https://example.com/repo/file",
+		"https://user@raw.githubusercontent.com/repo/file",
+	} {
+		if err := validateDownloadURL(candidate); err == nil {
+			t.Errorf("expected URL %q to be rejected", candidate)
+		}
 	}
 }
 

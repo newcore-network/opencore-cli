@@ -15,9 +15,9 @@ var (
 	serverControllerDecoratorPattern      = regexp.MustCompile(`@Server\.Controller\s*\(`)
 	clientControllerDecoratorPattern      = regexp.MustCompile(`@Client\.Controller\s*\(`)
 	controllerDecoratorPattern            = regexp.MustCompile(`@Controller\s*\(`)
-	frameworkServerImportPattern          = regexp.MustCompile(`(?:from\s+['"]@open-core/framework/server['"]|import\s+['"]@open-core/framework/server['"]|require\(\s*['"]@open-core/framework/server['"]\s*\))`)
-	frameworkClientImportPattern          = regexp.MustCompile(`(?:from\s+['"]@open-core/framework/client['"]|import\s+['"]@open-core/framework/client['"]|require\(\s*['"]@open-core/framework/client['"]\s*\))`)
-	invalidFrameworkNodeModulesImportExpr = regexp.MustCompile(`(?:from\s+['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|import\s+['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|require\(\s*['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]\s*\))`)
+	frameworkServerImportPattern          = regexp.MustCompile(`^\s*(?:import\s+(?:.+\s+from\s+)?['"]@open-core/framework/server['"]|(?:.+?=\s*)?require\(\s*['"]@open-core/framework/server['"]\s*\))`)
+	frameworkClientImportPattern          = regexp.MustCompile(`^\s*(?:import\s+(?:.+\s+from\s+)?['"]@open-core/framework/client['"]|(?:.+?=\s*)?require\(\s*['"]@open-core/framework/client['"]\s*\))`)
+	invalidFrameworkNodeModulesImportExpr = regexp.MustCompile(`^\s*(?:import\s+(?:.+\s+from\s+)?['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]|(?:.+?=\s*)?require\(\s*['"][^'"]*node_modules[\\/]+@open-core[\\/]framework(?:[\\/][^'"]*)?['"]\s*\))`)
 )
 
 type SourceValidationIssue struct {

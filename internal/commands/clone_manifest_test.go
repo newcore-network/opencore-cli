@@ -79,6 +79,8 @@ func TestParseTemplateManifestRejectsDuplicateAndInvalidNestedValues(t *testing.
 		`{"schemaVersion":1,"name":"chat","kind":"resource","compatibility":{"gameProfiles":["gta5","gta5"]}}`,
 		`{"schemaVersion":1,"name":"chat","kind":"resource","requires":{"templates":["../core"]}}`,
 		`{"schemaVersion":1,"name":"chat","kind":"resource","requires":{"templates":["core","core"]}}`,
+		`{"schemaVersion":1,"name":"chat","displayName":"","kind":"resource"}`,
+		`{"schemaVersion":1,"name":"chat","kind":"resource","links":{"readme":""}}`,
 	}
 	for _, data := range cases {
 		if _, err := parseTemplateManifest([]byte(data)); err == nil {

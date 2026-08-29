@@ -26,7 +26,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.24.5"
+          go-version: "1.25.x"
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -54,17 +54,17 @@ jobs:
         run: pnpm release:check -- "${{ github.ref_name }}"
 
       - name: Build binaries
-        run: scripts/build-all.sh "${{ github.ref_name }}"
+        run: bash scripts/build-all.sh "${{ github.ref_name }}"
 
       - name: Prepare platform packages
-        run: scripts/prepare-npm-packages.sh build
+        run: bash scripts/prepare-npm-packages.sh build
 
       - name: Pack npm packages
         run: |
           mkdir -p dist/npm
           npm pack --pack-destination dist/npm
           for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
-            npm pack "$package_dir" --pack-destination dist/npm
+            npm pack "./$package_dir" --pack-destination dist/npm
           done
 
       - name: Smoke test npm tarballs

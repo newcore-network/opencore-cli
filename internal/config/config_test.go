@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -296,6 +297,31 @@ func TestConfigProtocolIgnoresConfigStdoutLogs(t *testing.T) {
 	}
 	if string(payload) != `{"name":"project"}` {
 		t.Fatalf("unexpected payload %q", payload)
+	}
+}
+
+func TestWriteTempLoaderIsUniqueAndPrivate(t *testing.T) {
+	first, err := writeTempLoader("first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(first)
+	second, err := writeTempLoader("second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(second)
+	if first == second {
+		t.Fatalf("expected unique temp paths, got %q", first)
+	}
+	for _, path := range []string{first, second} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0600 {
+			t.Errorf("expected %s permissions 0600, got %04o", path, got)
+		}
 	}
 }
 
