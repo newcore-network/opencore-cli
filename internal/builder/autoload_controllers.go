@@ -67,8 +67,7 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 		if readErr != nil {
 			return readErr
 		}
-		text := blankComments(string(content))
-		codeText := blankStringContents(text)
+		text := string(content)
 
 		relPath, relErr := filepath.Rel(resourcePath, path)
 		if relErr != nil {
@@ -85,7 +84,6 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 		frameworkClientImportLine := 0
 
 		for idx, line := range lines {
-			codeLine := codeLines[idx]
 			lineNumber := idx + 1
 			code := codeLines[idx]
 			if clientDecoratorLine == 0 && clientDecoratorPattern.MatchString(code) {
@@ -193,33 +191,6 @@ func scanResourceTypeScriptFiles(resourcePath string, baseDir string, serverOutF
 	})
 
 	return serverImports, clientImports, issues, nil
-}
-
-func blankStringContents(text string) string {
-	out := []byte(text)
-	var quote byte
-	for i := 0; i < len(out); i++ {
-		if quote == 0 {
-			if out[i] == '\'' || out[i] == '"' || out[i] == '`' {
-				quote = out[i]
-			}
-			continue
-		}
-		if out[i] == '\\' {
-			if i+1 < len(out) {
-				i++
-			}
-			continue
-		}
-		if out[i] == quote {
-			quote = 0
-			continue
-		}
-		if out[i] != '\n' && out[i] != '\r' {
-			out[i] = ' '
-		}
-	}
-	return string(out)
 }
 
 func (rb *ResourceBuilder) validateSourceFiles(resourcePath string) ([]SourceValidationIssue, error) {
