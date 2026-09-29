@@ -218,6 +218,20 @@ function getLayoutOptions(outDir, options = {}) {
     }
 }
 
+async function finishResourceBuild({ builds, resourcePath, serverOutDir, options, usedServerExternals, serverBuildOptions, serverEntry }) {
+    await Promise.all(builds)
+
+    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
+
+    if (shouldHandleDependencies(dependencyOptions)) {
+        await handleDependencies(resourcePath, serverOutDir, dependencyOptions)
+    } else {
+        await cleanupDependencyArtifacts(serverOutDir)
+    }
+
+    await copyServerBinaries(resourcePath, serverOutDir, options, serverBuildOptions, serverEntry)
+}
+
 async function buildCore(resourcePath, outDir, options = {}) {
     const esbuild = getEsbuild()
     const shared = getSharedConfig(options)
@@ -282,14 +296,10 @@ async function buildCore(resourcePath, outDir, options = {}) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
-    await Promise.all(builds)
-    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
-    if (shouldHandleDependencies(dependencyOptions)) {
-        await handleDependencies(resourcePath, layout.serverOutDir, dependencyOptions)
-    } else {
-        await cleanupDependencyArtifacts(layout.serverOutDir)
-    }
-    await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
+    await finishResourceBuild({
+        builds, resourcePath, serverOutDir: layout.serverOutDir, options,
+        usedServerExternals, serverBuildOptions, serverEntry,
+    })
     console.log(`[core] Built ${path.basename(layout.serverOutDir)}`)
 }
 
@@ -358,14 +368,10 @@ async function buildResource(resourcePath, outDir, options = {}) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
-    if (builds.length > 0) await Promise.all(builds)
-    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
-    if (shouldHandleDependencies(dependencyOptions)) {
-        await handleDependencies(resourcePath, layout.serverOutDir, dependencyOptions)
-    } else {
-        await cleanupDependencyArtifacts(layout.serverOutDir)
-    }
-    await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
+    await finishResourceBuild({
+        builds, resourcePath, serverOutDir: layout.serverOutDir, options,
+        usedServerExternals, serverBuildOptions, serverEntry,
+    })
     console.log(`[resource] Built ${path.basename(layout.serverOutDir)}`)
 }
 
@@ -433,14 +439,10 @@ async function buildStandalone(resourcePath, outDir, options = {}) {
         await fs.promises.copyFile(manifestSrc, manifestDst)
     }
 
-    if (builds.length > 0) await Promise.all(builds)
-    const dependencyOptions = optionsWithServerExternals(options, Array.from(usedServerExternals))
-    if (shouldHandleDependencies(dependencyOptions)) {
-        await handleDependencies(resourcePath, layout.serverOutDir, dependencyOptions)
-    } else {
-        await cleanupDependencyArtifacts(layout.serverOutDir)
-    }
-    await copyServerBinaries(resourcePath, layout.serverOutDir, options, serverBuildOptions, serverEntry)
+    await finishResourceBuild({
+        builds, resourcePath, serverOutDir: layout.serverOutDir, options,
+        usedServerExternals, serverBuildOptions, serverEntry,
+    })
     console.log(`[standalone] Built ${path.basename(layout.serverOutDir)}`)
 }
 
@@ -467,11 +469,11 @@ async function copyResource(resourcePath, outDir, options = {}) {
 
 	const ignorePatterns = await readCopyIgnore(absSrcPath)
 	const entries = await fs.promises.readdir(absSrcPath, { withFileTypes: true })
-    
+
     for (const entry of entries) {
         const src = path.join(absSrcPath, entry.name)
         const dst = path.join(absOutDir, entry.name)
-        
+
 		if (shouldSkipCopyEntry(entry, entry.name, ignorePatterns)) {
 			continue
 		}
@@ -496,12 +498,12 @@ async function copyResource(resourcePath, outDir, options = {}) {
 async function copyDirRecursive(src, dst, root, ignorePatterns) {
     await fs.promises.mkdir(dst, { recursive: true })
     const entries = await fs.promises.readdir(src, { withFileTypes: true })
-    
+
     for (const entry of entries) {
 		const srcPath = path.join(src, entry.name)
 		const dstPath = path.join(dst, entry.name)
 		const relativePath = path.relative(root, srcPath).split(path.sep).join('/')
-		
+
 		if (shouldSkipCopyEntry(entry, relativePath, ignorePatterns)) {
 			continue
 		}
