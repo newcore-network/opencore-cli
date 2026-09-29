@@ -2,21 +2,39 @@ name: CI
 
 on:
   pull_request:
-    branches: [master, develop]
+    branches:
+      - master
+      - develop
+
   push:
-    branches: [master, develop]
+    branches:
+      - master
+      - develop
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  checks:
-    name: Checks (${{ matrix.os }})
+  tests:
+    name: Tests / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -24,18 +42,24 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
+          cache: true
+
+      # pnpm MUST exist before setup-node tries to configure the pnpm cache.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.33.0
+          run_install: false
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install pnpm
-        run: npm install --global pnpm@10.33.0
-
-      - name: Install Node dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Check package versions
@@ -44,15 +68,15 @@ jobs:
       - name: Run Node tests
         run: pnpm test
 
-      - name: Run Go tests without skips
+      - name: Run Go tests
         run: pnpm test:go
 
-      - name: Run Go vet
-        run: go vet ./...
 
   quality:
-    name: Format and vulnerability checks
+    name: Static analysis & security
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -60,10 +84,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify Go modules
+        run: go mod verify
 
       - name: Check Go formatting
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+
+      - name: Run Go vet
+        run: go vet ./...
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
@@ -71,9 +102,17 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
 
+
   npm-smoke:
-    name: npm tarball smoke test
+    name: NPM package smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Don't spend time building packages if basic tests already failed.
+    needs:
+      - tests
+      - quality
+
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -81,26 +120,33 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
+          cache: true
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
 
-      - name: Build binaries
+      - name: Build test binaries
         run: bash scripts/build-all.sh v2.0.0-smoke
 
       - name: Prepare platform packages
         run: bash scripts/prepare-npm-packages.sh build
 
-      - name: Pack npm packages
+      - name: Pack NPM packages
         run: |
           mkdir -p dist/npm
           npm pack --pack-destination dist/npm
-          for package_dir in npm/linux-x64 npm/linux-arm64 npm/darwin-x64 npm/darwin-arm64 npm/win32-x64; do
+
+          for package_dir in \
+            npm/linux-x64 \
+            npm/linux-arm64 \
+            npm/darwin-x64 \
+            npm/darwin-arm64 \
+            npm/win32-x64; do
             npm pack "./$package_dir" --pack-destination dist/npm
           done
 
-      - name: Smoke test npm tarballs
+      - name: Test packaged CLI
         run: npm run test:npm-smoke
