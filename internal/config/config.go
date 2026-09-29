@@ -708,7 +708,8 @@ async function loadConfig(configPath) {
 })();
 `
 
-	// CreateTemp is unique and creates the loader with mode 0600.
+	// CreateTemp is unique and creates the loader with mode 0600 on Unix.
+	// Windows controls access through inherited ACLs from the per-user temp directory.
 	tmpFile, err := writeTempLoader(transpilerScript)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create transpiler script: %w", err)

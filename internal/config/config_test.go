@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -313,6 +314,10 @@ func TestWriteTempLoaderIsUniqueAndPrivate(t *testing.T) {
 	defer os.Remove(second)
 	if first == second {
 		t.Fatalf("expected unique temp paths, got %q", first)
+	}
+	if runtime.GOOS == "windows" {
+		// Windows controls file access with ACLs; FileMode.Perm does not expose them.
+		return
 	}
 	for _, path := range []string{first, second} {
 		info, err := os.Stat(path)
