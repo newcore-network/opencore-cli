@@ -91,39 +91,57 @@ func (c *Client) Login() error {
 	}
 	c.csrfToken = loginResp.CSRFToken
 
-	// Manually extract session cookie from Set-Cookie header
-	// txAdmin uses cookie names like "tx:abc123" which violate RFC 6265
-	// and are rejected by Go's cookie jar
-	setCookieHeaders := resp.Header["Set-Cookie"]
-	for _, setCookie := range setCookieHeaders {
-		// Format: "tx:abc123=value; path=/; ..."
-		// We need to extract "tx:abc123=value"
-		parts := strings.Split(setCookie, ";")
-		if len(parts) > 0 {
-			cookiePart := strings.TrimSpace(parts[0])
-			if strings.HasPrefix(cookiePart, "tx:") {
-				c.sessionCookie = cookiePart
-				// Also extract name and value for session caching
-				eqIdx := strings.Index(cookiePart, "=")
-				if eqIdx > 0 {
-					c.session = &Session{
-						BaseURL:    c.baseURL,
-						CookieName: cookiePart[:eqIdx],
-						Cookie:     cookiePart[eqIdx+1:],
-						CSRFToken:  c.csrfToken,
-						ExpiresAt:  time.Now().Add(23 * time.Hour),
-					}
-				}
-				break
-			}
-		}
-	}
-
-	if c.sessionCookie == "" {
+	// Manually extract session cookie from Set-Cookie header.
+	// txAdmin cookie names contain ":" (legacy "tx:<profile>", current
+	// "txa:sess:<profileHash>"), which violate RFC 6265 and are rejected
+	// by Go's cookie jar.
+	cookieName, cookieValue, ok := sessionCookieFromSetCookie(resp.Header["Set-Cookie"])
+	if !ok {
 		return fmt.Errorf("no session cookie received from txAdmin")
 	}
 
+	c.sessionCookie = cookieName + "=" + cookieValue
+	c.session = &Session{
+		BaseURL:    c.baseURL,
+		CookieName: cookieName,
+		Cookie:     cookieValue,
+		CSRFToken:  c.csrfToken,
+		ExpiresAt:  time.Now().Add(23 * time.Hour),
+	}
+
 	return nil
+}
+
+// sessionCookieFromSetCookie finds the txAdmin session cookie.
+// It ignores other txAdmin cookies such as "txa:theme".
+func sessionCookieFromSetCookie(setCookieHeaders []string) (name, value string, ok bool) {
+	for _, setCookie := range setCookieHeaders {
+		parts := strings.Split(setCookie, ";")
+		if len(parts) == 0 {
+			continue
+		}
+		cookiePart := strings.TrimSpace(parts[0])
+		eqIdx := strings.Index(cookiePart, "=")
+		if eqIdx <= 0 {
+			continue
+		}
+		cookieName := cookiePart[:eqIdx]
+		cookieValue := cookiePart[eqIdx+1:]
+		if cookieValue == "" || !isTxAdminSessionCookie(cookieName) {
+			continue
+		}
+		return cookieName, cookieValue, true
+	}
+	return "", "", false
+}
+
+func isTxAdminSessionCookie(name string) bool {
+	// txAdmin < 8.1 used "tx:<profile>".
+	if strings.HasPrefix(name, "tx:") {
+		return true
+	}
+	// txAdmin >= 8.1 uses "txa:sess" or "txa:sess:<profilePathHash>".
+	return name == "txa:sess" || strings.HasPrefix(name, "txa:sess:")
 }
 
 // extractCSRFFromCookies tries to get CSRF token from cookies
