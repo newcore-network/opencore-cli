@@ -1162,7 +1162,7 @@ func TestCollectAllTasksCompileFalseAndOverrides(t *testing.T) {
 	for _, path := range []string{"resources/raw", "standalones/raw"} {
 		var found *BuildTask
 		for i := range tasks {
-			if normalizedBuildPath(tasks[i].Path) == path {
+			if normalizedBuildPath(tasks[i].Path) == normalizedBuildPath(path) {
 				found = &tasks[i]
 			}
 		}

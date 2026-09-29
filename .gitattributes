@@ -1,0 +1,2 @@
+# Snapshot files are compared byte-for-byte with generated LF output.
+*.golden text eol=lf
