@@ -1,14 +1,8 @@
-## OpenCore CLI v1.5.1
+## OpenCore CLI v1.6.2
 
-### Fix for FiveM Enhanced msgpack codec
+### Typegen on large resources
 
-Fixed server resources failing on every event and cross-resource export under FiveM Enhanced (Node 26) with:
-
-```text
-this.codec.encode is not a function
-this.codec.decode is not a function
-```
-
-Large CJS server bundles declare their modules at the script top level, which corrupts the runtime's global msgpack codec and breaks command registration and net events.
-
-The server bundle is now wrapped in an IIFE so those declarations live in a function scope instead of the top level. This applies only to server builds using the default `cjs` format, client builds already use `iife` and are unaffected.
+Resources whose analysis is larger than 64 KB (a few hundred source files) no longer skip type
+generation with `typegen analyzer returned invalid JSON: unexpected end of JSON input`. The analyzer
+exited before Node had flushed its output to the CLI, so only the first 64 KB arrived and that
+resource's `.opencore/opencore.gen.ts` got no events, RPCs or commands.

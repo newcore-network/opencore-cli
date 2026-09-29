@@ -18,7 +18,7 @@ func readViewGenFile(t *testing.T, resourcePath string) string {
 
 func TestGenerateViewTypes_BothDirections(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	// A view directory must exist for view typegen to run at all.
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
@@ -26,10 +26,12 @@ func TestGenerateViewTypes_BothDirections(t *testing.T) {
 	}
 
 	writeTestFile(t, resourcePath, "src/client/character-ui.controller.ts", `
-import { Client } from '@open-core/framework/client'
+import { Client, createWebView } from '@open-core/framework/client'
 
 @Client.Controller()
 export class CharacterUiController {
+  private characterView = createWebView('character')
+
   // UI → client: what the WebView may send.
   @Client.OnView('character:select')
   onSelect(payload: SelectPayload): void {}
@@ -91,7 +93,7 @@ export class CharacterUiController {
 
 func TestGenerateViewTypes_HonoursConfiguredViewPath(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	viewPath := filepath.Join(resourcePath, "panel")
 	if err := os.MkdirAll(viewPath, 0755); err != nil {
@@ -126,7 +128,7 @@ export class AController {
 
 func TestGenerateTypes_SkipsConfiguredViewDirectory(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	viewPath := filepath.Join(resourcePath, "panel")
 	if err := os.MkdirAll(viewPath, 0755); err != nil {
@@ -154,7 +156,7 @@ export class StrayController {
 
 func TestGenerateViewTypes_DiscoversNuiDirectory(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "nui"), 0755); err != nil {
 		t.Fatal(err)
@@ -182,7 +184,7 @@ export class AController {
 
 func TestGenerateViewTypes_AttributesHandlersToTheirOwnClass(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
@@ -222,7 +224,7 @@ export class SecondUiController {
 
 func TestGenerateViewTypes_NoViewDirectoryIsSkipped(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/client/a.controller.ts", `
 @Client.Controller()
@@ -243,7 +245,7 @@ export class AController {
 
 func TestGenerateViewTypes_ResolvesConstReferences(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
@@ -270,7 +272,7 @@ export class UiController {
 	}
 
 	content := readViewGenFile(t, resourcePath)
-	want := "typeof import('../../src/shared/view-events').CharacterViewEvents['SELECT']"
+	want := "'character:select': __Payload<Parameters<V0_UiController['onSelect']>>"
 	if !strings.Contains(content, want) {
 		t.Fatalf("expected %q in the output, got:\n%s", want, content)
 	}
@@ -278,15 +280,19 @@ export class UiController {
 
 func TestGenerateViewTypes_UndefinedPayload(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	writeTestFile(t, resourcePath, "src/client/ui.controller.ts", `
+import { createWebView } from '@open-core/framework/client'
+
 @Client.Controller()
 export class UiController {
+  private view = createWebView('ui')
+
   @Client.OnNet('x:clear')
   onClear(): void {
     this.view.send('ui:clear', undefined)
@@ -306,15 +312,19 @@ export class UiController {
 
 func TestGenerateViewTypes_NoPayloadArgumentIsUndefined(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	writeTestFile(t, resourcePath, "src/client/ui.controller.ts", `
+import { createWebView } from '@open-core/framework/client'
+
 @Client.Controller()
 export class UiController {
+  private view = createWebView('ui')
+
   @Client.OnNet('x:close')
   onClose(): void {
     this.view.send('ui:close')
@@ -338,15 +348,19 @@ export class UiController {
 
 func TestGenerateViewTypes_UnresolvablePayloadWarns(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	writeTestFile(t, resourcePath, "src/client/ui.controller.ts", `
+import { createWebView } from '@open-core/framework/client'
+
 @Client.Controller()
 export class UiController {
+  private view = createWebView('ui')
+
   @Client.OnNet('bank:balanceChanged')
   onBalanceChanged(state: BankState): void {
     this.view.send('bank:view:render', { cash: state.cash, bank: state.bank })
@@ -354,13 +368,17 @@ export class UiController {
 }
 `)
 
-	result, _, err := rb.generateViewTypes(resourcePath)
+	// Warnings are reported by the resource's own file, which registers the view's messages.
+	result, err := rb.generateTypes(resourcePath, TypegenOptions{})
 	if err != nil {
+		t.Fatalf("generateTypes returned error: %v", err)
+	}
+	if _, _, err := rb.generateViewTypes(resourcePath); err != nil {
 		t.Fatalf("generateViewTypes returned error: %v", err)
 	}
 
 	if len(result.Warnings) != 1 {
-		t.Fatalf("expected one warning for the object literal payload, got %v", result.Warnings)
+		t.Fatalf("expected one warning for the payload built from an unresolved type, got %v", result.Warnings)
 	}
 	if !strings.Contains(result.Warnings[0].Message, "bank:view:render") {
 		t.Fatalf("the warning must name the message, got %q", result.Warnings[0].Message)
@@ -375,7 +393,7 @@ export class UiController {
 
 func TestGenerateViewTypes_IsIdempotent(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
@@ -407,7 +425,7 @@ export class UiController {
 
 func TestGenerateViewTypes_EmptyWhenNothingFound(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
@@ -430,7 +448,7 @@ export class PlainService {
 
 func TestGenerateTypes_RegistersViewMessages(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/client/hud.controller.ts", `
 @Client.Controller()
@@ -469,7 +487,7 @@ export class HudController {
 
 func TestGenerateTypes_RegistersViewMessagesWithoutAViewDirectory(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	// The WebView a client talks to may live in another resource, so there is no ui/ here.
 	writeTestFile(t, resourcePath, "src/client/hud.controller.ts", `
@@ -496,9 +514,9 @@ export class HudController {
 	}
 }
 
-func TestGenerateTypes_ReportsUnresolvedViewPayloadOnce(t *testing.T) {
+func TestGenerateTypes_TypesInlineObjectPayloads(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
 		t.Fatal(err)
@@ -517,7 +535,37 @@ export class HudController {
 	if err != nil {
 		t.Fatalf("generateTypes returned error: %v", err)
 	}
-	if len(result.Warnings) != 1 || !strings.HasPrefix(result.Warnings[0].Message, viewPayloadUnresolvedPrefix) {
+	if len(result.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", result.Warnings)
+	}
+	if content := readGenFile(t, resourcePath); !strings.Contains(content, "'hud:update': { cash: number }") {
+		t.Fatalf("expected the payload typed from the checker, got:\n%s", content)
+	}
+}
+
+func TestGenerateTypes_ReportsUntypeablePayloadOnce(t *testing.T) {
+	resourcePath := t.TempDir()
+	rb := newTypegenBuilder(t, resourcePath)
+
+	if err := os.MkdirAll(filepath.Join(resourcePath, "ui"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, resourcePath, "src/client/hud.controller.ts", `
+import { Controller, WebView } from '@open-core/framework/client'
+
+@Controller()
+export class HudController {
+  refresh(): void {
+    WebView.send('hud:update', notDeclaredAnywhere)
+  }
+}
+`)
+
+	result, err := rb.generateTypes(resourcePath, TypegenOptions{})
+	if err != nil {
+		t.Fatalf("generateTypes returned error: %v", err)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0].Message, "could not derive the payload type") {
 		t.Fatalf("expected the unresolved payload warning, got %v", result.Warnings)
 	}
 	if content := readGenFile(t, resourcePath); !strings.Contains(content, "'hud:update': unknown") {

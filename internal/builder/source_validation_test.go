@@ -243,26 +243,48 @@ export class IgnoredController {}
 	}
 }
 
-func TestGenerateAutoloadControllersIgnoresCommentsAndStrings(t *testing.T) {
+func TestValidateSourceFiles_DecoratorsMentionedOutsideCodeAreNotMixed(t *testing.T) {
 	resourcePath := t.TempDir()
 	rb := NewResourceBuilder(".")
-	writeTestFile(t, resourcePath, "src/not-controller.ts", `
-// @Server.Controller()
-const docs = "@Client.Controller()"
-const fakeImport = "from '@open-core/framework/server'"
-/* @Controller() */
-export class NotAController {}
+
+	writeTestFile(t, resourcePath, "shared/contracts/net.contract.ts", `
+import type { ClientEvents, ServerRpc } from '@open-core/framework/register'
+
+/** Events the server sends, one per `+"`@Client.OnNet`"+` listener; RPCs per `+"`@Server.OnRPC`"+`. */
+export type X = 1
+// @Server.OnNet('a') and @Client.OnNet('b') in a line comment
+export const example = "@Client.OnView('c') @Server.Command('d')"
+export const template = `+"`@Server.OnRPC('e') ${'@Client.OnNet'}`"+`
+export type Maps = [ClientEvents, ServerRpc]
 `)
-	if err := rb.generateAutoloadControllers(resourcePath); err != nil {
-		t.Fatal(err)
+
+	issues, err := rb.validateSourceFiles(resourcePath)
+	if err != nil {
+		t.Fatalf("validateSourceFiles returned error: %v", err)
 	}
-	for _, name := range []string{"autoload.server.controllers.ts", "autoload.client.controllers.ts"} {
-		content, err := os.ReadFile(filepath.Join(resourcePath, ".opencore", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(content) != "export {};\n" {
-			t.Fatalf("%s included a fake controller: %s", name, content)
-		}
+	if len(issues) != 0 {
+		t.Fatalf("a file without decorators must not fail validation, got %v", issues)
+	}
+}
+
+func TestValidateSourceFiles_MixedDecoratorsAfterAComment(t *testing.T) {
+	resourcePath := t.TempDir()
+	rb := NewResourceBuilder(".")
+
+	writeTestFile(t, resourcePath, "src/mixed.ts", `
+/* Uses @Client.OnNet and @Server.OnNet — the real ones follow. */
+@Client.Controller()
+export class MixedController {
+  @Server.OnNet('x')
+  handle() {}
+}
+`)
+
+	issues, err := rb.validateSourceFiles(resourcePath)
+	if err != nil {
+		t.Fatalf("validateSourceFiles returned error: %v", err)
+	}
+	if len(issues) != 1 || issues[0].Line != 3 {
+		t.Fatalf("expected one mixed-decorator issue at the first real decorator (line 3), got %v", issues)
 	}
 }

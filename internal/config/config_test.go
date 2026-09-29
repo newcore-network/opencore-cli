@@ -693,7 +693,7 @@ func TestTypegenStrict_DefaultsToTrue(t *testing.T) {
 
 func TestTypegenStrict_DecodesExplicitFalse(t *testing.T) {
 	var cfg Config
-	err := decodeStrictJSON([]byte(`{"name":"project","core":{"path":"./core","resourceName":"core"},"build":{"typegen":{"strict":false}}}`), &cfg)
+	err := json.Unmarshal([]byte(`{"name":"project","core":{"path":"./core","resourceName":"core"},"build":{"typegen":{"strict":false}}}`), &cfg)
 	if err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}

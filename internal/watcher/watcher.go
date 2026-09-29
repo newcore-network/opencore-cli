@@ -96,10 +96,12 @@ func New(cfg *config.Config) (*Watcher, error) {
 	}
 
 	watcher := &Watcher{
-		config:   cfg,
-		builder:  newDevBuilder(cfg),
-		watcher:  w,
-		logQueue: make(chan LogMessage, 256),
+		config:         cfg,
+		builder:        newDevBuilder(cfg),
+		watcher:        w,
+		debounceTimers: make(map[string]*time.Timer),
+		logQueue:       make(chan LogMessage, 256),
+		buildingSet:    make(map[string]bool),
 	}
 
 	restarter, err := newRestarter(cfg)
@@ -354,14 +356,138 @@ func (w *Watcher) Watch(ctx context.Context) error {
 				continue
 			}
 
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
-				continue
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				// Debounce using timer - wait for 500ms of silence before processing
+				fileName := event.Name
+
+				// Cancel existing timer for this file if any
+				if timer, exists := w.debounceTimers[fileName]; exists {
+					timer.Stop()
+				}
+
+				// Create new timer that will execute after 500ms of silence
+				w.debounceTimers[fileName] = time.AfterFunc(500*time.Millisecond, func() {
+					if ctx.Err() != nil {
+						delete(w.debounceTimers, fileName)
+						return
+					}
+					// Handle config file change
+					if filepath.Base(fileName) == "opencore.config.ts" {
+						fmt.Println(ui.Info("Configuration changed, reloading..."))
+						newCfg, root, err := config.LoadWithProjectRoot()
+						if err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to reload config: %v", err)))
+							return
+						}
+						if err := os.Chdir(root); err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to switch to project root: %v", err)))
+							return
+						}
+						w.config = newCfg
+						w.builder = newDevBuilder(newCfg)
+						newRestarter, restarterErr := newRestarter(newCfg)
+						if restarterErr != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to configure restart mode: %v", restarterErr)))
+							return
+						}
+						if w.restarter != nil {
+							_ = w.restarter.Stop()
+						}
+						w.restarter = newRestarter
+						allTasks = w.builder.CollectTasks()
+
+						// Re-add all paths (fsnotify handles duplicates)
+						w.registerPaths()
+
+						fmt.Println(ui.Info("Config reloaded, triggering full build..."))
+						if err := w.builder.BuildWithOutputContext(ctx, builder.OutputModeAuto); err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
+						} else if err := w.restarter.Start(ctx); err != nil {
+							fmt.Println(ui.Error(fmt.Sprintf("Failed to start dev runtime: %v", err)))
+						}
+						return
+					}
+
+					affected := w.tasksForChangedFile(allTasks, fileName)
+					if len(affected) == 0 {
+						fmt.Println(ui.Muted(fmt.Sprintf("File changed (ignored): %s", filepath.Base(fileName))))
+						return
+					}
+
+					// Get unique base resources from affected tasks
+					affectedResources := make(map[string]bool)
+					for _, task := range affected {
+						baseResource := strings.Split(task.ResourceName, "/")[0]
+						affectedResources[baseResource] = true
+					}
+
+					// Check if any of these resources are already being built
+					w.buildingMutex.Lock()
+					shouldSkip := false
+					for resource := range affectedResources {
+						if w.buildingSet[resource] {
+							shouldSkip = true
+							break
+						}
+					}
+
+					if shouldSkip {
+						w.buildingMutex.Unlock()
+						fmt.Println(ui.Muted(fmt.Sprintf("Build already in progress for %s, skipping...", filepath.Base(fileName))))
+						delete(w.debounceTimers, fileName)
+						return
+					}
+
+					// Mark all affected resources as being built
+					for resource := range affectedResources {
+						w.buildingSet[resource] = true
+					}
+					w.buildingMutex.Unlock()
+
+					fmt.Println(ui.Info(fmt.Sprintf("File changed: %s", filepath.Base(fileName))))
+
+					w.regenerateTypes(affected)
+
+					results, err := w.builder.BuildTasksContext(ctx, affected)
+
+					// Unmark resources as being built
+					w.buildingMutex.Lock()
+					for resource := range affectedResources {
+						delete(w.buildingSet, resource)
+					}
+					w.buildingMutex.Unlock()
+
+					if err != nil {
+						fmt.Println(ui.Error(fmt.Sprintf("Build failed: %v", err)))
+						delete(w.debounceTimers, fileName)
+						return
+					}
+
+					// Notify framework for hot reload
+					w.notifyFramework(results)
+
+					// Clean up timer reference
+					delete(w.debounceTimers, fileName)
+				})
 			}
 
 			if event.Op&fsnotify.Create != 0 {
 				info, err := os.Stat(event.Name)
 				if err == nil && info.IsDir() {
-					w.registerDirectory(event.Name)
+					if w.shouldIgnorePath(event.Name) {
+						continue
+					}
+					// Automatically watch new directories
+					w.watcher.Add(event.Name)
+
+					// Re-collect tasks to include new resource if it matches globs
+					newCfg, root, _ := config.LoadWithProjectRoot()
+					if newCfg != nil {
+						_ = os.Chdir(root)
+						w.config = newCfg
+						w.builder = newDevBuilder(newCfg)
+						allTasks = w.builder.CollectTasks()
+					}
 				}
 			}
 			if event.Op&(fsnotify.Create|fsnotify.Remove|fsnotify.Rename) != 0 {
@@ -462,21 +588,8 @@ func (w *Watcher) registerPaths() {
 	}
 }
 
-func (w *Watcher) registerDirectory(root string) {
-	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || !entry.IsDir() {
-			return nil
-		}
-		if w.shouldIgnorePath(path) {
-			return filepath.SkipDir
-		}
-		_ = w.watcher.Add(path)
-		return nil
-	})
-}
-
-func regenerateTypes(b *builder.Builder, tasks []builder.BuildTask) {
-	resourceBuilder := b.ResourceBuilder()
+func (w *Watcher) regenerateTypes(tasks []builder.BuildTask) {
+	resourceBuilder := w.builder.ResourceBuilder()
 	if resourceBuilder == nil {
 		return
 	}

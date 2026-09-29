@@ -26,7 +26,11 @@ type ResourceBuilder struct {
 	typegenOptions     TypegenOptions
 	typegenWarned      map[string]bool
 	typegenWarnedMutex sync.Mutex
+	typegenTypeScript  string
 	viewPathResolver   func(resourcePath string) string
+
+	analysisMutex sync.Mutex
+	analysisCache map[string]*cachedAnalysis
 }
 
 func (rb *ResourceBuilder) ConfigureTypegen(enabled bool, opts TypegenOptions) {

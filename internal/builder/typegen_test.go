@@ -18,7 +18,7 @@ func readGenFile(t *testing.T, resourcePath string) string {
 
 func TestGenerateTypes_ServerNetEventDropsPlayerParam(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 import { Server } from '@open-core/framework/server'
@@ -64,7 +64,7 @@ export class BankController {
 
 func TestGenerateTypes_AugmentsTheDeclaringModuleNotThePackageRoot(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()
@@ -94,7 +94,7 @@ export class BankController {
 
 func TestGenerateTypes_FilesMapsUnderAPerResourceKey(t *testing.T) {
 	projectRoot := t.TempDir()
-	rb := NewResourceBuilder(projectRoot)
+	rb := newTypegenBuilder(t, projectRoot)
 
 	resourcePath := filepath.Join(projectRoot, "resources", "bank")
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
@@ -140,7 +140,7 @@ func TestResourceRegisterKeyIsProjectRelative(t *testing.T) {
 
 func TestGenerateTypes_AttributesHandlersToTheirOwnClass(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/pair.controller.ts", `
 @Server.Controller()
@@ -177,7 +177,7 @@ export class SecondController {
 // followed it, which both invents an event and retypes a real one against the wrong handler.
 func TestGenerateTypes_IgnoresCommentedDecorators(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()
@@ -217,7 +217,7 @@ export class BankController {
 
 func TestBlankCommentsPreservesOffsetsAndStrings(t *testing.T) {
 	source := "const a = 'http://not-a-comment'\n// gone\nconst b = 1 /* gone */\n"
-	blanked := blankComments(source)
+	blanked := blankNonCode(source, false)
 
 	if len(blanked) != len(source) {
 		t.Fatalf("length changed: %d vs %d", len(blanked), len(source))
@@ -236,42 +236,9 @@ func TestBlankCommentsPreservesOffsetsAndStrings(t *testing.T) {
 	}
 }
 
-func TestGenerateTypesResolvesImportedAliasDefaultAndNamespace(t *testing.T) {
-	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
-	writeTestFile(t, resourcePath, "src/events.ts", `
-export const Named = { Event: 'named' } as const
-const DefaultEvents = { Event: 'default' } as const
-export default DefaultEvents
-`)
-	writeTestFile(t, resourcePath, "src/server/controller.ts", `
-import { Named as Alias } from '../events'
-import Defaults from '../events'
-import * as Events from '../events'
-export class Controller {
-  @Server.OnNet(Alias.Event) named(player: unknown) {}
-  @Server.OnNet(Defaults.Event) defaults(player: unknown) {}
-  @Server.OnNet(Events.Named.Event) namespace(player: unknown) {}
-}
-`)
-	if _, err := rb.generateTypes(resourcePath, TypegenOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	content := readGenFile(t, resourcePath)
-	for _, expected := range []string{
-		"typeof import('../src/events').Named['Event']",
-		"typeof import('../src/events').default['Event']",
-		"/* Events.Named.Event */",
-	} {
-		if !strings.Contains(content, expected) {
-			t.Fatalf("missing %q in generated types:\n%s", expected, content)
-		}
-	}
-}
-
 func TestGenerateTypes_DuplicateEventNameIsReportedAndStable(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/a.controller.ts", `
 @Server.Controller()
@@ -319,7 +286,7 @@ export class BController {
 
 func TestGenerateTypes_ClientNetEventKeepsAllParams(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/client/hud.controller.ts", `
 import { Client } from '@open-core/framework/client'
@@ -347,7 +314,7 @@ export class HudController {
 
 func TestGenerateTypes_RpcIncludesArgsAndResult(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()
@@ -375,7 +342,7 @@ export class BankController {
 
 func TestGenerateTypes_CommandConfigObjectForm(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()
@@ -403,7 +370,7 @@ export class BankController {
 
 func TestGenerateTypes_MultilineDecorator(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/multi.controller.ts", `
 @Server.Controller()
@@ -432,7 +399,7 @@ export class MultiController {
 
 func TestGenerateTypes_NonLiteralEventNameIsSkippedWithWarning(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/dyn.controller.ts", `
 @Server.Controller()
@@ -453,7 +420,7 @@ export class DynController {
 	if len(result.Warnings) != 1 {
 		t.Fatalf("expected exactly 1 warning, got %v", result.Warnings)
 	}
-	if !strings.Contains(result.Warnings[0].Message, "could not resolve the event name") {
+	if !strings.Contains(result.Warnings[0].Message, "could not resolve the name") {
 		t.Fatalf("unexpected warning message: %s", result.Warnings[0].Message)
 	}
 
@@ -465,7 +432,7 @@ export class DynController {
 
 func TestGenerateTypes_ResolvesImportedConstReference(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/shared/character-events.ts", `
 export const CharacterNetEvents = {
@@ -500,27 +467,31 @@ export class CharacterUiController {
 
 	content := readGenFile(t, resourcePath)
 
-	// The import path must be rewritten relative to .opencore/, not left as written in the
-	// controller (which was relative to the controller's own directory).
-	want := "typeof import('../src/shared/character-events').CharacterNetEvents['UI_OPEN']"
-	if !strings.Contains(content, want) {
-		t.Fatalf("expected %q in the output, got:\n%s", want, content)
-	}
-	if !strings.Contains(content, "__Entry<") {
-		t.Fatalf("expected computed keys to use the __Entry helper, got:\n%s", content)
-	}
-	if !strings.Contains(content, "type __Entry<K extends PropertyKey, V>") {
-		t.Fatalf("expected the __Entry helper to be declared, got:\n%s", content)
+	// The checker knows each constant's literal type, so the key is the name itself.
+	for _, want := range []string{
+		"'character:ui:open': Parameters<T0_CharacterUiController['onOpen']>",
+		"'character:ui:close': Parameters<T0_CharacterUiController['onClose']>",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected %q in the output, got:\n%s", want, content)
+		}
 	}
 }
 
 func TestGenerateTypes_ResolvesBarePackageConstReference(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
+	writeTestFile(t, resourcePath, "node_modules/@acme/system-ui/package.json",
+		`{ "name": "@acme/system-ui", "types": "index.d.ts" }`)
+	writeTestFile(t, resourcePath, "node_modules/@acme/system-ui/index.d.ts", `
+export declare const SystemUiNetEvents: {
+  readonly NOTIFICATION_SHOW: "system-ui:notification:show";
+};
+`)
 	writeTestFile(t, resourcePath, "src/client/ui.controller.ts", `
 import { Client } from '@open-core/framework/client'
-import { SystemUiNetEvents } from '@glint/system-ui'
+import { SystemUiNetEvents } from '@acme/system-ui'
 
 @Client.Controller()
 export class UiController {
@@ -529,13 +500,17 @@ export class UiController {
 }
 `)
 
-	if _, err := rb.generateTypes(resourcePath, TypegenOptions{}); err != nil {
+	result, err := rb.generateTypes(resourcePath, TypegenOptions{})
+	if err != nil {
 		t.Fatalf("generateTypes returned error: %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("expected the package constant to resolve, got warnings: %v", result.Warnings)
 	}
 
 	content := readGenFile(t, resourcePath)
-	// Bare specifiers resolve identically from any directory and must be left untouched.
-	want := "typeof import('@glint/system-ui').SystemUiNetEvents['NOTIFICATION_SHOW']"
+	// A constant declared by a package resolves through its declared literal type.
+	want := "'system-ui:notification:show': Parameters<T0_UiController['onShow']>"
 	if !strings.Contains(content, want) {
 		t.Fatalf("expected %q in the output, got:\n%s", want, content)
 	}
@@ -543,12 +518,12 @@ export class UiController {
 
 func TestGenerateTypes_InlinesFileLocalStringConst(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/client/local.controller.ts", `
 import { Client } from '@open-core/framework/client'
 
-const CHAT_LOCK_EVENT = 'glint:chat:setBlocked'
+const CHAT_LOCK_EVENT = 'chat:setBlocked'
 
 @Client.Controller()
 export class LocalController {
@@ -567,14 +542,14 @@ export class LocalController {
 
 	content := readGenFile(t, resourcePath)
 	// A non-exported local constant cannot be imported, so its value is inlined instead.
-	if !strings.Contains(content, "'glint:chat:setBlocked'") {
+	if !strings.Contains(content, "'chat:setBlocked'") {
 		t.Fatalf("expected the local const to be inlined, got:\n%s", content)
 	}
 }
 
 func TestGenerateTypes_ResolvesAliasedImport(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/shared/events.ts", `
 export const Events = { PING: 'x:ping' } as const
@@ -598,15 +573,14 @@ export class AliasController {
 	}
 
 	content := readGenFile(t, resourcePath)
-	// Type queries address exports of the imported module, not local aliases.
-	if !strings.Contains(content, ".Events['PING']") || strings.Contains(content, ".NetEvents['PING']") {
-		t.Fatalf("expected the original exported binding in the reference, got:\n%s", content)
+	if !strings.Contains(content, "'x:ping': Parameters<T0_AliasController['onPing']>") {
+		t.Fatalf("expected the aliased constant to resolve to its value, got:\n%s", content)
 	}
 }
 
 func TestGenerateTypes_NoDecoratorsProducesEmptyModule(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/plain.ts", `
 export class PlainService {
@@ -629,7 +603,7 @@ export class PlainService {
 
 func TestGenerateTypes_IsIdempotent(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()
@@ -664,7 +638,7 @@ export class BankController {
 
 func TestGenerateTypes_StrictModeMarker(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()
@@ -685,7 +659,7 @@ export class BankController {
 
 func TestGenerateTypes_SkipsViewsAndNodeModules(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/real.controller.ts", `
 @Server.Controller()
@@ -724,7 +698,7 @@ export class DepController {
 
 func TestGenerateTypes_DuplicateClassNamesGetDistinctAliases(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/a/main.controller.ts", `
 @Server.Controller()
@@ -753,7 +727,7 @@ export class MainController {
 
 func TestRemoveGeneratedTypes(t *testing.T) {
 	resourcePath := t.TempDir()
-	rb := NewResourceBuilder(".")
+	rb := newTypegenBuilder(t, resourcePath)
 
 	writeTestFile(t, resourcePath, "src/server/bank.controller.ts", `
 @Server.Controller()

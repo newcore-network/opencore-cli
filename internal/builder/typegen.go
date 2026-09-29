@@ -5,71 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/newcore-network/opencore-cli/internal/ui"
 )
-
-var (
-	// Decorator heads. The argument list is extracted separately via a balanced-paren scan so
-	// that declarations spanning multiple lines are handled.
-	serverOnNetHead   = regexp.MustCompile(`@Server\.OnNet\s*\(`)
-	serverOnRPCHead   = regexp.MustCompile(`@Server\.OnRPC\s*\(`)
-	serverCommandHead = regexp.MustCompile(`@Server\.Command\s*\(`)
-	clientOnNetHead   = regexp.MustCompile(`@Client\.OnNet\s*\(`)
-	clientOnRPCHead   = regexp.MustCompile(`@Client\.OnRPC\s*\(`)
-
-	// `export class Foo`, `class Foo`, `export default class Foo`.
-	classDeclPattern = regexp.MustCompile(`(?m)^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
-
-	// A method declaration line: optional modifiers, a name, optional type params, then `(`.
-	methodDeclPattern = regexp.MustCompile(`^\s*(?:(?:public|private|protected|readonly|static|async|override)\s+)*([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^>]*>)?\s*\(`)
-
-	// First single/double/back-quoted literal inside a decorator's argument list.
-	stringLiteralPattern = regexp.MustCompile("^\\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`$\\\\]*)`)")
-
-	// A dotted identifier reference such as `CharacterNetEvents.UI_OPEN`, which is how event
-	// names are written in practice once a project keeps them in a shared const object.
-	identifierRefPattern = regexp.MustCompile(`^\s*([A-Za-z_$][A-Za-z0-9_$]*)((?:\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*)*)\s*(?:,|\)|$)`)
-
-	// `import { A, B as C } from 'spec'` / `import type { … } from 'spec'`.
-	namedImportPattern = regexp.MustCompile(`(?m)^\s*import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]`)
-	// `import * as NS from 'spec'`.
-	namespaceImportPattern = regexp.MustCompile(`(?m)^\s*import\s+(?:type\s+)?\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s*['"]([^'"]+)['"]`)
-	// `import Default from 'spec'`.
-	defaultImportPattern = regexp.MustCompile(`(?m)^\s*import\s+(?:type\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:,\s*\{[^}]*\})?\s*from\s*['"]([^'"]+)['"]`)
-
-	// `someView.send(` / `WebView.send(` — the client pushing a message into a WebView.
-	webViewSendPattern = regexp.MustCompile(`(?:this\s*\.\s*)?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*send\s*\(`)
-
-	// `@Client.OnView(` — a handler for messages arriving from a WebView.
-	clientOnViewHead = regexp.MustCompile(`@Client\.OnView\s*\(`)
-
-	// `export const NAME =` — a constant this file exposes to the generated module.
-	exportedConstPattern = regexp.MustCompile(`(?m)^\s*export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=`)
-	// `const NAME = 'literal'` — a file-local constant we can inline directly.
-	localStringConstPattern = regexp.MustCompile("(?m)^\\s*(?:export\\s+)?const\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*(?::[^=]+)?=\\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`$\\\\]*)`)\\s*(?:as\\s+const\\s*)?;?\\s*$")
-
-	// `command: 'name'` inside a @Server.Command config object.
-	commandFieldPattern     = regexp.MustCompile("command\\s*:\\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`$\\\\]*)`)")
-	descriptionFieldPattern = regexp.MustCompile("description\\s*:\\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`$\\\\]*)`)")
-	usageFieldPattern       = regexp.MustCompile("usage\\s*:\\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`$\\\\]*)`)")
-)
-
-// Names that look like a method declaration but are control flow or a constructor.
-var nonMethodNames = map[string]bool{
-	"constructor": true,
-	"if":          true,
-	"for":         true,
-	"while":       true,
-	"switch":      true,
-	"catch":       true,
-	"return":      true,
-	"function":    true,
-	"do":          true,
-}
 
 // typegenKind identifies which Register map an entry feeds.
 type typegenKind string
@@ -84,193 +24,16 @@ const (
 
 // typegenEntry is one decorated handler discovered during the scan.
 type typegenEntry struct {
-	Kind       typegenKind
-	EventName  string // source text of the name, used for ordering and de-duplication
-	ImportPath string // relative to the .opencore directory, extension stripped
-	ClassName  string
-	MethodName string
-	// KeyType is a TypeScript type expression for the event-name key. Empty means EventName is
-	// a plain literal and can be quoted directly.
-	KeyType     string
+	Kind        typegenKind
+	EventName   string // source text of the name, used for ordering and de-duplication
+	ImportPath  string // relative to the .opencore directory, extension stripped
+	ClassName   string
+	MethodName  string
 	Description string
 	Usage       string
 	// SourceFile and SourceLine locate the decorator, for diagnostics only.
 	SourceFile string
 	SourceLine int
-}
-
-// fileSymbols captures the bindings of one source file that the name resolver needs.
-type fileSymbols struct {
-	// importedFrom maps a local binding to its module and exported binding.
-	importedFrom map[string]importBinding
-	// exportedConsts holds names reachable through `typeof import(...)` on the file itself.
-	exportedConsts map[string]bool
-	// localStrings holds constants with a plain string initialiser, inlinable even when private.
-	localStrings map[string]string
-}
-
-type importBinding struct {
-	spec     string
-	exported string
-}
-
-func parseFileSymbols(text string) *fileSymbols {
-	return &fileSymbols{
-		importedFrom:   collectImportBindings(text),
-		exportedConsts: collectExportedConsts(text),
-		localStrings:   collectLocalStringConsts(text),
-	}
-}
-
-func collectImportBindings(text string) map[string]importBinding {
-	bindings := map[string]importBinding{}
-
-	for _, m := range namedImportPattern.FindAllStringSubmatch(text, -1) {
-		for clause := range strings.SplitSeq(m[1], ",") {
-			if imported, local := importNamesOf(clause); local != "" {
-				bindings[local] = importBinding{spec: m[2], exported: imported}
-			}
-		}
-	}
-	for _, m := range namespaceImportPattern.FindAllStringSubmatch(text, -1) {
-		bindings[m[1]] = importBinding{spec: m[2]}
-	}
-	for _, m := range defaultImportPattern.FindAllStringSubmatch(text, -1) {
-		if _, exists := bindings[m[1]]; !exists {
-			bindings[m[1]] = importBinding{spec: m[2], exported: "default"}
-		}
-	}
-
-	return bindings
-}
-
-func importNamesOf(clause string) (imported, local string) {
-	imported = strings.TrimPrefix(strings.TrimSpace(clause), "type ")
-	local = imported
-	if original, alias, renamed := strings.Cut(imported, " as "); renamed {
-		imported, local = original, alias
-	}
-	return strings.TrimSpace(imported), strings.TrimSpace(local)
-}
-
-func collectExportedConsts(text string) map[string]bool {
-	consts := map[string]bool{}
-	for _, m := range exportedConstPattern.FindAllStringSubmatch(text, -1) {
-		consts[m[1]] = true
-	}
-	return consts
-}
-
-func collectLocalStringConsts(text string) map[string]string {
-	consts := map[string]string{}
-	for _, m := range localStringConstPattern.FindAllStringSubmatch(text, -1) {
-		if literal, ok := firstNonEmpty(m[2:]); ok {
-			consts[m[1]] = literal
-		}
-	}
-	return consts
-}
-
-func firstNonEmpty(groups []string) (string, bool) {
-	for _, group := range groups {
-		if group != "" {
-			return group, true
-		}
-	}
-	return "", false
-}
-
-func resolveModuleImportPath(spec string, sourceFile string, baseDir string) (string, bool) {
-	if !strings.HasPrefix(spec, ".") {
-		return spec, true
-	}
-
-	absolute := filepath.Join(filepath.Dir(sourceFile), spec)
-	rel, err := filepath.Rel(baseDir, absolute)
-	if err != nil {
-		return "", false
-	}
-	rel = filepath.ToSlash(rel)
-	if !strings.HasPrefix(rel, ".") {
-		rel = "./" + rel
-	}
-	return rel, true
-}
-
-func resolveEventNameExpression(
-	args string,
-	syms *fileSymbols,
-	sourceFile string,
-	selfImportPath string,
-	baseDir string,
-) (keyType string, display string, ok bool) {
-	m := identifierRefPattern.FindStringSubmatch(args)
-	if m == nil {
-		return "", "", false
-	}
-
-	base := m[1]
-	var props []string
-	for part := range strings.SplitSeq(m[2], ".") {
-		if part = strings.TrimSpace(part); part != "" {
-			props = append(props, part)
-		}
-	}
-
-	display = dottedName(base, props)
-
-	if literal, inlinable := syms.inlinableLocalConst(base, props); inlinable {
-		return "", literal, true
-	}
-
-	moduleExpr, ok := syms.moduleExprFor(base, sourceFile, selfImportPath, baseDir)
-	if !ok {
-		return "", display, false
-	}
-
-	for _, prop := range props {
-		moduleExpr += fmt.Sprintf("[%s]", quoteTSString(prop))
-	}
-
-	return moduleExpr, display, true
-}
-
-func dottedName(base string, props []string) string {
-	if len(props) == 0 {
-		return base
-	}
-	return base + "." + strings.Join(props, ".")
-}
-
-func (s *fileSymbols) inlinableLocalConst(base string, props []string) (string, bool) {
-	if len(props) > 0 {
-		return "", false
-	}
-	literal, found := s.localStrings[base]
-	return literal, found
-}
-
-func (s *fileSymbols) moduleExprFor(
-	base string,
-	sourceFile string,
-	selfImportPath string,
-	baseDir string,
-) (string, bool) {
-	if binding, imported := s.importedFrom[base]; imported {
-		resolved, resolvable := resolveModuleImportPath(binding.spec, sourceFile, baseDir)
-		if !resolvable {
-			return "", false
-		}
-		expr := fmt.Sprintf("typeof import(%s)", quoteTSString(resolved))
-		if binding.exported != "" {
-			expr += "." + binding.exported
-		}
-		return expr, true
-	}
-	if s.exportedConsts[base] {
-		return fmt.Sprintf("typeof import(%s).%s", quoteTSString(selfImportPath), base), true
-	}
-	return "", false
 }
 
 type TypegenResult struct {
@@ -301,356 +64,7 @@ const typegenFileName = "opencore.gen.ts"
 // interface and every narrowing would quietly fall back to `string`.
 const registerModuleSuffix = "/register"
 
-func extractDecoratorArgs(text string, openIdx int) (string, int, bool) {
-	depth := 0
-	var quote byte
-	inQuote := false
-
-	for i := openIdx; i < len(text); i++ {
-		c := text[i]
-
-		if inQuote {
-			if c == '\\' {
-				i++
-				continue
-			}
-			if c == quote {
-				inQuote = false
-			}
-			continue
-		}
-
-		switch c {
-		case '\'', '"', '`':
-			inQuote = true
-			quote = c
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				return text[openIdx+1 : i], i, true
-			}
-		}
-	}
-
-	return "", 0, false
-}
-
-func firstStringLiteral(args string) (string, bool) {
-	return matchField(stringLiteralPattern, args)
-}
-
-func matchField(pattern *regexp.Regexp, text string) (string, bool) {
-	m := pattern.FindStringSubmatch(text)
-	if m == nil {
-		return "", false
-	}
-	return firstNonEmpty(m[1:])
-}
-
-func methodNameAfter(text string, endIdx int) (string, bool) {
-	for line := range strings.SplitSeq(text[endIdx:], "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, ")") {
-			continue
-		}
-		m := methodDeclPattern.FindStringSubmatch(line)
-		if m == nil || nonMethodNames[m[1]] {
-			return "", false
-		}
-		return m[1], true
-	}
-	return "", false
-}
-
-type scanState int
-
-const (
-	stateCode scanState = iota
-	stateLineComment
-	stateBlockComment
-	stateQuoted
-)
-
-func blankComments(text string) string {
-	blanker := &commentBlanker{out: []byte(text), state: stateCode}
-	return blanker.run()
-}
-
-type commentBlanker struct {
-	out       []byte
-	state     scanState
-	quoteChar byte
-	i         int
-}
-
-func (b *commentBlanker) run() string {
-	for b.i = 0; b.i < len(b.out); b.i++ {
-		switch b.state {
-		case stateCode:
-			b.stepCode()
-		case stateLineComment:
-			b.stepLineComment()
-		case stateBlockComment:
-			b.stepBlockComment()
-		case stateQuoted:
-			b.stepQuoted()
-		}
-	}
-	return string(b.out)
-}
-
-func (b *commentBlanker) stepCode() {
-	switch {
-	case b.opensWith('/'):
-		b.state = stateLineComment
-	case b.opensWith('*'):
-		b.state = stateBlockComment
-	case b.isQuote():
-		b.state = stateQuoted
-		b.quoteChar = b.out[b.i]
-		return
-	default:
-		return
-	}
-	b.blankPair()
-}
-
-func (b *commentBlanker) stepLineComment() {
-	if b.out[b.i] == '\n' {
-		b.state = stateCode
-		return
-	}
-	b.blank(b.i)
-}
-
-func (b *commentBlanker) stepBlockComment() {
-	closing := b.out[b.i] == '*' && b.peekIs('/')
-	b.blank(b.i)
-	if closing {
-		b.blankPair()
-		b.state = stateCode
-	}
-}
-
-func (b *commentBlanker) stepQuoted() {
-	switch b.out[b.i] {
-	case '\\':
-		b.i++
-	case b.quoteChar:
-		b.state = stateCode
-	}
-}
-
-func (b *commentBlanker) opensWith(marker byte) bool {
-	return b.out[b.i] == '/' && b.peekIs(marker)
-}
-
-func (b *commentBlanker) peekIs(c byte) bool {
-	return b.i+1 < len(b.out) && b.out[b.i+1] == c
-}
-
-func (b *commentBlanker) isQuote() bool {
-	c := b.out[b.i]
-	return c == '\'' || c == '"' || c == '`'
-}
-
-func (b *commentBlanker) blankPair() {
-	b.blank(b.i)
-	b.blank(b.i + 1)
-	b.i++
-}
-
-func (b *commentBlanker) blank(i int) {
-	if b.out[i] != '\n' && b.out[i] != '\r' {
-		b.out[i] = ' '
-	}
-}
-
-type classInfo struct {
-	name   string
-	offset int
-}
-
-func collectClasses(text string) []classInfo {
-	var classes []classInfo
-	for _, loc := range classDeclPattern.FindAllStringSubmatchIndex(text, -1) {
-		if loc[2] < 0 {
-			continue
-		}
-		classes = append(classes, classInfo{name: text[loc[2]:loc[3]], offset: loc[0]})
-	}
-	return classes
-}
-
-func enclosingClass(classes []classInfo, offset int) string {
-	name := classes[0].name
-	for _, class := range classes {
-		if class.offset > offset {
-			break
-		}
-		name = class.name
-	}
-	return name
-}
-
-// lineOf reports the 1-based line number of a byte offset.
-func lineOf(text string, offset int) int {
-	if offset > len(text) {
-		offset = len(text)
-	}
-	return strings.Count(text[:offset], "\n") + 1
-}
-
-type decoratorSpec struct {
-	head *regexp.Regexp
-	kind typegenKind
-}
-
-var typegenDecorators = []decoratorSpec{
-	{serverOnNetHead, kindServerNet},
-	{clientOnNetHead, kindClientNet},
-	{serverOnRPCHead, kindServerRPC},
-	{clientOnRPCHead, kindClientRPC},
-	{serverCommandHead, kindCommand},
-}
-
-type fileScan struct {
-	text       string
-	relPath    string
-	importPath string
-	sourceFile string
-	baseDir    string
-	classes    []classInfo
-	syms       *fileSymbols
-}
-
-func scanFileForTypegen(
-	text string,
-	relPath string,
-	importPath string,
-	sourceFile string,
-	baseDir string,
-) ([]typegenEntry, []SourceValidationIssue) {
-	blanked := blankComments(text)
-
-	classes := collectClasses(blanked)
-	if len(classes) == 0 {
-		return nil, nil
-	}
-
-	scan := &fileScan{
-		text:       blanked,
-		relPath:    relPath,
-		importPath: importPath,
-		sourceFile: sourceFile,
-		baseDir:    baseDir,
-		classes:    classes,
-		syms:       parseFileSymbols(blanked),
-	}
-
-	var entries []typegenEntry
-	var warnings []SourceValidationIssue
-
-	for _, spec := range typegenDecorators {
-		for _, loc := range spec.head.FindAllStringIndex(scan.text, -1) {
-			entry, warning := scan.entryAt(spec, loc[0], loc[1]-1)
-			if warning != nil {
-				warnings = append(warnings, *warning)
-				continue
-			}
-			entries = append(entries, *entry)
-		}
-	}
-
-	return entries, warnings
-}
-
-func (s *fileScan) entryAt(spec decoratorSpec, start int, openIdx int) (*typegenEntry, *SourceValidationIssue) {
-	args, endIdx, balanced := extractDecoratorArgs(s.text, openIdx)
-	if !balanced {
-		return nil, s.issue(start, "unbalanced parentheses in decorator; skipped by typegen")
-	}
-
-	name, issue := s.resolveName(spec.kind, args, start)
-	if issue != nil {
-		return nil, issue
-	}
-
-	methodName, found := methodNameAfter(s.text, endIdx+1)
-	if !found {
-		return nil, s.issuef(start,
-			"could not resolve the method decorated for %q; skipped by typegen", name.event)
-	}
-
-	metadata := commandMetadata(spec.kind, args)
-
-	return &typegenEntry{
-		Kind:        spec.kind,
-		EventName:   name.event,
-		KeyType:     name.keyType,
-		ImportPath:  s.importPath,
-		ClassName:   enclosingClass(s.classes, start),
-		MethodName:  methodName,
-		Description: metadata.description,
-		Usage:       metadata.usage,
-		SourceFile:  s.relPath,
-		SourceLine:  lineOf(s.text, start),
-	}, nil
-}
-
-type resolvedName struct {
-	event   string
-	keyType string
-}
-
-func (s *fileScan) resolveName(kind typegenKind, args string, start int) (resolvedName, *SourceValidationIssue) {
-	if literal, ok := firstStringLiteral(args); ok {
-		return resolvedName{event: literal}, nil
-	}
-	if kind == kindCommand {
-		if configured, ok := matchField(commandFieldPattern, args); ok {
-			return resolvedName{event: configured}, nil
-		}
-	}
-
-	keyType, display, ok := resolveEventNameExpression(args, s.syms, s.sourceFile, s.importPath, s.baseDir)
-	if !ok {
-		return resolvedName{}, s.issuef(start,
-			"could not resolve the event name %q; skipped by typegen (use a string literal or an imported const)",
-			strings.TrimSpace(display))
-	}
-	return resolvedName{event: display, keyType: keyType}, nil
-}
-
-type commandFields struct {
-	description string
-	usage       string
-}
-
-func commandMetadata(kind typegenKind, args string) commandFields {
-	if kind != kindCommand {
-		return commandFields{}
-	}
-	description, _ := matchField(descriptionFieldPattern, args)
-	usage, _ := matchField(usageFieldPattern, args)
-	return commandFields{description: description, usage: usage}
-}
-
-func (s *fileScan) issue(offset int, message string) *SourceValidationIssue {
-	return &SourceValidationIssue{
-		File:    s.relPath,
-		Line:    lineOf(s.text, offset),
-		Message: message,
-	}
-}
-
-func (s *fileScan) issuef(offset int, format string, args ...any) *SourceValidationIssue {
-	return s.issue(offset, fmt.Sprintf(format, args...))
-}
-
-func walkSourceFiles(resourcePath string, viewPath string, visit func(path string, text string) error) error {
+func walkSourceFiles(resourcePath string, viewPath string, visit func(path string) error) error {
 	skipDir := newViewDirSkipper(viewPath)
 
 	return filepath.WalkDir(resourcePath, func(path string, d os.DirEntry, err error) error {
@@ -666,21 +80,12 @@ func walkSourceFiles(resourcePath string, viewPath string, visit func(path strin
 		if !isScannableSource(d.Name()) {
 			return nil
 		}
-
-		content, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		return visit(path, string(content))
+		return visit(path)
 	})
 }
 
 func isScannableSource(name string) bool {
 	return strings.HasSuffix(name, ".ts") && !strings.HasSuffix(name, ".d.ts")
-}
-
-func containsDecorators(text string) bool {
-	return strings.Contains(text, "@Server.") || strings.Contains(text, "@Client.")
 }
 
 func relativeSourcePath(root string, path string) string {
@@ -703,30 +108,36 @@ func moduleImportPath(baseDir string, path string) (string, error) {
 	return strings.TrimSuffix(spec, ".ts"), nil
 }
 
-// scanResourceForTypegen walks a resource and collects every typegen entry in it.
-func scanResourceForTypegen(resourcePath string, baseDir string, viewPath string) ([]typegenEntry, []SourceValidationIssue, error) {
+func typegenEntries(analysis *resourceAnalysis, resourcePath string, baseDir string) ([]typegenEntry, []SourceValidationIssue, error) {
 	var entries []typegenEntry
 	var warnings []SourceValidationIssue
 
-	err := walkSourceFiles(resourcePath, viewPath, func(path string, text string) error {
-		if !containsDecorators(text) {
-			return nil
+	for _, source := range analysis.sources {
+		relPath := relativeSourcePath(resourcePath, source.path)
+		for _, warning := range source.result.Warnings {
+			warnings = append(warnings, SourceValidationIssue{File: relPath, Line: warning.Line, Message: warning.Message})
+		}
+		if len(source.result.Handlers) == 0 {
+			continue
 		}
 
-		importPath, err := moduleImportPath(baseDir, path)
+		importPath, err := moduleImportPath(baseDir, source.path)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-
-		fileEntries, fileWarnings := scanFileForTypegen(
-			text, relativeSourcePath(resourcePath, path), importPath, path, baseDir,
-		)
-		entries = append(entries, fileEntries...)
-		warnings = append(warnings, fileWarnings...)
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
+		for _, handler := range source.result.Handlers {
+			entries = append(entries, typegenEntry{
+				Kind:        handler.Kind,
+				EventName:   handler.Event,
+				ImportPath:  importPath,
+				ClassName:   handler.ClassName,
+				MethodName:  handler.MethodName,
+				Description: handler.Description,
+				Usage:       handler.Usage,
+				SourceFile:  relPath,
+				SourceLine:  handler.Line,
+			})
+		}
 	}
 
 	sortEntriesDeterministically(entries)
@@ -807,7 +218,7 @@ func renderTypegenFile(entries []typegenEntry, views registeredViews, opts Typeg
 	aliases := newControllerAliases(entries)
 	byKind := groupByKind(entries)
 
-	writeTypegenPreamble(&b, entries, byKind, views, registerModule)
+	writeTypegenPreamble(&b, byKind, views, registerModule)
 	aliases.writeDeclarations(&b)
 	writeViewControllerAliases(&b, views.controllerImports)
 
@@ -868,7 +279,6 @@ func groupByKind(entries []typegenEntry) map[typegenKind][]typegenEntry {
 
 func writeTypegenPreamble(
 	b *strings.Builder,
-	entries []typegenEntry,
 	byKind map[typegenKind][]typegenEntry,
 	views registeredViews,
 	registerModule string,
@@ -877,17 +287,8 @@ func writeTypegenPreamble(
 		fmt.Fprintf(b, "import type { DropFirst } from %s\n\n", quoteTSString(registerModule))
 	}
 
-	needsEntry := slices.ContainsFunc(entries, func(e typegenEntry) bool { return e.KeyType != "" }) ||
-		slices.ContainsFunc(views.all(), hasComputedViewKey)
-	needsPayload := slices.ContainsFunc(views.all(), usesPayloadHelper)
-
-	if needsEntry {
-		b.WriteString(entryHelperDecl)
-	}
-	if needsPayload {
+	if slices.ContainsFunc(views.all(), usesPayloadHelper) {
 		b.WriteString(payloadHelperDecl)
-	}
-	if needsEntry || needsPayload {
 		b.WriteString("\n")
 	}
 }
@@ -972,41 +373,24 @@ func writeSectionMap(
 	entries []typegenEntry,
 	aliases *controllerAliases,
 ) {
-	literals, computed := partitionByKeyKind(entries)
-	fmt.Fprintf(b, "export type %s =", section.iface)
-
-	if len(literals) > 0 {
-		b.WriteString(" {\n")
-		for _, e := range literals {
-			fmt.Fprintf(b, "  %s: %s\n", quoteTSString(e.EventName), section.valueExpr(e, aliases))
-		}
-		b.WriteString("}")
+	fmt.Fprintf(b, "export type %s = {\n", section.iface)
+	for _, e := range firstPerEventName(entries) {
+		fmt.Fprintf(b, "  %s: %s\n", quoteTSString(e.EventName), section.valueExpr(e, aliases))
 	}
-	for i, e := range computed {
-		if len(literals) > 0 || i > 0 {
-			b.WriteString("\n  &")
-		}
-		fmt.Fprintf(b, " __Entry<%s, %s> /* %s */",
-			e.KeyType, section.valueExpr(e, aliases), e.EventName)
-	}
-
-	b.WriteString("\n\n")
+	b.WriteString("}\n\n")
 }
 
-func partitionByKeyKind(entries []typegenEntry) (literals []typegenEntry, computed []typegenEntry) {
+func firstPerEventName(entries []typegenEntry) []typegenEntry {
 	seen := map[string]bool{}
+	var unique []typegenEntry
 	for _, e := range entries {
 		if seen[e.EventName] {
 			continue
 		}
 		seen[e.EventName] = true
-		if e.KeyType == "" {
-			literals = append(literals, e)
-		} else {
-			computed = append(computed, e)
-		}
+		unique = append(unique, e)
 	}
-	return literals, computed
+	return unique
 }
 
 func (s typegenSection) valueExpr(e typegenEntry, aliases *controllerAliases) string {
@@ -1089,7 +473,11 @@ func (rb *ResourceBuilder) generateTypes(resourcePath string, opts TypegenOption
 	outDir := filepath.Join(resourcePath, ".opencore")
 	outFile := filepath.Join(outDir, typegenFileName)
 
-	entries, warnings, err := scanResourceForTypegen(resourcePath, outDir, rb.viewPathFor(resourcePath))
+	analysis, err := rb.analyzeResource(resourcePath)
+	if err != nil {
+		return nil, err
+	}
+	entries, warnings, err := typegenEntries(analysis, resourcePath, outDir)
 	if err != nil {
 		return nil, err
 	}

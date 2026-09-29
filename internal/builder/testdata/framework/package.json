@@ -1,0 +1,12 @@
+{
+  "name": "@open-core/framework",
+  "version": "0.0.0-typegen-fixture",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts" },
+    "./register": { "types": "./dist/runtime/shared/types/register.d.ts" },
+    "./server": { "types": "./dist/runtime/server/index.d.ts" },
+    "./client": { "types": "./dist/runtime/client/index.d.ts" },
+    "./package.json": "./package.json"
+  }
+}
