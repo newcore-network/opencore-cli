@@ -3,7 +3,6 @@ package commands
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"testing"
 )
@@ -34,7 +33,12 @@ func TestParseRegisteredTokens(t *testing.T) {
 }
 
 func TestInspectAdapterProjectFiveM(t *testing.T) {
-	projectRoot := siblingRepoPath(t, "opencore-fivem-adapter")
+	projectRoot := newAdapterProjectFixture(t, "@open-core/fivem-adapter", "client", `
+ctx.bindSingleton(IClientRuntimeBridge, RuntimeBridge)
+ctx.bindSingleton(IClientLogConsole, LogConsole)
+`, `
+ctx.bindSingleton(IClientRuntimeBridge, RuntimeBridge)
+`)
 	report, err := inspectAdapterProject(projectRoot)
 	if err != nil {
 		t.Fatalf("inspectAdapterProject failed: %v", err)
@@ -61,7 +65,12 @@ func TestInspectAdapterProjectFiveM(t *testing.T) {
 }
 
 func TestInspectAdapterProjectRageMP(t *testing.T) {
-	projectRoot := siblingRepoPath(t, "opencore-ragemp-adapter")
+	projectRoot := newAdapterProjectFixture(t, "@open-core/ragemp-adapter", "server", `
+ctx.bindSingleton(IRageMPServerAdapter, ServerAdapter)
+ctx.bindSingleton(IPedAppearanceServer, PedAppearanceServer)
+`, `
+ctx.bindSingleton(IRageMPServerAdapter, ServerAdapter)
+`)
 	report, err := inspectAdapterProject(projectRoot)
 	if err != nil {
 		t.Fatalf("inspectAdapterProject failed: %v", err)
@@ -87,16 +96,26 @@ func TestInspectAdapterProjectRageMP(t *testing.T) {
 	}
 }
 
-func siblingRepoPath(t *testing.T, name string) string {
+func newAdapterProjectFixture(t *testing.T, packageName, side, baseline, registered string) string {
 	t.Helper()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("failed to resolve test file path")
-	}
+	projectRoot := t.TempDir()
+	writeAdapterTestFile(t, projectRoot, "package.json", `{"name":"`+packageName+`","exports":{"./`+side+`":"./`+side+`.js"}}`)
+	frameworkRoot := filepath.Join(projectRoot, "node_modules", "@open-core", "framework")
+	writeAdapterTestFile(t, frameworkRoot, "package.json", `{"name":"@open-core/framework"}`)
+	writeAdapterTestFile(t, frameworkRoot,
+		filepath.Join("src", "runtime", side, "adapter", "node-"+side+"-adapter.ts"), baseline)
+	writeAdapterTestFile(t, projectRoot,
+		filepath.Join("src", side, "create-fixture-"+side+"-adapter.ts"), registered)
+	return projectRoot
+}
 
-	path := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", name))
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("repo %s not available: %v", name, err)
+func writeAdapterTestFile(t *testing.T, root, relativePath, content string) {
+	t.Helper()
+	path := filepath.Join(root, relativePath)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("failed to create fixture directory: %v", err)
 	}
-	return path
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write fixture file: %v", err)
+	}
 }
