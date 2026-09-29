@@ -42,7 +42,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: go.mod
+          go-version: "1.27.x"
           cache: true
 
       # pnpm MUST exist before setup-node tries to configure the pnpm cache.
@@ -84,7 +84,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: go.mod
+          go-version: "1.27.x"
           cache: true
 
       - name: Verify Go modules
@@ -120,7 +120,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: go.mod
+          go-version: "1.27.x"
           cache: true
 
       - name: Setup Node

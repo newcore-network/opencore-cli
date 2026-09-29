@@ -77,5 +77,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
 }

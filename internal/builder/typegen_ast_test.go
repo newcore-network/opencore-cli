@@ -10,13 +10,13 @@ import (
 	"testing"
 )
 
-// typeScriptInstall returns the repository's `typescript` (5.x) or `typescript-7` devDependency.
-func typeScriptInstall(t *testing.T, name string) string {
+// typeScriptInstall returns the repository's TypeScript 7 devDependency.
+func typeScriptInstall(t *testing.T) string {
 	t.Helper()
-	dir, _ := filepath.Abs(filepath.Join("..", "..", "node_modules", name))
+	dir, _ := filepath.Abs(filepath.Join("..", "..", "node_modules", "typescript"))
 	_, nodeErr := exec.LookPath("node")
 	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil || nodeErr != nil {
-		reason := "typegen tests need node and " + name + " (run `npm install` in the repository root)"
+		reason := "typegen tests need Node.js and TypeScript 7 (run `pnpm install` in the repository root)"
 		if os.Getenv("CI") != "" {
 			t.Fatal(reason)
 		}
@@ -28,7 +28,7 @@ func typeScriptInstall(t *testing.T, name string) string {
 // newTypegenBuilder returns a builder for a project at projectPath with the framework fixture installed.
 func newTypegenBuilder(t *testing.T, projectPath string) *ResourceBuilder {
 	t.Helper()
-	return newTypegenBuilderWith(t, projectPath, typeScriptInstall(t, "typescript"), true)
+	return newTypegenBuilderWith(t, projectPath, typeScriptInstall(t), true)
 }
 
 func newTypegenBuilderWith(t *testing.T, projectPath string, typeScriptDir string, framework bool) *ResourceBuilder {
@@ -45,13 +45,12 @@ func newTypegenBuilderWith(t *testing.T, projectPath string, typeScriptDir strin
 	return rb
 }
 
-func forEachTypeScript(t *testing.T, run func(t *testing.T, typeScriptDir string)) {
-	for _, name := range []string{"typescript", "typescript-7"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			run(t, typeScriptInstall(t, name))
-		})
-	}
+func withTypeScript7(t *testing.T, run func(t *testing.T, typeScriptDir string)) {
+	t.Helper()
+	t.Run("typescript-7", func(t *testing.T) {
+		t.Parallel()
+		run(t, typeScriptInstall(t))
+	})
 }
 
 const typegenTestTSConfig = `{
@@ -365,7 +364,7 @@ export class BankController {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			forEachTypeScript(t, func(t *testing.T, typeScriptDir string) {
+			withTypeScript7(t, func(t *testing.T, typeScriptDir string) {
 				root := t.TempDir()
 				writeTestFile(t, root, "tsconfig.json", typegenTestTSConfig)
 				resource := filepath.Join(root, "resources", "demo")
@@ -419,7 +418,7 @@ export class BankController {
 }
 
 func TestTypegen_NamespaceLiteralFormIsUnchanged(t *testing.T) {
-	forEachTypeScript(t, func(t *testing.T, typeScriptDir string) {
+	withTypeScript7(t, func(t *testing.T, typeScriptDir string) {
 		root := t.TempDir()
 		resource := filepath.Join(root, "resource")
 		fixture := filepath.Join("testdata", "typegen-snapshot")
