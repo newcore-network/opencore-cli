@@ -372,6 +372,20 @@ export class SessionController {
   onReleased() {}
 }
 `,
+				// The generated file cannot import a class that is not exported.
+				"src/server/notifier.ts": `
+import { rpLibrary } from './rp.library'
+
+interface Fired { at: number }
+
+class Notifier {
+  fire(payload: Fired) {
+    rpLibrary.emit('notifier:fired', payload)
+  }
+}
+
+export const notifier = new Notifier()
+`,
 				"src/client/hud.ts": `
 import { createClientLibrary } from '@open-core/framework/client'
 const hud = createClientLibrary('hud')
@@ -389,6 +403,7 @@ export function show() {
 				// A listener ignoring the payload leaves the event to its emit() calls. The order of a
 				// literal union is the checker's, which differs between TypeScript versions.
 				"    'property:released': { propertyId: string; reason: \"",
+				"    'notifier:fired': { at: number }\n",
 				"    'vitals:revived': Parameters<T0_MarketService['revive']>[0]\n",
 				"export type GenClientLibraryEvents = {\n" +
 					"  'hud': {\n" +
@@ -396,7 +411,7 @@ export function show() {
 					"  }\n" +
 					"}",
 			},
-			notWant: []string{"not:library", "extra"},
+			notWant: []string{"not:library", "extra", "Notifier"},
 		},
 		{
 			name: "library emit on a library without a literal name warns",

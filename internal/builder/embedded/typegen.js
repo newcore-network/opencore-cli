@@ -440,10 +440,12 @@ class Analyzer {
         return this.forwardedParameter(payloadArg, call, classNode) || this.payload(this.checker.getTypeAtLocation(payloadArg), payloadArg)
     }
 
-    // `send(name, data)` inside `method(data: T)` is typed through the method's parameter.
+    // `send(name, data)` inside `method(data: T)` is typed through the method's parameter, when the
+    // generated file can import the class: otherwise the argument's own type is used.
     forwardedParameter(payloadArg, call, classNode) {
         const SK = this.SK
-        const symbol = payloadArg.kind === SK.Identifier && classNode && classNode.name && this.checker.getSymbolAtLocation(payloadArg)
+        const importable = classNode && classNode.name && isExportedDeclaration(SK, classNode, classNode.getSourceFile())
+        const symbol = payloadArg.kind === SK.Identifier && importable && this.checker.getSymbolAtLocation(payloadArg)
         if (!symbol) return null
         for (const decl of this.h.declarations(symbol)) {
             const param = decl.node()
@@ -561,7 +563,7 @@ class TypePrinter {
         let base
         if (!sf.externalModuleIndicator && sf.isDeclarationFile) {
             base = symbol.name
-        } else if (!/[\\/]node_modules[\\/]/.test(sf.fileName) && this.isExported(node, sf)) {
+        } else if (!/[\\/]node_modules[\\/]/.test(sf.fileName) && isExportedDeclaration(this.a.SK, node, sf)) {
             base = `import(${IMPORT_MARK}${path.resolve(sf.fileName).replace(/\.(d\.)?[mc]?tsx?$/, '')}${IMPORT_MARK}).${symbol.name}`
         } else {
             return null
@@ -571,16 +573,16 @@ class TypePrinter {
         return args.length ? `${base}<${args.join(', ')}>` : base
     }
 
-    isExported(node, sf) {
-        const SK = this.a.SK
-        const declarationKinds = [SK.InterfaceDeclaration, SK.TypeAliasDeclaration, SK.ClassDeclaration, SK.EnumDeclaration]
-        const modifiers = (node.modifiers || []).map((m) => m.kind)
-        return node.parent === sf && declarationKinds.includes(node.kind) && modifiers.includes(SK.ExportKeyword) && !modifiers.includes(SK.DefaultKeyword)
-    }
-
     wrap(text) {
         return text && /[|&]/.test(text) && !text.startsWith('{') ? `(${text})` : text
     }
+}
+
+// Whether `import('…').Name` reaches a declaration: a named export at the top of its module.
+function isExportedDeclaration(SK, node, sf) {
+    const declarationKinds = [SK.InterfaceDeclaration, SK.TypeAliasDeclaration, SK.ClassDeclaration, SK.EnumDeclaration]
+    const modifiers = (node.modifiers || []).map((m) => m.kind)
+    return node.parent === sf && declarationKinds.includes(node.kind) && modifiers.includes(SK.ExportKeyword) && !modifiers.includes(SK.DefaultKeyword)
 }
 
 function skipTrivia(text, pos) {
