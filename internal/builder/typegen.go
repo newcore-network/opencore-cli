@@ -727,7 +727,7 @@ func (rb *ResourceBuilder) reportTypegenWarnings(resourcePath string, result *Ty
 
 	name := filepath.Base(resourcePath)
 	fmt.Println(ui.Warning(fmt.Sprintf(
-		"typegen: %d handler(s) in %s could not be typed", len(result.Warnings), name,
+		"typegen: %d warning(s) in %s", len(result.Warnings), name,
 	)))
 	for _, issue := range result.Warnings {
 		fmt.Println(ui.Muted("  " + issue.String()))
