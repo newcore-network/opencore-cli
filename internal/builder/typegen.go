@@ -219,19 +219,19 @@ func sortEntriesDeterministically(entries []typegenEntry) {
 	})
 }
 
-// libraryEventRank orders what declares one library event. Listeners come first, as the receiving
-// side defines an event's payload, and one declaring a payload before one ignoring it, which
-// would type the event as carrying none. `emit()` calls only type the events nobody listens to.
+// libraryEventRank orders what declares one library event. Listeners declaring a payload come
+// first, as the receiving side defines an event's payload; `emit()` calls type the events no such
+// listener types. A listener ignoring its payload comes last: it says nothing about it.
 func libraryEventRank(e typegenEntry) int {
 	switch {
 	case !isLibraryKind(e.Kind):
 		return 0
 	case e.Emitted:
-		return 2
+		return 1
 	case e.TakesPayload:
 		return 0
 	default:
-		return 1
+		return 2
 	}
 }
 
@@ -462,8 +462,10 @@ func writeSectionMap(
 }
 
 // writeLibrarySectionMap emits one nested map per library. An event is typed by the first
-// parameter of its first listener (the handler is called as `(payload, meta)`), or, when nobody
-// listens to it, by the union of the payloads its `emit()` calls pass.
+// parameter of its first listener (the handler is called as `(payload, meta)`), or, when no
+// listener takes a payload, by the union of the payloads its `emit()` calls pass. An event only
+// listened to by handlers ignoring the payload carries `unknown`, which constrains nothing when
+// the framework intersects the maps of several resources.
 func writeLibrarySectionMap(
 	b *strings.Builder,
 	section typegenSection,
@@ -483,11 +485,17 @@ func writeLibrarySectionMap(
 
 // libraryPayloadExpr types one library event from its entries, sorted listeners first.
 func libraryPayloadExpr(event []typegenEntry, aliases *controllerAliases) string {
-	if first := event[0]; !first.Emitted {
+	switch first := event[0]; {
+	case first.TakesPayload && !first.Emitted:
 		return fmt.Sprintf("__Payload<Parameters<%s[%s]>>", aliases.of(first), quoteTSString(first.MethodName))
+	case !first.Emitted:
+		return "unknown"
 	}
 	var payloads []string
 	for _, e := range event {
+		if !e.Emitted {
+			continue
+		}
 		payload := e.PayloadType
 		if payload == "" {
 			payload = fmt.Sprintf("Parameters<%s[%s]>[%d]", aliases.of(e), quoteTSString(e.MethodName), e.ParamIndex)

@@ -37,7 +37,7 @@ export type GenCommands = {
 
 export type GenServerLibraryEvents = {
   'rp': {
-    'character:left': __Payload<Parameters<T1_BankController['onLeft']>>
+    'character:left': unknown
     'character:spawned': __Payload<Parameters<T1_BankController['onSpawned']>>
   }
 }

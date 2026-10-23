@@ -262,7 +262,8 @@ export class HudController {
 				"type __Payload<P extends unknown[]>",
 				"export type GenServerLibraryEvents = {\n" +
 					"  'bank': {\n" +
-					"    'bank:opened': __Payload<Parameters<T2_CharactersController['onOpened']>>\n" +
+					// Its only listener ignores the payload, which then constrains nothing.
+					"    'bank:opened': unknown\n" +
 					"  }\n" +
 					"  'rp': {\n" +
 					"    'character:left': __Payload<Parameters<T1_AuditController['onLeft']>>\n" +
@@ -366,6 +367,9 @@ import { Server } from '@open-core/framework/server'
 export class SessionController {
   @Server.OnLibraryEvent('rp', 'character:left')
   onLeft(payload: { accountId: string }) {}
+
+  @Server.OnLibraryEvent('rp', 'property:released')
+  onReleased() {}
 }
 `,
 				"src/client/hud.ts": `
@@ -382,7 +386,8 @@ export function show() {
 				"    'market:tick': undefined\n",
 				// Different payloads at different calls make a union.
 				"    'police:jailed': { characterId: number; releaseAt: number } | { characterId: string; releaseAt: number }\n",
-				// The order of a literal union is the checker's, which differs between TypeScript versions.
+				// A listener ignoring the payload leaves the event to its emit() calls. The order of a
+				// literal union is the checker's, which differs between TypeScript versions.
 				"    'property:released': { propertyId: string; reason: \"",
 				"    'vitals:revived': Parameters<T0_MarketService['revive']>[0]\n",
 				"export type GenClientLibraryEvents = {\n" +
