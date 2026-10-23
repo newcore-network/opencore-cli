@@ -414,6 +414,19 @@ export function show() {
 			notWant: []string{"not:library", "extra", "Notifier"},
 		},
 		{
+			// An unused helper fails projects compiled with `noUnusedLocals`.
+			name: "library emits alone do not declare the payload helper",
+			files: map[string]string{"src/client/hud.ts": `
+import { createClientLibrary } from '@open-core/framework/client'
+const hud = createClientLibrary('hud')
+export function show() {
+  hud.emit('hud:shown', { visible: true as boolean })
+}
+`},
+			want:    []string{"    'hud:shown': { visible: boolean }\n"},
+			notWant: []string{"__Payload"},
+		},
+		{
 			name: "library emit on a library without a literal name warns",
 			files: map[string]string{"src/server/dynamic.ts": `
 import { createServerLibrary } from '@open-core/framework/server'

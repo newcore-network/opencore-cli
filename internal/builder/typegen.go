@@ -361,11 +361,17 @@ func writeTypegenPreamble(
 		fmt.Fprintf(b, "import type { DropFirst } from %s\n\n", quoteTSString(registerModule))
 	}
 
-	if len(byKind[kindServerLibrary]) > 0 || len(byKind[kindClientLibrary]) > 0 ||
+	if slices.ContainsFunc(byKind[kindServerLibrary], typesPayloadFromListener) ||
+		slices.ContainsFunc(byKind[kindClientLibrary], typesPayloadFromListener) ||
 		slices.ContainsFunc(views.all(), usesPayloadHelper) {
 		b.WriteString(payloadHelperDecl)
 		b.WriteString("\n")
 	}
+}
+
+// typesPayloadFromListener reports whether a library entry types its event through `__Payload`.
+func typesPayloadFromListener(e typegenEntry) bool {
+	return !e.Emitted && e.TakesPayload
 }
 
 type controllerRef struct {
@@ -486,7 +492,7 @@ func writeLibrarySectionMap(
 // libraryPayloadExpr types one library event from its entries, sorted listeners first.
 func libraryPayloadExpr(event []typegenEntry, aliases *controllerAliases) string {
 	switch first := event[0]; {
-	case first.TakesPayload && !first.Emitted:
+	case typesPayloadFromListener(first):
 		return fmt.Sprintf("__Payload<Parameters<%s[%s]>>", aliases.of(first), quoteTSString(first.MethodName))
 	case !first.Emitted:
 		return "unknown"
