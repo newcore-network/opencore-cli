@@ -182,9 +182,14 @@ class Analyzer {
             event: name.value,
             className: classNode.name.text,
             methodName,
-            takesPayload: member.parameters.length > 0,
+            takesPayload: member.parameters.some((param) => !this.isThisParameter(param)),
             line,
         })
+    }
+
+    // A `this:` parameter only types the receiver; it is not part of `Parameters<>`.
+    isThisParameter(param) {
+        return param.name.kind === this.SK.Identifier && param.name.text === 'this'
     }
 
     memberName(member) {
@@ -448,7 +453,8 @@ class Analyzer {
             for (let node = call; node && !inside; node = node.parent) inside = node === method
             const methodName = this.memberName(method)
             if (inside && methodName !== null) {
-                return { kind: 'param', className: classNode.name.text, methodName, index: method.parameters.indexOf(param) }
+                const index = method.parameters.filter((p) => !this.isThisParameter(p)).indexOf(param)
+                return { kind: 'param', className: classNode.name.text, methodName, index }
             }
         }
         return null

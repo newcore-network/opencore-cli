@@ -280,6 +280,44 @@ export class HudController {
 			notWant: []string{"['log']"},
 		},
 		{
+			name: "library listener with an optional, defaulted or rest payload keeps its type",
+			files: map[string]string{
+				"src/server/rp.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+export interface Spawned { id: string }
+
+@Server.Controller()
+export class RpController {
+  @Server.OnLibraryEvent('rp', 'optional')
+  onOptional(payload?: Spawned) {}
+
+  @Server.OnLibraryEvent('rp', 'defaulted')
+  onDefaulted(payload = { id: 'x' }) {}
+
+  @Server.OnLibraryEvent('rp', 'rest')
+  onRest(...ids: string[]) {}
+
+  @Server.OnLibraryEvent('rp', 'receiver')
+  onReceiver(this: RpController, count: number) {}
+}
+`,
+				// Compiled with the generated file: each payload must accept a real value.
+				"src/server/check.ts": `
+import type { GenServerLibraryEvents as E } from '../../.opencore/opencore.gen'
+export const optional: E['rp']['optional'] = { id: 'a' }
+export const defaulted: E['rp']['defaulted'] = { id: 'a' }
+export const rest: E['rp']['rest'] = 'a'
+export const receiver: E['rp']['receiver'] = 1
+`,
+			},
+			want: []string{
+				"type __Payload<P extends unknown[]> = P extends [] ? undefined : Required<P>[0]",
+				"    'optional': __Payload<Parameters<T0_RpController['onOptional']>>\n",
+				"    'receiver': __Payload<Parameters<T0_RpController['onReceiver']>>\n",
+			},
+		},
+		{
 			name: "library emits type the events nobody listens to",
 			files: map[string]string{
 				"src/server/rp.library.ts": `
