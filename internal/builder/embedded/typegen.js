@@ -7,12 +7,13 @@ const { pathToFileURL } = require('url')
 
 const FRAMEWORK = '@open-core/framework'
 const DECORATORS = {
-    server: { OnNet: 'serverEvents', OnRPC: 'serverRpc', Command: 'commands' },
-    client: { OnNet: 'clientEvents', OnRPC: 'clientRpc', OnView: 'view' },
+    server: { OnNet: 'serverEvents', OnRPC: 'serverRpc', Command: 'commands', OnLibraryEvent: 'serverLibraryEvents' },
+    client: { OnNet: 'clientEvents', OnRPC: 'clientRpc', OnView: 'view', OnLibraryEvent: 'clientLibraryEvents' },
 }
 const WEBVIEW_CLASSES = ['WebViewBridge', 'NuiBridge']
 const WEBVIEW_GLOBALS = ['WebView', 'NUI']
 const IMPORT_MARK = '\u0001'
+const LIBRARY_KINDS = ['serverLibraryEvents', 'clientLibraryEvents']
 
 async function loadHost(tsDir) {
     const pkg = JSON.parse(fs.readFileSync(path.join(tsDir, 'package.json'), 'utf8'))
@@ -126,9 +127,9 @@ class Analyzer {
     }
 
     analyzeFile(file) {
-        this.result = { handlers: [], views: [], sends: [], warnings: [] }
+        this.result = { handlers: [], views: [], sends: [], emits: [], warnings: [] }
         this.sf = this.program.getSourceFile(file)
-        if (this.sf && /@|send/.test(this.sf.text)) this.visit(this.sf, null)
+        if (this.sf && /@|send|emit/.test(this.sf.text)) this.visit(this.sf, null)
         return this.result
     }
 
@@ -158,12 +159,32 @@ class Analyzer {
             if (!kind) continue
 
             const line = this.lineOf(decorator)
+            if (LIBRARY_KINDS.includes(kind)) {
+                this.visitLibraryListener(kind, call, classNode, methodName, member, line)
+                continue
+            }
             const name = kind === 'commands' ? this.commandName(call.arguments[0]) : this.eventName(call.arguments[0])
             if (!name) continue
             const entry = { event: name.value, className: classNode.name.text, methodName, line }
             if (kind === 'view') this.result.views.push(entry)
             else this.result.handlers.push({ kind, description: name.description || '', usage: name.usage || '', ...entry })
         }
+    }
+
+    // `@OnLibraryEvent(library, event)`: both names must resolve, the payload is the first parameter.
+    visitLibraryListener(kind, call, classNode, methodName, member, line) {
+        const library = this.eventName(call.arguments[0])
+        const name = library && this.eventName(call.arguments[1])
+        if (!name) return
+        this.result.handlers.push({
+            kind,
+            library: library.value,
+            event: name.value,
+            className: classNode.name.text,
+            methodName,
+            takesPayload: member.parameters.length > 0,
+            line,
+        })
     }
 
     memberName(member) {
@@ -302,8 +323,56 @@ class Analyzer {
 
     visitCall(call, classNode) {
         const callee = call.expression
-        if (callee.kind !== this.SK.PropertyAccessExpression || callee.name.text !== 'send' || !this.isWebViewSend(callee)) return
+        if (callee.kind !== this.SK.PropertyAccessExpression) return
+        if (callee.name.text === 'send' && this.isWebViewSend(callee)) this.visitSend(call, classNode)
+        else if (callee.name.text === 'emit') this.visitLibraryEmit(call, callee, classNode)
+    }
 
+    // `library.emit(event, payload)` declares an event of that library, as `send()` declares a WebView message.
+    visitLibraryEmit(call, callee, classNode) {
+        const library = this.libraryOf(callee)
+        if (!library) return
+
+        const line = this.lineOf(call)
+        const [nameArg, payloadArg] = call.arguments
+        const literals = nameArg && this.stringLiterals(this.checker.getTypeAtLocation(nameArg))
+        if (!library.name || !literals || literals.length !== 1) {
+            const what = library.name ? `event name (${nameArg ? this.sourceOf(nameArg) : 'missing'})` : `library name of ${this.sourceOf(callee.expression)}`
+            this.warn(line, `could not resolve the ${what} of a library emit(); skipped by typegen`)
+            return
+        }
+        const payload = this.sendPayload(payloadArg, call, classNode)
+        if (payload.kind === 'type' && payload.type === 'unknown') {
+            this.warn(line, `could not derive the payload type of ${JSON.stringify(literals[0])}; the library event carries \`unknown\``)
+        }
+        this.result.emits.push({ kind: library.kind, library: library.name, event: literals[0], line, payload })
+    }
+
+    // { kind, name } for a server or client library's bus `emit`, null for any other `emit`.
+    // `name` is null when the library was created from a name that is not a literal.
+    libraryOf(callee) {
+        const symbol = this.checker.getSymbolAtLocation(callee.name)
+        const decls = symbol ? this.h.declarations(symbol) : []
+        const isBusEmit = decls.some((decl) => {
+            const owner = frameworkSideOf(decl.file) !== null && decl.node().parent
+            return Boolean(owner && owner.name && owner.name.text === 'LibraryBus')
+        })
+        if (!isBusEmit) return null
+
+        const receiver = this.checker.getTypeAtLocation(callee.expression)
+        const side = this.propertyStringLiteral(receiver, callee.expression, 'side')
+        const kind = { server: 'serverLibraryEvents', client: 'clientLibraryEvents' }[side]
+        if (!kind) return null
+        return { kind, name: this.propertyStringLiteral(receiver, callee.expression, 'name') }
+    }
+
+    propertyStringLiteral(type, location, key) {
+        const prop = this.checker.getPropertyOfType(type, key)
+        const literals = prop && this.stringLiterals(this.checker.getTypeOfSymbolAtLocation(prop, location))
+        return literals && literals.length === 1 ? literals[0] : null
+    }
+
+    visitSend(call, classNode) {
         const line = this.lineOf(call)
         const [nameArg, payloadArg] = call.arguments
         const nameType = nameArg && this.checker.getTypeAtLocation(nameArg)

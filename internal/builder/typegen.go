@@ -20,17 +20,34 @@ const (
 	kindServerRPC typegenKind = "serverRpc"
 	kindClientRPC typegenKind = "clientRpc"
 	kindCommand   typegenKind = "commands"
+
+	kindServerLibrary typegenKind = "serverLibraryEvents"
+	kindClientLibrary typegenKind = "clientLibraryEvents"
 )
+
+// isLibraryKind reports whether entries of kind k are `@OnLibraryEvent` listeners, which are
+// filed per library rather than in one flat map.
+func isLibraryKind(k typegenKind) bool {
+	return k == kindServerLibrary || k == kindClientLibrary
+}
 
 // typegenEntry is one decorated handler discovered during the scan.
 type typegenEntry struct {
 	Kind        typegenKind
+	Library     string // library events only: the library the event belongs to
 	EventName   string // source text of the name, used for ordering and de-duplication
 	ImportPath  string // relative to the .opencore directory, extension stripped
 	ClassName   string
 	MethodName  string
 	Description string
 	Usage       string
+	// TakesPayload reports whether a library listener declares a payload parameter.
+	TakesPayload bool
+	// Emitted marks a library event declared by an `emit()` call rather than a listener. Its
+	// payload is PayloadType, or parameter ParamIndex of ClassName.MethodName when that is empty.
+	Emitted     bool
+	PayloadType string
+	ParamIndex  int
 	// SourceFile and SourceLine locate the decorator, for diagnostics only.
 	SourceFile string
 	SourceLine int
@@ -117,7 +134,7 @@ func typegenEntries(analysis *resourceAnalysis, resourcePath string, baseDir str
 		for _, warning := range source.result.Warnings {
 			warnings = append(warnings, SourceValidationIssue{File: relPath, Line: warning.Line, Message: warning.Message})
 		}
-		if len(source.result.Handlers) == 0 {
+		if len(source.result.Handlers) == 0 && len(source.result.Emits) == 0 {
 			continue
 		}
 
@@ -127,16 +144,26 @@ func typegenEntries(analysis *resourceAnalysis, resourcePath string, baseDir str
 		}
 		for _, handler := range source.result.Handlers {
 			entries = append(entries, typegenEntry{
-				Kind:        handler.Kind,
-				EventName:   handler.Event,
-				ImportPath:  importPath,
-				ClassName:   handler.ClassName,
-				MethodName:  handler.MethodName,
-				Description: handler.Description,
-				Usage:       handler.Usage,
-				SourceFile:  relPath,
-				SourceLine:  handler.Line,
+				Kind:         handler.Kind,
+				Library:      handler.Library,
+				EventName:    handler.Event,
+				TakesPayload: handler.TakesPayload,
+				ImportPath:   importPath,
+				ClassName:    handler.ClassName,
+				MethodName:   handler.MethodName,
+				Description:  handler.Description,
+				Usage:        handler.Usage,
+				SourceFile:   relPath,
+				SourceLine:   handler.Line,
 			})
+		}
+		for _, emit := range source.result.Emits {
+			entry, err := emittedEntry(emit, importPath, baseDir)
+			if err != nil {
+				return nil, nil, err
+			}
+			entry.SourceFile, entry.SourceLine = relPath, emit.Line
+			entries = append(entries, entry)
 		}
 	}
 
@@ -145,6 +172,25 @@ func typegenEntries(analysis *resourceAnalysis, resourcePath string, baseDir str
 	sortValidationIssues(warnings)
 
 	return entries, warnings, nil
+}
+
+// emittedEntry turns a library `emit()` call into the entry declaring its event. A payload
+// forwarded from a method parameter is typed through that parameter, like a WebView `send()`.
+func emittedEntry(emit analyzedEmit, importPath string, baseDir string) (typegenEntry, error) {
+	entry := typegenEntry{
+		Kind:       emit.Kind,
+		Library:    emit.Library,
+		EventName:  emit.Event,
+		ImportPath: importPath,
+		Emitted:    true,
+	}
+	if p := emit.Payload; p.Kind == "param" {
+		entry.ClassName, entry.MethodName, entry.ParamIndex = p.ClassName, p.MethodName, p.Index
+		return entry, nil
+	}
+	payload, err := renderImportMarks(emit.Payload.Type, baseDir)
+	entry.PayloadType = payload
+	return entry, err
 }
 
 func sortValidationIssues(issues []SourceValidationIssue) {
@@ -161,12 +207,32 @@ func sortEntriesDeterministically(entries []typegenEntry) {
 	slices.SortStableFunc(entries, func(a, b typegenEntry) int {
 		return cmp.Or(
 			strings.Compare(string(a.Kind), string(b.Kind)),
+			strings.Compare(a.Library, b.Library),
 			strings.Compare(a.EventName, b.EventName),
+			cmp.Compare(libraryEventRank(a), libraryEventRank(b)),
 			strings.Compare(a.ImportPath, b.ImportPath),
 			strings.Compare(a.ClassName, b.ClassName),
 			strings.Compare(a.MethodName, b.MethodName),
+			strings.Compare(a.PayloadType, b.PayloadType),
+			cmp.Compare(a.SourceLine, b.SourceLine),
 		)
 	})
+}
+
+// libraryEventRank orders what declares one library event. Listeners come first, as the receiving
+// side defines an event's payload, and one declaring a payload before one ignoring it, which
+// would type the event as carrying none. `emit()` calls only type the events nobody listens to.
+func libraryEventRank(e typegenEntry) int {
+	switch {
+	case !isLibraryKind(e.Kind):
+		return 0
+	case e.Emitted:
+		return 2
+	case e.TakesPayload:
+		return 0
+	default:
+		return 1
+	}
 }
 
 func isSameHandler(a typegenEntry, b typegenEntry) bool {
@@ -174,7 +240,7 @@ func isSameHandler(a typegenEntry, b typegenEntry) bool {
 }
 
 func claimsSameName(a typegenEntry, b typegenEntry) bool {
-	return a.Kind == b.Kind && a.EventName == b.EventName
+	return a.Kind == b.Kind && a.Library == b.Library && a.EventName == b.EventName
 }
 
 func duplicateEntryWarnings(entries []typegenEntry) []SourceValidationIssue {
@@ -182,6 +248,10 @@ func duplicateEntryWarnings(entries []typegenEntry) []SourceValidationIssue {
 
 	for i := 1; i < len(entries); i++ {
 		previous, current := entries[i-1], entries[i]
+		// A library event is meant to have many listeners; only the first one types it.
+		if isLibraryKind(current.Kind) {
+			continue
+		}
 		if !claimsSameName(previous, current) || isSameHandler(previous, current) {
 			continue
 		}
@@ -224,7 +294,11 @@ func renderTypegenFile(entries []typegenEntry, views registeredViews, opts Typeg
 
 	var members []registerMember
 	for _, section := range sectionsPresentIn(byKind) {
-		writeSectionMap(&b, section, byKind[section.kind], aliases)
+		if section.isLibraryMap {
+			writeLibrarySectionMap(&b, section, byKind[section.kind], aliases)
+		} else {
+			writeSectionMap(&b, section, byKind[section.kind], aliases)
+		}
 		members = append(members, registerMember{section.registerAs, section.iface})
 	}
 	members = append(members, writeRegisteredViewMaps(&b, views)...)
@@ -287,7 +361,8 @@ func writeTypegenPreamble(
 		fmt.Fprintf(b, "import type { DropFirst } from %s\n\n", quoteTSString(registerModule))
 	}
 
-	if slices.ContainsFunc(views.all(), usesPayloadHelper) {
+	if len(byKind[kindServerLibrary]) > 0 || len(byKind[kindClientLibrary]) > 0 ||
+		slices.ContainsFunc(views.all(), usesPayloadHelper) {
 		b.WriteString(payloadHelperDecl)
 		b.WriteString("\n")
 	}
@@ -307,6 +382,9 @@ func newControllerAliases(entries []typegenEntry) *controllerAliases {
 	aliases := &controllerAliases{byRef: map[controllerRef]string{}}
 
 	for _, e := range entries {
+		if e.ClassName == "" {
+			continue
+		}
 		ref := controllerRef{e.ImportPath, e.ClassName}
 		if _, seen := aliases.byRef[ref]; !seen {
 			aliases.byRef[ref] = ""
@@ -347,6 +425,7 @@ type typegenSection struct {
 	dropPlayer   bool
 	isRPC        bool
 	isCommandMap bool
+	isLibraryMap bool
 }
 
 var typegenSections = []typegenSection{
@@ -355,6 +434,8 @@ var typegenSections = []typegenSection{
 	{kind: kindServerRPC, iface: "GenServerRpc", registerAs: "serverRpc", dropPlayer: true, isRPC: true},
 	{kind: kindClientRPC, iface: "GenClientRpc", registerAs: "clientRpc", isRPC: true},
 	{kind: kindCommand, iface: "GenCommands", registerAs: "commands", isCommandMap: true},
+	{kind: kindServerLibrary, iface: "GenServerLibraryEvents", registerAs: "serverLibraryEvents", isLibraryMap: true},
+	{kind: kindClientLibrary, iface: "GenClientLibraryEvents", registerAs: "clientLibraryEvents", isLibraryMap: true},
 }
 
 func sectionsPresentIn(byKind map[typegenKind][]typegenEntry) []typegenSection {
@@ -378,6 +459,58 @@ func writeSectionMap(
 		fmt.Fprintf(b, "  %s: %s\n", quoteTSString(e.EventName), section.valueExpr(e, aliases))
 	}
 	b.WriteString("}\n\n")
+}
+
+// writeLibrarySectionMap emits one nested map per library. An event is typed by the first
+// parameter of its first listener (the handler is called as `(payload, meta)`), or, when nobody
+// listens to it, by the union of the payloads its `emit()` calls pass.
+func writeLibrarySectionMap(
+	b *strings.Builder,
+	section typegenSection,
+	entries []typegenEntry,
+	aliases *controllerAliases,
+) {
+	fmt.Fprintf(b, "export type %s = {\n", section.iface)
+	for _, library := range runsOf(entries, func(e typegenEntry) string { return e.Library }) {
+		fmt.Fprintf(b, "  %s: {\n", quoteTSString(library[0].Library))
+		for _, event := range runsOf(library, func(e typegenEntry) string { return e.EventName }) {
+			fmt.Fprintf(b, "    %s: %s\n", quoteTSString(event[0].EventName), libraryPayloadExpr(event, aliases))
+		}
+		b.WriteString("  }\n")
+	}
+	b.WriteString("}\n\n")
+}
+
+// libraryPayloadExpr types one library event from its entries, sorted listeners first.
+func libraryPayloadExpr(event []typegenEntry, aliases *controllerAliases) string {
+	if first := event[0]; !first.Emitted {
+		return fmt.Sprintf("__Payload<Parameters<%s[%s]>>", aliases.of(first), quoteTSString(first.MethodName))
+	}
+	var payloads []string
+	for _, e := range event {
+		payload := e.PayloadType
+		if payload == "" {
+			payload = fmt.Sprintf("Parameters<%s[%s]>[%d]", aliases.of(e), quoteTSString(e.MethodName), e.ParamIndex)
+		}
+		if !slices.Contains(payloads, payload) {
+			payloads = append(payloads, payload)
+		}
+	}
+	return strings.Join(payloads, " | ")
+}
+
+// runsOf splits sorted entries into the consecutive runs sharing the same key.
+func runsOf(entries []typegenEntry, key func(typegenEntry) string) [][]typegenEntry {
+	var runs [][]typegenEntry
+	for start := 0; start < len(entries); {
+		end := start + 1
+		for end < len(entries) && key(entries[end]) == key(entries[start]) {
+			end++
+		}
+		runs = append(runs, entries[start:end])
+		start = end
+	}
+	return runs
 }
 
 func firstPerEventName(entries []typegenEntry) []typegenEntry {

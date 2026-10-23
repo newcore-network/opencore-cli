@@ -22,6 +22,7 @@ type analyzedFile struct {
 	Handlers []analyzedHandler `json:"handlers"`
 	Views    []analyzedHandler `json:"views"`
 	Sends    []analyzedSend    `json:"sends"`
+	Emits    []analyzedEmit    `json:"emits"`
 	Warnings []struct {
 		Line    int    `json:"line"`
 		Message string `json:"message"`
@@ -30,23 +31,38 @@ type analyzedFile struct {
 
 type analyzedHandler struct {
 	Kind        typegenKind `json:"kind"`
+	Library     string      `json:"library"` // library events only
 	Event       string      `json:"event"`
 	ClassName   string      `json:"className"`
 	MethodName  string      `json:"methodName"`
 	Description string      `json:"description"`
 	Usage       string      `json:"usage"`
-	Line        int         `json:"line"`
+	// TakesPayload reports whether a library listener declares a payload parameter.
+	TakesPayload bool `json:"takesPayload"`
+	Line         int  `json:"line"`
+}
+
+// analyzedPayload is the payload argument of a `send()` or library `emit()` call.
+type analyzedPayload struct {
+	Kind       string `json:"kind"` // "param" (a parameter of the enclosing method) or "type"
+	Type       string `json:"type"`
+	ClassName  string `json:"className"`
+	MethodName string `json:"methodName"`
+	Index      int    `json:"index"`
 }
 
 type analyzedSend struct {
-	Event   string `json:"event"`
-	Payload struct {
-		Kind       string `json:"kind"` // "param" (a parameter of the enclosing method) or "type"
-		Type       string `json:"type"`
-		ClassName  string `json:"className"`
-		MethodName string `json:"methodName"`
-		Index      int    `json:"index"`
-	} `json:"payload"`
+	Event   string          `json:"event"`
+	Payload analyzedPayload `json:"payload"`
+}
+
+// analyzedEmit is a library `emit()` call, which declares an event of that library.
+type analyzedEmit struct {
+	Kind    typegenKind     `json:"kind"`
+	Library string          `json:"library"`
+	Event   string          `json:"event"`
+	Line    int             `json:"line"`
+	Payload analyzedPayload `json:"payload"`
 }
 
 type analyzedSource struct {
