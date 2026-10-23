@@ -215,6 +215,178 @@ export class BankController {
 			notWant: []string{"dynamic"},
 		},
 		{
+			name: "library listeners are filed per library",
+			files: map[string]string{
+				"src/server/events.ts": `export const RP = 'rp' as const
+export const SPAWNED = 'character:spawned'`,
+				"src/server/characters.controller.ts": `
+import { Controller, OnLibraryEvent } from '@open-core/framework/server'
+import { RP, SPAWNED } from './events'
+
+export interface Spawned { accountId: string; firstTime: boolean }
+
+@Controller()
+export class CharactersController {
+  @OnLibraryEvent(RP, SPAWNED)
+  onSpawned(payload: Spawned) {}
+
+  @OnLibraryEvent('bank', 'bank:opened')
+  onOpened() {}
+}
+`,
+				// A second listener of the same event: not a clash, and ignoring the payload
+				// must not untype the event.
+				"src/server/audit.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class AuditController {
+  @Server.OnLibraryEvent('rp', 'character:spawned')
+  log() {}
+
+  @Server.OnLibraryEvent('rp', 'character:left')
+  onLeft(payload: { accountId: string }, meta: unknown) {}
+}
+`,
+				"src/client/hud.controller.ts": `
+import { Client } from '@open-core/framework/client'
+
+@Client.Controller()
+export class HudController {
+  @Client.OnLibraryEvent('hud', 'hud:shown')
+  onShown(visible: boolean) {}
+}
+`,
+			},
+			want: []string{
+				"type __Payload<P extends unknown[]>",
+				"export type GenServerLibraryEvents = {\n" +
+					"  'bank': {\n" +
+					"    'bank:opened': __Payload<Parameters<T2_CharactersController['onOpened']>>\n" +
+					"  }\n" +
+					"  'rp': {\n" +
+					"    'character:left': __Payload<Parameters<T1_AuditController['onLeft']>>\n" +
+					"    'character:spawned': __Payload<Parameters<T2_CharactersController['onSpawned']>>\n" +
+					"  }\n" +
+					"}",
+				"export type GenClientLibraryEvents = {\n" +
+					"  'hud': {\n" +
+					"    'hud:shown': __Payload<Parameters<T0_HudController['onShown']>>\n" +
+					"  }\n" +
+					"}",
+				"serverLibraryEvents: GenServerLibraryEvents",
+				"clientLibraryEvents: GenClientLibraryEvents",
+			},
+			notWant: []string{"['log']"},
+		},
+		{
+			name: "library emits type the events nobody listens to",
+			files: map[string]string{
+				"src/server/rp.library.ts": `
+import { createServerLibrary } from '@open-core/framework/server'
+export const rpLibrary = createServerLibrary('rp')
+`,
+				"src/server/market.service.ts": `
+import { rpLibrary } from './rp.library'
+
+export type Reason = 'sold' | 'owner-deleted'
+
+export class MarketService {
+  release(propertyId: string, reason: Reason) {
+    rpLibrary.emit('property:released', { propertyId, reason })
+  }
+
+  jail(characterId: string) {
+    rpLibrary.emit('police:jailed', { characterId, releaseAt: 1 })
+  }
+
+  jailById(characterId: number) {
+    rpLibrary.emit('police:jailed', { characterId, releaseAt: 2 })
+  }
+
+  revive(payload: { characterId: string }) {
+    rpLibrary.emit('vitals:revived', payload)
+  }
+
+  tick() {
+    rpLibrary.emit('market:tick')
+  }
+
+  leave(accountId: string) {
+    rpLibrary.emit('character:left', { accountId, extra: true })
+  }
+
+  notALibrary(emitter: { emit(name: string, payload: unknown): void }) {
+    emitter.emit('not:library', 1)
+  }
+}
+`,
+				"src/server/session.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class SessionController {
+  @Server.OnLibraryEvent('rp', 'character:left')
+  onLeft(payload: { accountId: string }) {}
+}
+`,
+				"src/client/hud.ts": `
+import { createClientLibrary } from '@open-core/framework/client'
+const hud = createClientLibrary('hud')
+export function show() {
+  hud.emit('hud:shown', { visible: true as boolean })
+}
+`,
+			},
+			want: []string{
+				// A listener types its event, however its emit() calls pass it.
+				"    'character:left': __Payload<Parameters<T1_SessionController['onLeft']>>\n",
+				"    'market:tick': undefined\n",
+				// Different payloads at different calls make a union.
+				"    'police:jailed': { characterId: number; releaseAt: number } | { characterId: string; releaseAt: number }\n",
+				// The order of a literal union is the checker's, which differs between TypeScript versions.
+				"    'property:released': { propertyId: string; reason: \"",
+				"    'vitals:revived': Parameters<T0_MarketService['revive']>[0]\n",
+				"export type GenClientLibraryEvents = {\n" +
+					"  'hud': {\n" +
+					"    'hud:shown': { visible: boolean }\n" +
+					"  }\n" +
+					"}",
+			},
+			notWant: []string{"not:library", "extra"},
+		},
+		{
+			name: "library emit on a library without a literal name warns",
+			files: map[string]string{"src/server/dynamic.ts": `
+import { createServerLibrary } from '@open-core/framework/server'
+
+const name: string = 'r' + 'p'
+const library = createServerLibrary(name)
+
+export function publish() {
+  library.emit('character:spawned', 1)
+}
+`},
+			warning: "src/server/dynamic.ts:8 could not resolve the library name of library of a library emit()",
+			notWant: []string{"character:spawned"},
+		},
+		{
+			name: "library listener with a plain string library name warns",
+			files: map[string]string{"src/server/rp.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+const library: string = 'r' + 'p'
+
+@Server.Controller()
+export class RpController {
+  @Server.OnLibraryEvent(library, 'character:spawned')
+  onSpawned(payload: number) {}
+}
+`},
+			warning: "src/server/rp.controller.ts:8 could not resolve the name library: its type is `string`",
+			notWant: []string{"character:spawned", "LibraryEvents"},
+		},
+		{
 			name: "multi-line decorator arguments",
 			files: map[string]string{"src/server/pay.controller.ts": `
 import { Server } from '@open-core/framework/server'

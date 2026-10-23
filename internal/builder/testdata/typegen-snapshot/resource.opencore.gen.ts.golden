@@ -35,6 +35,19 @@ export type GenCommands = {
   'reset': Record<string, never>
 }
 
+export type GenServerLibraryEvents = {
+  'rp': {
+    'character:left': __Payload<Parameters<T1_BankController['onLeft']>>
+    'character:spawned': __Payload<Parameters<T1_BankController['onSpawned']>>
+  }
+}
+
+export type GenClientLibraryEvents = {
+  'hud': {
+    'hud:shown': __Payload<Parameters<T0_HudController['onShown']>>
+  }
+}
+
 /** Messages the client sends to a WebView (from its `send()` calls). */
 export type GenViewSend = {
   'hud:clear': undefined
@@ -56,6 +69,8 @@ declare module '@open-core/framework/register' {
       serverRpc: GenServerRpc
       clientRpc: GenClientRpc
       commands: GenCommands
+      serverLibraryEvents: GenServerLibraryEvents
+      clientLibraryEvents: GenClientLibraryEvents
       viewSend: GenViewSend
       viewReceive: GenViewReceive
     }

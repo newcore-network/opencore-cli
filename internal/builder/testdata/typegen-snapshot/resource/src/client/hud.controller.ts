@@ -28,4 +28,7 @@ export class HudController {
 
   @Client.OnView('hud:ready')
   ready() {}
+
+  @Client.OnLibraryEvent('hud', 'hud:shown')
+  onShown(visible: boolean) {}
 }
