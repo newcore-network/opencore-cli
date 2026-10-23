@@ -219,7 +219,7 @@ func (b *Builder) BuildWithOutputContext(ctx context.Context, requestedMode Outp
 	if err := b.validateTaskSources(tasks); err != nil {
 		return err
 	}
-	if err := b.typecheck(ctx, tasks, plain); err != nil {
+	if err := b.prepareTypes(ctx, tasks, plain); err != nil {
 		return err
 	}
 	sharedOptions, sharedName, err := b.sharedDependencyOptions(tasks)
@@ -327,7 +327,7 @@ func (b *Builder) BuildTasksContext(ctx context.Context, tasks []BuildTask) ([]B
 	if err := b.validateTaskSources(tasks); err != nil {
 		return nil, err
 	}
-	if err := b.typecheck(ctx, tasks, false); err != nil {
+	if err := b.prepareTypes(ctx, tasks, false); err != nil {
 		return nil, err
 	}
 	sharedOptions, sharedName, err := b.sharedDependencyOptions(tasks)

@@ -19,11 +19,12 @@ import (
 var importMarkPattern = regexp.MustCompile("\x01([^\x01]+)\x01")
 
 type analyzedFile struct {
-	Handlers []analyzedHandler `json:"handlers"`
-	Views    []analyzedHandler `json:"views"`
-	Sends    []analyzedSend    `json:"sends"`
-	Emits    []analyzedEmit    `json:"emits"`
-	Warnings []struct {
+	Handlers  []analyzedHandler `json:"handlers"`
+	Views     []analyzedHandler `json:"views"`
+	Sends     []analyzedSend    `json:"sends"`
+	Emits     []analyzedEmit    `json:"emits"`
+	Libraries []analyzedLibrary `json:"libraries"`
+	Warnings  []struct {
 		Line    int    `json:"line"`
 		Message string `json:"message"`
 	} `json:"warnings"`
@@ -63,6 +64,13 @@ type analyzedEmit struct {
 	Event   string          `json:"event"`
 	Line    int             `json:"line"`
 	Payload analyzedPayload `json:"payload"`
+}
+
+// analyzedLibrary is a `createServerLibrary` / `createClientLibrary` call with a literal name.
+type analyzedLibrary struct {
+	Kind    typegenKind `json:"kind"`
+	Library string      `json:"library"`
+	Line    int         `json:"line"`
 }
 
 type analyzedSource struct {

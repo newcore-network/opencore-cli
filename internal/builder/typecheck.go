@@ -97,8 +97,6 @@ func (b *Builder) typecheck(ctx context.Context, tasks []BuildTask, plain bool) 
 		return nil
 	}
 
-	b.regenerateTypes(tasks)
-
 	if plain {
 		fmt.Println("\nType checking...")
 	} else {
@@ -133,8 +131,16 @@ func (b *Builder) typecheck(ctx context.Context, tasks []BuildTask, plain bool) 
 	return errors.New(summary)
 }
 
-// regenerateTypes runs typegen for every resource the tasks touch. Bundling runs it again per
-// task, which is a no-op once the files are current.
+// prepareTypes regenerates the types of every resource the tasks touch, then type-checks them.
+func (b *Builder) prepareTypes(ctx context.Context, tasks []BuildTask, plain bool) error {
+	b.regenerateTypes(tasks)
+	return b.typecheck(ctx, tasks, plain)
+}
+
+// regenerateTypes runs typegen for every resource the tasks touch, one after another, whether or
+// not the build type-checks. Bundling runs it again per task, in parallel, which reuses the
+// analysis; by then every resource has its generated file, so each one sees the libraries all
+// the others create, whatever order they were generated in.
 func (b *Builder) regenerateTypes(tasks []BuildTask) {
 	seen := make(map[string]bool, len(tasks))
 	for _, task := range tasks {

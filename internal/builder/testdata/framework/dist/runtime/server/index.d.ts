@@ -10,6 +10,7 @@ export interface ServerApi {
     Command: typeof Command;
     OnLibraryEvent: typeof OnLibraryEvent;
     Controller: typeof Controller;
+    createServerLibrary: typeof createServerLibrary;
     RequiresState: typeof RequiresState;
     Throttle: typeof Throttle;
 }

@@ -7,6 +7,7 @@ export interface ClientApi {
     OnView: typeof OnView;
     OnLibraryEvent: typeof OnLibraryEvent;
     Controller: typeof Controller;
+    createClientLibrary: typeof createClientLibrary;
 }
 export declare const Client: ClientApi;
 export declare function createClientLibrary<const N extends string = string>(name: N): import('../core/library/types').OpenCoreClientLibrary<N>;

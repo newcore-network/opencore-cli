@@ -14,6 +14,7 @@ const WEBVIEW_CLASSES = ['WebViewBridge', 'NuiBridge']
 const WEBVIEW_GLOBALS = ['WebView', 'NUI']
 const IMPORT_MARK = '\u0001'
 const LIBRARY_KINDS = ['serverLibraryEvents', 'clientLibraryEvents']
+const LIBRARY_FACTORIES = ['createServerLibrary', 'createClientLibrary']
 
 async function loadHost(tsDir) {
     const pkg = JSON.parse(fs.readFileSync(path.join(tsDir, 'package.json'), 'utf8'))
@@ -127,9 +128,9 @@ class Analyzer {
     }
 
     analyzeFile(file) {
-        this.result = { handlers: [], views: [], sends: [], emits: [], warnings: [] }
+        this.result = { handlers: [], views: [], sends: [], emits: [], libraries: [], warnings: [] }
         this.sf = this.program.getSourceFile(file)
-        if (this.sf && /@|send|emit/.test(this.sf.text)) this.visit(this.sf, null)
+        if (this.sf && /@|send|emit|Library/.test(this.sf.text)) this.visit(this.sf, null)
         return this.result
     }
 
@@ -154,7 +155,7 @@ class Analyzer {
         for (const decorator of member.modifiers || []) {
             const call = decorator.expression
             if (decorator.kind !== SK.Decorator || call.kind !== SK.CallExpression) continue
-            const match = this.classifyDecorator(call.expression)
+            const match = this.classifyFrameworkCallee(call.expression)
             const kind = match && DECORATORS[match.side] && DECORATORS[match.side][match.name]
             if (!kind) continue
 
@@ -198,8 +199,8 @@ class Analyzer {
         return name && [SK.Identifier, SK.StringLiteral, SK.NumericLiteral].includes(name.kind) ? name.text : null
     }
 
-    // Returns { side, name } for a framework decorator, whatever the import style.
-    classifyDecorator(callee) {
+    // Returns { side, name } for a framework decorator or function, whatever the import style.
+    classifyFrameworkCallee(callee) {
         const SK = this.SK
         const nameNode = callee.kind === SK.PropertyAccessExpression ? callee.name : callee
         if (nameNode.kind !== SK.Identifier) return null
@@ -328,6 +329,10 @@ class Analyzer {
 
     visitCall(call, classNode) {
         const callee = call.expression
+        if (this.isLibraryFactory(callee)) {
+            this.visitLibraryCreation(call)
+            return
+        }
         if (callee.kind !== this.SK.PropertyAccessExpression) return
         if (callee.name.text === 'send' && this.isWebViewSend(callee)) this.visitSend(call, classNode)
         else if (callee.name.text === 'emit') this.visitLibraryEmit(call, callee, classNode)
@@ -351,6 +356,30 @@ class Analyzer {
             this.warn(line, `could not derive the payload type of ${JSON.stringify(literals[0])}; the library event carries \`unknown\``)
         }
         this.result.emits.push({ kind: library.kind, library: library.name, event: literals[0], line, payload })
+    }
+
+    // A bare call is resolved through its symbol, so an aliased or re-exported factory is found too.
+    // A member call is only resolved when named after a factory, as `Server.createServerLibrary`.
+    isLibraryFactory(callee) {
+        const SK = this.SK
+        if (callee.kind === SK.PropertyAccessExpression && !LIBRARY_FACTORIES.includes(callee.name.text)) return false
+        if (callee.kind !== SK.Identifier && callee.kind !== SK.PropertyAccessExpression) return false
+        const match = this.classifyFrameworkCallee(callee)
+        return Boolean(match && LIBRARY_FACTORIES.includes(match.name))
+    }
+
+    // `createServerLibrary(name)` / `createClientLibrary(name)` creates that library in this resource. Only
+    // a literal name is recorded: it is what typegen keys the library's events by.
+    visitLibraryCreation(call) {
+        const type = this.checker.getTypeAtLocation(call)
+        const symbol = this.h.typeSymbol(type)
+        const decls = symbol ? this.h.declarations(symbol) : []
+        if (!decls.some((decl) => frameworkSideOf(decl.file) !== null)) return
+
+        const side = this.propertyStringLiteral(type, call, 'side')
+        const kind = { server: 'serverLibraryEvents', client: 'clientLibraryEvents' }[side]
+        const library = this.propertyStringLiteral(type, call, 'name')
+        if (kind && library) this.result.libraries.push({ kind, library, line: this.lineOf(call) })
     }
 
     // { kind, name } for a server or client library's bus `emit`, null for any other `emit`.

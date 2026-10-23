@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/newcore-network/opencore-cli/internal/config"
 )
 
 // typeScriptInstall returns the repository's `typescript` (5.x) or `typescript-7` devDependency.
@@ -694,6 +697,137 @@ export class BankController {
 			})
 		})
 	}
+}
+
+func TestTypegen_WarnsWhenAnotherResourceCreatesALibraryWithTheSameName(t *testing.T) {
+	forEachTypeScript(t, func(t *testing.T, typeScriptDir string) {
+		root := t.TempDir()
+		writeTestFile(t, root, "tsconfig.json", typegenTestTSConfig)
+		characters := filepath.Join(root, "resources", "characters")
+		garage := filepath.Join(root, "resources", "garage")
+		session := filepath.Join(root, "resources", "session")
+
+		writeTestFile(t, characters, "src/server/core.library.ts", `
+import { createServerLibrary } from '@open-core/framework/server'
+export const core = createServerLibrary('core')
+`)
+		writeTestFile(t, characters, "src/client/core.library.ts", `
+import { createClientLibrary } from '@open-core/framework/client'
+export const core = createClientLibrary('core')
+`)
+		writeTestFile(t, garage, "src/server/core.library.ts", `
+import { Server } from '@open-core/framework/server'
+export const core = Server.createServerLibrary('core')
+export const named = (name: string) => Server.createServerLibrary(name)
+`)
+		// Listening to a library does not create one, so it never collides.
+		writeTestFile(t, session, "src/server/session.controller.ts", `
+import { Server } from '@open-core/framework/server'
+@Server.Controller()
+export class SessionController {
+  @Server.OnLibraryEvent('core', 'ready')
+  onReady(payload: { id: number }) {}
+}
+`)
+		rb := newTypegenBuilderWith(t, root, typeScriptDir, true)
+
+		warningsOf := func(resource string) []string {
+			t.Helper()
+			result, err := rb.generateTypes(resource, TypegenOptions{})
+			if err != nil {
+				t.Fatalf("generateTypes returned error: %v", err)
+			}
+			var warnings []string
+			for _, w := range result.Warnings {
+				warnings = append(warnings, w.String())
+			}
+			return warnings
+		}
+
+		if warnings := warningsOf(characters); len(warnings) != 0 {
+			t.Fatalf("no other resource is generated yet, got %q", warnings)
+		}
+		if content := readGenFile(t, characters); !strings.Contains(content,
+			`// opencore:libraries [{"kind":"clientLibraryEvents","name":"core"},{"kind":"serverLibraryEvents","name":"core"}]`) {
+			t.Fatalf("expected the libraries the resource creates in its header, got:\n%s", content)
+		}
+		if warnings := warningsOf(session); len(warnings) != 0 {
+			t.Fatalf("a resource only listening to a library collides with nothing, got %q", warnings)
+		}
+
+		want := `server library "core" is also created by resource:resources/`
+		warnings := warningsOf(garage)
+		if len(warnings) != 1 || !strings.HasPrefix(warnings[0], "src/server/core.library.ts:3") ||
+			!strings.Contains(warnings[0], want+"characters;") {
+			t.Fatalf("expected one collision with resources/characters, got %q", warnings)
+		}
+		warnings = warningsOf(characters)
+		if len(warnings) != 1 || !strings.HasPrefix(warnings[0], "src/server/core.library.ts:3") ||
+			!strings.Contains(warnings[0], want+"garage;") {
+			t.Fatalf("expected one collision with resources/garage, got %q", warnings)
+		}
+
+		tsc := exec.Command("node", filepath.Join(typeScriptDir, "bin", "tsc"), "-p", filepath.Join(root, "tsconfig.json"))
+		if output, err := tsc.CombinedOutput(); err != nil {
+			t.Fatalf("the generated types do not compile: %v\n%s", err, output)
+		}
+	})
+}
+
+// A build generates every resource before bundling runs typegen again per task, so the resource
+// generated first also reports a collision it could not see yet, even without type-checking.
+func TestBuilder_BothResourcesReportALibraryCollision(t *testing.T) {
+	forEachTypeScript(t, func(t *testing.T, typeScriptDir string) {
+		root := t.TempDir()
+		writeTestFile(t, root, "tsconfig.json", typegenTestTSConfig)
+		characters := filepath.Join(root, "resources", "characters")
+		garage := filepath.Join(root, "resources", "garage")
+
+		// Found through its symbol, whatever it is imported as.
+		writeTestFile(t, characters, "src/server/core.library.ts", `
+import { createServerLibrary as makeLibrary } from '@open-core/framework/server'
+export const core = makeLibrary('core')
+`)
+		writeTestFile(t, garage, "src/server/core.library.ts", `
+import { createServerLibrary } from '@open-core/framework/server'
+export const core = createServerLibrary('core')
+`)
+		// A function of the project that only shares the name creates no library.
+		writeTestFile(t, garage, "src/server/local.ts", `
+function createServerLibrary(name: string) { return { name, side: 'server' as const } }
+export const local = createServerLibrary('core')
+`)
+
+		disabled := false
+		b := New(&config.Config{Build: config.BuildConfig{Typecheck: &disabled}})
+		rb := newTypegenBuilderWith(t, root, typeScriptDir, true)
+		rb.ConfigureTypegen(true, TypegenOptions{})
+		b.resourceBuilder = rb
+
+		tasks := []BuildTask{
+			{Path: characters, ResourceName: "characters", Type: TypeResource},
+			{Path: garage, ResourceName: "garage", Type: TypeResource},
+		}
+		if err := b.prepareTypes(context.Background(), tasks, true); err != nil {
+			t.Fatalf("prepareTypes returned error: %v", err)
+		}
+		for _, task := range tasks {
+			rb.RunTypegen(task.Path)
+		}
+
+		for _, resource := range []string{characters, garage} {
+			result, err := rb.generateTypes(resource, TypegenOptions{})
+			if err != nil {
+				t.Fatalf("generateTypes returned error: %v", err)
+			}
+			if len(result.Warnings) != 1 || result.Warnings[0].File != "src/server/core.library.ts" {
+				t.Fatalf("expected one collision in %s, got %v", resource, result.Warnings)
+			}
+			if !rb.typegenWarned[resource] {
+				t.Fatalf("the collision in %s was never reported", resource)
+			}
+		}
+	})
 }
 
 func TestTypegen_NamespaceLiteralFormIsUnchanged(t *testing.T) {
