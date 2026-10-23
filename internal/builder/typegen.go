@@ -248,7 +248,7 @@ func duplicateEntryWarnings(entries []typegenEntry) []SourceValidationIssue {
 
 	for i := 1; i < len(entries); i++ {
 		previous, current := entries[i-1], entries[i]
-		// A library event is meant to have many listeners; only the first one types it.
+		// A library event is meant to have many listeners; every one taking a payload types it.
 		if isLibraryKind(current.Kind) {
 			continue
 		}
@@ -467,9 +467,10 @@ func writeSectionMap(
 	b.WriteString("}\n\n")
 }
 
-// writeLibrarySectionMap emits one nested map per library. An event is typed by the first
-// parameter of its first listener (the handler is called as `(payload, meta)`), or, when no
-// listener takes a payload, by the union of the payloads its `emit()` calls pass. An event only
+// writeLibrarySectionMap emits one nested map per library. An event is typed by the intersection
+// of the first parameters of its listeners (a handler is called as `(payload, meta)`), as the
+// payload reaches each of them, or, when no listener takes a payload, by the union of the
+// payloads its `emit()` calls pass. An event only
 // listened to by handlers ignoring the payload carries `unknown`, which constrains nothing when
 // the framework intersects the maps of several resources.
 func writeLibrarySectionMap(
@@ -493,7 +494,14 @@ func writeLibrarySectionMap(
 func libraryPayloadExpr(event []typegenEntry, aliases *controllerAliases) string {
 	switch first := event[0]; {
 	case typesPayloadFromListener(first):
-		return fmt.Sprintf("__Payload<Parameters<%s[%s]>>", aliases.of(first), quoteTSString(first.MethodName))
+		var payloads []string
+		for _, e := range event {
+			payload := fmt.Sprintf("__Payload<Parameters<%s[%s]>>", aliases.of(e), quoteTSString(e.MethodName))
+			if typesPayloadFromListener(e) && !slices.Contains(payloads, payload) {
+				payloads = append(payloads, payload)
+			}
+		}
+		return strings.Join(payloads, " & ")
 	case !first.Emitted:
 		return "unknown"
 	}

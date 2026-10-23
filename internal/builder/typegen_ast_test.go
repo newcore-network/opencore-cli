@@ -319,6 +319,41 @@ export const receiver: E['rp']['receiver'] = 1
 			},
 		},
 		{
+			// The payload reaches every listener, so it must satisfy each of their parameters.
+			name: "library listeners of one event intersect their payloads",
+			files: map[string]string{
+				"src/server/a.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class AController {
+  @Server.OnLibraryEvent('rp', 'joined')
+  onJoined(payload: { id: string }) {}
+
+  @Server.OnLibraryEvent('rp', 'joined')
+  ignored() {}
+}
+`,
+				"src/server/b.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class BController {
+  @Server.OnLibraryEvent('rp', 'joined')
+  onJoined(payload: { name: string }) {}
+}
+`,
+				"src/server/check.ts": `
+import type { GenServerLibraryEvents as E } from '../../.opencore/opencore.gen'
+export const joined: E['rp']['joined'] = { id: 'a', name: 'b' }
+`,
+			},
+			want: []string{
+				"    'joined': __Payload<Parameters<T0_AController['onJoined']>> & __Payload<Parameters<T1_BController['onJoined']>>\n",
+			},
+			notWant: []string{"['ignored']"},
+		},
+		{
 			name: "library emits type the events nobody listens to",
 			files: map[string]string{
 				"src/server/rp.library.ts": `
