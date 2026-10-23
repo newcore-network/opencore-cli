@@ -7,12 +7,14 @@ const { pathToFileURL } = require('url')
 
 const FRAMEWORK = '@open-core/framework'
 const DECORATORS = {
-    server: { OnNet: 'serverEvents', OnRPC: 'serverRpc', Command: 'commands' },
-    client: { OnNet: 'clientEvents', OnRPC: 'clientRpc', OnView: 'view' },
+    server: { OnNet: 'serverEvents', OnRPC: 'serverRpc', Command: 'commands', OnLibraryEvent: 'serverLibraryEvents' },
+    client: { OnNet: 'clientEvents', OnRPC: 'clientRpc', OnView: 'view', OnLibraryEvent: 'clientLibraryEvents' },
 }
 const WEBVIEW_CLASSES = ['WebViewBridge', 'NuiBridge']
 const WEBVIEW_GLOBALS = ['WebView', 'NUI']
 const IMPORT_MARK = '\u0001'
+const LIBRARY_KINDS = ['serverLibraryEvents', 'clientLibraryEvents']
+const LIBRARY_FACTORIES = ['createServerLibrary', 'createClientLibrary']
 
 async function loadHost(tsDir) {
     const pkg = JSON.parse(fs.readFileSync(path.join(tsDir, 'package.json'), 'utf8'))
@@ -126,9 +128,9 @@ class Analyzer {
     }
 
     analyzeFile(file) {
-        this.result = { handlers: [], views: [], sends: [], warnings: [] }
+        this.result = { handlers: [], views: [], sends: [], emits: [], libraries: [], warnings: [] }
         this.sf = this.program.getSourceFile(file)
-        if (this.sf && /@|send/.test(this.sf.text)) this.visit(this.sf, null)
+        if (this.sf && /@|send|emit|Library/.test(this.sf.text)) this.visit(this.sf, null)
         return this.result
     }
 
@@ -153,11 +155,15 @@ class Analyzer {
         for (const decorator of member.modifiers || []) {
             const call = decorator.expression
             if (decorator.kind !== SK.Decorator || call.kind !== SK.CallExpression) continue
-            const match = this.classifyDecorator(call.expression)
+            const match = this.classifyFrameworkCallee(call.expression)
             const kind = match && DECORATORS[match.side] && DECORATORS[match.side][match.name]
             if (!kind) continue
 
             const line = this.lineOf(decorator)
+            if (LIBRARY_KINDS.includes(kind)) {
+                this.visitLibraryListener(kind, call, classNode, methodName, member, line)
+                continue
+            }
             const name = kind === 'commands' ? this.commandName(call.arguments[0]) : this.eventName(call.arguments[0])
             if (!name) continue
             const entry = { event: name.value, className: classNode.name.text, methodName, line }
@@ -166,14 +172,35 @@ class Analyzer {
         }
     }
 
+    // `@OnLibraryEvent(library, event)`: both names must resolve, the payload is the first parameter.
+    visitLibraryListener(kind, call, classNode, methodName, member, line) {
+        const library = this.eventName(call.arguments[0])
+        const name = library && this.eventName(call.arguments[1])
+        if (!name) return
+        this.result.handlers.push({
+            kind,
+            library: library.value,
+            event: name.value,
+            className: classNode.name.text,
+            methodName,
+            takesPayload: member.parameters.some((param) => !this.isThisParameter(param)),
+            line,
+        })
+    }
+
+    // A `this:` parameter only types the receiver; it is not part of `Parameters<>`.
+    isThisParameter(param) {
+        return param.name.kind === this.SK.Identifier && param.name.text === 'this'
+    }
+
     memberName(member) {
         const SK = this.SK
         const name = member.name
         return name && [SK.Identifier, SK.StringLiteral, SK.NumericLiteral].includes(name.kind) ? name.text : null
     }
 
-    // Returns { side, name } for a framework decorator, whatever the import style.
-    classifyDecorator(callee) {
+    // Returns { side, name } for a framework decorator or function, whatever the import style.
+    classifyFrameworkCallee(callee) {
         const SK = this.SK
         const nameNode = callee.kind === SK.PropertyAccessExpression ? callee.name : callee
         if (nameNode.kind !== SK.Identifier) return null
@@ -302,8 +329,84 @@ class Analyzer {
 
     visitCall(call, classNode) {
         const callee = call.expression
-        if (callee.kind !== this.SK.PropertyAccessExpression || callee.name.text !== 'send' || !this.isWebViewSend(callee)) return
+        if (this.isLibraryFactory(callee)) {
+            this.visitLibraryCreation(call)
+            return
+        }
+        if (callee.kind !== this.SK.PropertyAccessExpression) return
+        if (callee.name.text === 'send' && this.isWebViewSend(callee)) this.visitSend(call, classNode)
+        else if (callee.name.text === 'emit') this.visitLibraryEmit(call, callee, classNode)
+    }
 
+    // `library.emit(event, payload)` declares an event of that library, as `send()` declares a WebView message.
+    visitLibraryEmit(call, callee, classNode) {
+        const library = this.libraryOf(callee)
+        if (!library) return
+
+        const line = this.lineOf(call)
+        const [nameArg, payloadArg] = call.arguments
+        const literals = nameArg && this.stringLiterals(this.checker.getTypeAtLocation(nameArg))
+        if (!library.name || !literals || literals.length !== 1) {
+            const what = library.name ? `event name (${nameArg ? this.sourceOf(nameArg) : 'missing'})` : `library name of ${this.sourceOf(callee.expression)}`
+            this.warn(line, `could not resolve the ${what} of a library emit(); skipped by typegen`)
+            return
+        }
+        const payload = this.sendPayload(payloadArg, call, classNode)
+        if (payload.kind === 'type' && payload.type === 'unknown') {
+            this.warn(line, `could not derive the payload type of ${JSON.stringify(literals[0])}; the library event carries \`unknown\``)
+        }
+        this.result.emits.push({ kind: library.kind, library: library.name, event: literals[0], line, payload })
+    }
+
+    // A bare call is resolved through its symbol, so an aliased or re-exported factory is found too.
+    // A member call is only resolved when named after a factory, as `Server.createServerLibrary`.
+    isLibraryFactory(callee) {
+        const SK = this.SK
+        if (callee.kind === SK.PropertyAccessExpression && !LIBRARY_FACTORIES.includes(callee.name.text)) return false
+        if (callee.kind !== SK.Identifier && callee.kind !== SK.PropertyAccessExpression) return false
+        const match = this.classifyFrameworkCallee(callee)
+        return Boolean(match && LIBRARY_FACTORIES.includes(match.name))
+    }
+
+    // `createServerLibrary(name)` / `createClientLibrary(name)` creates that library in this resource. Only
+    // a literal name is recorded: it is what typegen keys the library's events by.
+    visitLibraryCreation(call) {
+        const type = this.checker.getTypeAtLocation(call)
+        const symbol = this.h.typeSymbol(type)
+        const decls = symbol ? this.h.declarations(symbol) : []
+        if (!decls.some((decl) => frameworkSideOf(decl.file) !== null)) return
+
+        const side = this.propertyStringLiteral(type, call, 'side')
+        const kind = { server: 'serverLibraryEvents', client: 'clientLibraryEvents' }[side]
+        const library = this.propertyStringLiteral(type, call, 'name')
+        if (kind && library) this.result.libraries.push({ kind, library, line: this.lineOf(call) })
+    }
+
+    // { kind, name } for a server or client library's bus `emit`, null for any other `emit`.
+    // `name` is null when the library was created from a name that is not a literal.
+    libraryOf(callee) {
+        const symbol = this.checker.getSymbolAtLocation(callee.name)
+        const decls = symbol ? this.h.declarations(symbol) : []
+        const isBusEmit = decls.some((decl) => {
+            const owner = frameworkSideOf(decl.file) !== null && decl.node().parent
+            return Boolean(owner && owner.name && owner.name.text === 'LibraryBus')
+        })
+        if (!isBusEmit) return null
+
+        const receiver = this.checker.getTypeAtLocation(callee.expression)
+        const side = this.propertyStringLiteral(receiver, callee.expression, 'side')
+        const kind = { server: 'serverLibraryEvents', client: 'clientLibraryEvents' }[side]
+        if (!kind) return null
+        return { kind, name: this.propertyStringLiteral(receiver, callee.expression, 'name') }
+    }
+
+    propertyStringLiteral(type, location, key) {
+        const prop = this.checker.getPropertyOfType(type, key)
+        const literals = prop && this.stringLiterals(this.checker.getTypeOfSymbolAtLocation(prop, location))
+        return literals && literals.length === 1 ? literals[0] : null
+    }
+
+    visitSend(call, classNode) {
         const line = this.lineOf(call)
         const [nameArg, payloadArg] = call.arguments
         const nameType = nameArg && this.checker.getTypeAtLocation(nameArg)
@@ -366,10 +469,12 @@ class Analyzer {
         return this.forwardedParameter(payloadArg, call, classNode) || this.payload(this.checker.getTypeAtLocation(payloadArg), payloadArg)
     }
 
-    // `send(name, data)` inside `method(data: T)` is typed through the method's parameter.
+    // `send(name, data)` inside `method(data: T)` is typed through the method's parameter, when the
+    // generated file can import the class: otherwise the argument's own type is used.
     forwardedParameter(payloadArg, call, classNode) {
         const SK = this.SK
-        const symbol = payloadArg.kind === SK.Identifier && classNode && classNode.name && this.checker.getSymbolAtLocation(payloadArg)
+        const importable = classNode && classNode.name && isExportedDeclaration(SK, classNode, classNode.getSourceFile())
+        const symbol = payloadArg.kind === SK.Identifier && importable && this.checker.getSymbolAtLocation(payloadArg)
         if (!symbol) return null
         for (const decl of this.h.declarations(symbol)) {
             const param = decl.node()
@@ -379,7 +484,8 @@ class Analyzer {
             for (let node = call; node && !inside; node = node.parent) inside = node === method
             const methodName = this.memberName(method)
             if (inside && methodName !== null) {
-                return { kind: 'param', className: classNode.name.text, methodName, index: method.parameters.indexOf(param) }
+                const index = method.parameters.filter((p) => !this.isThisParameter(p)).indexOf(param)
+                return { kind: 'param', className: classNode.name.text, methodName, index }
             }
         }
         return null
@@ -486,7 +592,7 @@ class TypePrinter {
         let base
         if (!sf.externalModuleIndicator && sf.isDeclarationFile) {
             base = symbol.name
-        } else if (!/[\\/]node_modules[\\/]/.test(sf.fileName) && this.isExported(node, sf)) {
+        } else if (!/[\\/]node_modules[\\/]/.test(sf.fileName) && isExportedDeclaration(this.a.SK, node, sf)) {
             base = `import(${IMPORT_MARK}${path.resolve(sf.fileName).replace(/\.(d\.)?[mc]?tsx?$/, '')}${IMPORT_MARK}).${symbol.name}`
         } else {
             return null
@@ -496,16 +602,16 @@ class TypePrinter {
         return args.length ? `${base}<${args.join(', ')}>` : base
     }
 
-    isExported(node, sf) {
-        const SK = this.a.SK
-        const declarationKinds = [SK.InterfaceDeclaration, SK.TypeAliasDeclaration, SK.ClassDeclaration, SK.EnumDeclaration]
-        const modifiers = (node.modifiers || []).map((m) => m.kind)
-        return node.parent === sf && declarationKinds.includes(node.kind) && modifiers.includes(SK.ExportKeyword) && !modifiers.includes(SK.DefaultKeyword)
-    }
-
     wrap(text) {
         return text && /[|&]/.test(text) && !text.startsWith('{') ? `(${text})` : text
     }
+}
+
+// Whether `import('…').Name` reaches a declaration: a named export at the top of its module.
+function isExportedDeclaration(SK, node, sf) {
+    const declarationKinds = [SK.InterfaceDeclaration, SK.TypeAliasDeclaration, SK.ClassDeclaration, SK.EnumDeclaration]
+    const modifiers = (node.modifiers || []).map((m) => m.kind)
+    return node.parent === sf && declarationKinds.includes(node.kind) && modifiers.includes(SK.ExportKeyword) && !modifiers.includes(SK.DefaultKeyword)
 }
 
 function skipTrivia(text, pos) {

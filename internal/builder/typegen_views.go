@@ -22,8 +22,10 @@ type viewEntry struct {
 	PayloadType string
 }
 
+// payloadHelperDecl reads `Required<P>[0]` so an optional, defaulted or rest first parameter
+// keeps its declared type rather than collapsing to `undefined`.
 const payloadHelperDecl = "/** First parameter of a handler, or `undefined` when it takes none. */\n" +
-	"type __Payload<P extends unknown[]> = P extends [infer First, ...unknown[]] ? First : undefined\n"
+	"type __Payload<P extends unknown[]> = P extends [] ? undefined : Required<P>[0]\n"
 
 func writeViewHelpers(b *strings.Builder, entries []viewEntry) {
 	if slices.ContainsFunc(entries, usesPayloadHelper) {

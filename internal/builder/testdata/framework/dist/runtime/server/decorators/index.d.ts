@@ -7,6 +7,7 @@ export interface CommandConfig {
 export declare function OnNet(eventName: string, schema?: unknown): MethodDecorator;
 export declare function OnRPC(eventName: string, schema?: unknown): MethodDecorator;
 export declare function Command(config: CommandConfig | string, schema?: unknown): MethodDecorator;
+export declare function OnLibraryEvent(libraryName: string, eventName: string): MethodDecorator;
 export declare function Controller(): ClassDecorator;
 export declare function RequiresState(options: { has?: string[]; missing?: string[]; errorMessage?: string }): MethodDecorator;
 export declare function Throttle(limit: number, windowMs: number): MethodDecorator;

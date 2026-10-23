@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/newcore-network/opencore-cli/internal/config"
 )
 
 // typeScriptInstall returns the repository's `typescript` (5.x) or `typescript-7` devDependency.
@@ -215,6 +218,284 @@ export class BankController {
 			notWant: []string{"dynamic"},
 		},
 		{
+			name: "library listeners are filed per library",
+			files: map[string]string{
+				"src/server/events.ts": `export const RP = 'rp' as const
+export const SPAWNED = 'character:spawned'`,
+				"src/server/characters.controller.ts": `
+import { Controller, OnLibraryEvent } from '@open-core/framework/server'
+import { RP, SPAWNED } from './events'
+
+export interface Spawned { accountId: string; firstTime: boolean }
+
+@Controller()
+export class CharactersController {
+  @OnLibraryEvent(RP, SPAWNED)
+  onSpawned(payload: Spawned) {}
+
+  @OnLibraryEvent('bank', 'bank:opened')
+  onOpened() {}
+}
+`,
+				// A second listener of the same event: not a clash, and ignoring the payload
+				// must not untype the event.
+				"src/server/audit.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class AuditController {
+  @Server.OnLibraryEvent('rp', 'character:spawned')
+  log() {}
+
+  @Server.OnLibraryEvent('rp', 'character:left')
+  onLeft(payload: { accountId: string }, meta: unknown) {}
+}
+`,
+				"src/client/hud.controller.ts": `
+import { Client } from '@open-core/framework/client'
+
+@Client.Controller()
+export class HudController {
+  @Client.OnLibraryEvent('hud', 'hud:shown')
+  onShown(visible: boolean) {}
+}
+`,
+			},
+			want: []string{
+				"type __Payload<P extends unknown[]>",
+				"export type GenServerLibraryEvents = {\n" +
+					"  'bank': {\n" +
+					// Its only listener ignores the payload, which then constrains nothing.
+					"    'bank:opened': unknown\n" +
+					"  }\n" +
+					"  'rp': {\n" +
+					"    'character:left': __Payload<Parameters<T1_AuditController['onLeft']>>\n" +
+					"    'character:spawned': __Payload<Parameters<T2_CharactersController['onSpawned']>>\n" +
+					"  }\n" +
+					"}",
+				"export type GenClientLibraryEvents = {\n" +
+					"  'hud': {\n" +
+					"    'hud:shown': __Payload<Parameters<T0_HudController['onShown']>>\n" +
+					"  }\n" +
+					"}",
+				"serverLibraryEvents: GenServerLibraryEvents",
+				"clientLibraryEvents: GenClientLibraryEvents",
+			},
+			notWant: []string{"['log']"},
+		},
+		{
+			name: "library listener with an optional, defaulted or rest payload keeps its type",
+			files: map[string]string{
+				"src/server/rp.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+export interface Spawned { id: string }
+
+@Server.Controller()
+export class RpController {
+  @Server.OnLibraryEvent('rp', 'optional')
+  onOptional(payload?: Spawned) {}
+
+  @Server.OnLibraryEvent('rp', 'defaulted')
+  onDefaulted(payload = { id: 'x' }) {}
+
+  @Server.OnLibraryEvent('rp', 'rest')
+  onRest(...ids: string[]) {}
+
+  @Server.OnLibraryEvent('rp', 'receiver')
+  onReceiver(this: RpController, count: number) {}
+}
+`,
+				// Compiled with the generated file: each payload must accept a real value.
+				"src/server/check.ts": `
+import type { GenServerLibraryEvents as E } from '../../.opencore/opencore.gen'
+export const optional: E['rp']['optional'] = { id: 'a' }
+export const defaulted: E['rp']['defaulted'] = { id: 'a' }
+export const rest: E['rp']['rest'] = 'a'
+export const receiver: E['rp']['receiver'] = 1
+`,
+			},
+			want: []string{
+				"type __Payload<P extends unknown[]> = P extends [] ? undefined : Required<P>[0]",
+				"    'optional': __Payload<Parameters<T0_RpController['onOptional']>>\n",
+				"    'receiver': __Payload<Parameters<T0_RpController['onReceiver']>>\n",
+			},
+		},
+		{
+			// The payload reaches every listener, so it must satisfy each of their parameters.
+			name: "library listeners of one event intersect their payloads",
+			files: map[string]string{
+				"src/server/a.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class AController {
+  @Server.OnLibraryEvent('rp', 'joined')
+  onJoined(payload: { id: string }) {}
+
+  @Server.OnLibraryEvent('rp', 'joined')
+  ignored() {}
+}
+`,
+				"src/server/b.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class BController {
+  @Server.OnLibraryEvent('rp', 'joined')
+  onJoined(payload: { name: string }) {}
+}
+`,
+				"src/server/check.ts": `
+import type { GenServerLibraryEvents as E } from '../../.opencore/opencore.gen'
+export const joined: E['rp']['joined'] = { id: 'a', name: 'b' }
+`,
+			},
+			want: []string{
+				"    'joined': __Payload<Parameters<T0_AController['onJoined']>> & __Payload<Parameters<T1_BController['onJoined']>>\n",
+			},
+			notWant: []string{"['ignored']"},
+		},
+		{
+			name: "library emits type the events nobody listens to",
+			files: map[string]string{
+				"src/server/rp.library.ts": `
+import { createServerLibrary } from '@open-core/framework/server'
+export const rpLibrary = createServerLibrary('rp')
+`,
+				"src/server/market.service.ts": `
+import { rpLibrary } from './rp.library'
+
+export type Reason = 'sold' | 'owner-deleted'
+
+export class MarketService {
+  release(propertyId: string, reason: Reason) {
+    rpLibrary.emit('property:released', { propertyId, reason })
+  }
+
+  jail(characterId: string) {
+    rpLibrary.emit('police:jailed', { characterId, releaseAt: 1 })
+  }
+
+  jailById(characterId: number) {
+    rpLibrary.emit('police:jailed', { characterId, releaseAt: 2 })
+  }
+
+  revive(payload: { characterId: string }) {
+    rpLibrary.emit('vitals:revived', payload)
+  }
+
+  tick() {
+    rpLibrary.emit('market:tick')
+  }
+
+  leave(accountId: string) {
+    rpLibrary.emit('character:left', { accountId, extra: true })
+  }
+
+  notALibrary(emitter: { emit(name: string, payload: unknown): void }) {
+    emitter.emit('not:library', 1)
+  }
+}
+`,
+				"src/server/session.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+@Server.Controller()
+export class SessionController {
+  @Server.OnLibraryEvent('rp', 'character:left')
+  onLeft(payload: { accountId: string }) {}
+
+  @Server.OnLibraryEvent('rp', 'property:released')
+  onReleased() {}
+}
+`,
+				// The generated file cannot import a class that is not exported.
+				"src/server/notifier.ts": `
+import { rpLibrary } from './rp.library'
+
+interface Fired { at: number }
+
+class Notifier {
+  fire(payload: Fired) {
+    rpLibrary.emit('notifier:fired', payload)
+  }
+}
+
+export const notifier = new Notifier()
+`,
+				"src/client/hud.ts": `
+import { createClientLibrary } from '@open-core/framework/client'
+const hud = createClientLibrary('hud')
+export function show() {
+  hud.emit('hud:shown', { visible: true as boolean })
+}
+`,
+			},
+			want: []string{
+				// A listener types its event, however its emit() calls pass it.
+				"    'character:left': __Payload<Parameters<T1_SessionController['onLeft']>>\n",
+				"    'market:tick': undefined\n",
+				// Different payloads at different calls make a union.
+				"    'police:jailed': { characterId: number; releaseAt: number } | { characterId: string; releaseAt: number }\n",
+				// A listener ignoring the payload leaves the event to its emit() calls. The order of a
+				// literal union is the checker's, which differs between TypeScript versions.
+				"    'property:released': { propertyId: string; reason: \"",
+				"    'notifier:fired': { at: number }\n",
+				"    'vitals:revived': Parameters<T0_MarketService['revive']>[0]\n",
+				"export type GenClientLibraryEvents = {\n" +
+					"  'hud': {\n" +
+					"    'hud:shown': { visible: boolean }\n" +
+					"  }\n" +
+					"}",
+			},
+			notWant: []string{"not:library", "extra", "Notifier"},
+		},
+		{
+			// An unused helper fails projects compiled with `noUnusedLocals`.
+			name: "library emits alone do not declare the payload helper",
+			files: map[string]string{"src/client/hud.ts": `
+import { createClientLibrary } from '@open-core/framework/client'
+const hud = createClientLibrary('hud')
+export function show() {
+  hud.emit('hud:shown', { visible: true as boolean })
+}
+`},
+			want:    []string{"    'hud:shown': { visible: boolean }\n"},
+			notWant: []string{"__Payload"},
+		},
+		{
+			name: "library emit on a library without a literal name warns",
+			files: map[string]string{"src/server/dynamic.ts": `
+import { createServerLibrary } from '@open-core/framework/server'
+
+const name: string = 'r' + 'p'
+const library = createServerLibrary(name)
+
+export function publish() {
+  library.emit('character:spawned', 1)
+}
+`},
+			warning: "src/server/dynamic.ts:8 could not resolve the library name of library of a library emit()",
+			notWant: []string{"character:spawned"},
+		},
+		{
+			name: "library listener with a plain string library name warns",
+			files: map[string]string{"src/server/rp.controller.ts": `
+import { Server } from '@open-core/framework/server'
+
+const library: string = 'r' + 'p'
+
+@Server.Controller()
+export class RpController {
+  @Server.OnLibraryEvent(library, 'character:spawned')
+  onSpawned(payload: number) {}
+}
+`},
+			warning: "src/server/rp.controller.ts:8 could not resolve the name library: its type is `string`",
+			notWant: []string{"character:spawned", "LibraryEvents"},
+		},
+		{
 			name: "multi-line decorator arguments",
 			files: map[string]string{"src/server/pay.controller.ts": `
 import { Server } from '@open-core/framework/server'
@@ -416,6 +697,137 @@ export class BankController {
 			})
 		})
 	}
+}
+
+func TestTypegen_WarnsWhenAnotherResourceCreatesALibraryWithTheSameName(t *testing.T) {
+	forEachTypeScript(t, func(t *testing.T, typeScriptDir string) {
+		root := t.TempDir()
+		writeTestFile(t, root, "tsconfig.json", typegenTestTSConfig)
+		characters := filepath.Join(root, "resources", "characters")
+		garage := filepath.Join(root, "resources", "garage")
+		session := filepath.Join(root, "resources", "session")
+
+		writeTestFile(t, characters, "src/server/core.library.ts", `
+import { createServerLibrary } from '@open-core/framework/server'
+export const core = createServerLibrary('core')
+`)
+		writeTestFile(t, characters, "src/client/core.library.ts", `
+import { createClientLibrary } from '@open-core/framework/client'
+export const core = createClientLibrary('core')
+`)
+		writeTestFile(t, garage, "src/server/core.library.ts", `
+import { Server } from '@open-core/framework/server'
+export const core = Server.createServerLibrary('core')
+export const named = (name: string) => Server.createServerLibrary(name)
+`)
+		// Listening to a library does not create one, so it never collides.
+		writeTestFile(t, session, "src/server/session.controller.ts", `
+import { Server } from '@open-core/framework/server'
+@Server.Controller()
+export class SessionController {
+  @Server.OnLibraryEvent('core', 'ready')
+  onReady(payload: { id: number }) {}
+}
+`)
+		rb := newTypegenBuilderWith(t, root, typeScriptDir, true)
+
+		warningsOf := func(resource string) []string {
+			t.Helper()
+			result, err := rb.generateTypes(resource, TypegenOptions{})
+			if err != nil {
+				t.Fatalf("generateTypes returned error: %v", err)
+			}
+			var warnings []string
+			for _, w := range result.Warnings {
+				warnings = append(warnings, w.String())
+			}
+			return warnings
+		}
+
+		if warnings := warningsOf(characters); len(warnings) != 0 {
+			t.Fatalf("no other resource is generated yet, got %q", warnings)
+		}
+		if content := readGenFile(t, characters); !strings.Contains(content,
+			`// opencore:libraries [{"kind":"clientLibraryEvents","name":"core"},{"kind":"serverLibraryEvents","name":"core"}]`) {
+			t.Fatalf("expected the libraries the resource creates in its header, got:\n%s", content)
+		}
+		if warnings := warningsOf(session); len(warnings) != 0 {
+			t.Fatalf("a resource only listening to a library collides with nothing, got %q", warnings)
+		}
+
+		want := `server library "core" is also created by resource:resources/`
+		warnings := warningsOf(garage)
+		if len(warnings) != 1 || !strings.HasPrefix(warnings[0], "src/server/core.library.ts:3") ||
+			!strings.Contains(warnings[0], want+"characters;") {
+			t.Fatalf("expected one collision with resources/characters, got %q", warnings)
+		}
+		warnings = warningsOf(characters)
+		if len(warnings) != 1 || !strings.HasPrefix(warnings[0], "src/server/core.library.ts:3") ||
+			!strings.Contains(warnings[0], want+"garage;") {
+			t.Fatalf("expected one collision with resources/garage, got %q", warnings)
+		}
+
+		tsc := exec.Command("node", filepath.Join(typeScriptDir, "bin", "tsc"), "-p", filepath.Join(root, "tsconfig.json"))
+		if output, err := tsc.CombinedOutput(); err != nil {
+			t.Fatalf("the generated types do not compile: %v\n%s", err, output)
+		}
+	})
+}
+
+// A build generates every resource before bundling runs typegen again per task, so the resource
+// generated first also reports a collision it could not see yet, even without type-checking.
+func TestBuilder_BothResourcesReportALibraryCollision(t *testing.T) {
+	forEachTypeScript(t, func(t *testing.T, typeScriptDir string) {
+		root := t.TempDir()
+		writeTestFile(t, root, "tsconfig.json", typegenTestTSConfig)
+		characters := filepath.Join(root, "resources", "characters")
+		garage := filepath.Join(root, "resources", "garage")
+
+		// Found through its symbol, whatever it is imported as.
+		writeTestFile(t, characters, "src/server/core.library.ts", `
+import { createServerLibrary as makeLibrary } from '@open-core/framework/server'
+export const core = makeLibrary('core')
+`)
+		writeTestFile(t, garage, "src/server/core.library.ts", `
+import { createServerLibrary } from '@open-core/framework/server'
+export const core = createServerLibrary('core')
+`)
+		// A function of the project that only shares the name creates no library.
+		writeTestFile(t, garage, "src/server/local.ts", `
+function createServerLibrary(name: string) { return { name, side: 'server' as const } }
+export const local = createServerLibrary('core')
+`)
+
+		disabled := false
+		b := New(&config.Config{Build: config.BuildConfig{Typecheck: &disabled}})
+		rb := newTypegenBuilderWith(t, root, typeScriptDir, true)
+		rb.ConfigureTypegen(true, TypegenOptions{})
+		b.resourceBuilder = rb
+
+		tasks := []BuildTask{
+			{Path: characters, ResourceName: "characters", Type: TypeResource},
+			{Path: garage, ResourceName: "garage", Type: TypeResource},
+		}
+		if err := b.prepareTypes(context.Background(), tasks, true); err != nil {
+			t.Fatalf("prepareTypes returned error: %v", err)
+		}
+		for _, task := range tasks {
+			rb.RunTypegen(task.Path)
+		}
+
+		for _, resource := range []string{characters, garage} {
+			result, err := rb.generateTypes(resource, TypegenOptions{})
+			if err != nil {
+				t.Fatalf("generateTypes returned error: %v", err)
+			}
+			if len(result.Warnings) != 1 || result.Warnings[0].File != "src/server/core.library.ts" {
+				t.Fatalf("expected one collision in %s, got %v", resource, result.Warnings)
+			}
+			if !rb.typegenWarned[resource] {
+				t.Fatalf("the collision in %s was never reported", resource)
+			}
+		}
+	})
 }
 
 func TestTypegen_NamespaceLiteralFormIsUnchanged(t *testing.T) {

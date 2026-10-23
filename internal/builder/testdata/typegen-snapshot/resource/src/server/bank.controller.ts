@@ -24,4 +24,10 @@ export class BankController {
 
   @Server.Command({ command: 'reset' })
   reset(player: Server.Player) {}
+
+  @Server.OnLibraryEvent('rp', 'character:spawned')
+  onSpawned(payload: { accountId: string; firstTime: boolean }) {}
+
+  @Server.OnLibraryEvent('rp', 'character:left')
+  onLeft() {}
 }

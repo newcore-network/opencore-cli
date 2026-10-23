@@ -574,7 +574,7 @@ export class HudController {
 }
 
 func TestRenderTypegenFile_EmptyWithoutHandlersOrViews(t *testing.T) {
-	content := renderTypegenFile(nil, registeredViews{}, TypegenOptions{ResourceKey: "resource:x"})
+	content := renderTypegenFile(nil, registeredViews{}, nil, TypegenOptions{ResourceKey: "resource:x"})
 	if !strings.HasSuffix(content, "export {};\n") || strings.Contains(content, "declare module") {
 		t.Fatalf("expected an empty module, got:\n%s", content)
 	}

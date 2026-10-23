@@ -4,7 +4,7 @@
 // biome-ignore-all lint: generated file
 
 /** First parameter of a handler, or `undefined` when it takes none. */
-type __Payload<P extends unknown[]> = P extends [infer First, ...unknown[]] ? First : undefined
+type __Payload<P extends unknown[]> = P extends [] ? undefined : Required<P>[0]
 
 type V0_HudController = InstanceType<typeof import('../../src/client/hud.controller').HudController>
 
